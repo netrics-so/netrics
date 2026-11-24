@@ -666,6 +666,11 @@ export const workspaceEn = {
       optionalLabel: "{label} (optional)",
       yes: "Yes",
       no: "No",
+      /** A list of entries (#874), such as an HTTP check connection's checks. */
+      listItem: "Entry {number}",
+      addItem: "Add an entry",
+      removeItem: "Remove entry {number}",
+      listLimit: "At most {max} entries.",
     },
     oauthButton: {
       otherAccount: "Use a different {name} account",

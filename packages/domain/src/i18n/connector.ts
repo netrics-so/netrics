@@ -16,6 +16,8 @@ import type { ResourceNoun } from "../resource.js";
 export interface FieldTranslation {
   title?: string;
   description?: string;
+  /** An array field's item fields, by item property key (SDK 0.2.21). */
+  items?: Readonly<Record<string, FieldTranslation>>;
 }
 
 /** What one locale translates of a connector manifest. */
@@ -221,6 +223,14 @@ function localizedSchema<S extends Readonly<Record<string, unknown>>>(
     if (nonEmpty(field.description)) {
       patched.description = field.description;
       changed = true;
+    }
+    // An array of objects (#874): its item fields are translated the same way.
+    if (isRecord(property.items) && isRecord(field.items)) {
+      const items = localizedSchema(property.items, field.items);
+      if (items !== property.items) {
+        patched.items = items;
+        changed = true;
+      }
     }
     next[key] = patched;
   }

@@ -577,6 +577,10 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
       optionalLabel: "{label} (optional)",
       yes: "Ja",
       no: "Nein",
+      listItem: "Eintrag {number}",
+      addItem: "Eintrag hinzufügen",
+      removeItem: "Eintrag {number} entfernen",
+      listLimit: "Höchstens {max} Einträge.",
     },
     oauthButton: {
       otherAccount: "Anderes {name}-Konto verwenden",

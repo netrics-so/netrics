@@ -6,6 +6,7 @@ import {
   FRESHNESS_LIMITS,
   type FreshnessStream,
 } from "./freshness.js";
+import { configuredHostPath } from "./hosts.js";
 import { parseRange } from "./semver.js";
 
 /**
@@ -185,9 +186,18 @@ export const resourceNounSchema = z.object({
 export type ResourceNoun = z.infer<typeof resourceNounSchema>;
 
 /** A translated title and description of a configuration or credential field. */
+const itemFieldTranslationSchema = z.strictObject({
+  title: z.string().min(1).optional(),
+  description: z.string().min(1).optional(),
+});
 export const fieldTranslationSchema = z.strictObject({
   title: z.string().min(1).optional(),
   description: z.string().min(1).optional(),
+  /**
+   * The item fields of an array-of-objects config field, by item property
+   * key (SDK 0.2.21, #874).
+   */
+  items: z.record(z.string().min(1), itemFieldTranslationSchema).optional(),
 });
 
 /**
@@ -265,6 +275,23 @@ export type ConnectorCategory = z.infer<typeof connectorCategorySchema>;
 export const brandColorSchema = z
   .string()
   .regex(/^#[0-9a-fA-F]{6}$/, { message: 'brandColor must be "#rrggbb"' });
+
+/** A configSchema property's schema, or undefined. */
+function configProperty(
+  schema: unknown,
+  key: string,
+): { type?: unknown; items?: unknown } | undefined {
+  const properties =
+    schema && typeof schema === "object"
+      ? (schema as { properties?: unknown }).properties
+      : undefined;
+  if (!properties || typeof properties !== "object") return undefined;
+  if (!Object.hasOwn(properties, key)) return undefined;
+  const property = (properties as Record<string, unknown>)[key];
+  return property && typeof property === "object"
+    ? (property as { type?: unknown; items?: unknown })
+    : undefined;
+}
 
 function propertyKeys(schema: unknown): Set<string> {
   const properties =
@@ -453,11 +480,21 @@ export const connectorManifestSchema = z
       });
     checkFreshnessStreams(manifest, context);
     const configProperties = propertyKeys(manifest.configSchema);
-    for (const key of manifest.configuredHosts ?? []) {
-      if (!configProperties.has(key))
+    for (const entry of manifest.configuredHosts ?? []) {
+      const path = configuredHostPath(entry);
+      const property = configProperty(manifest.configSchema, path.key);
+      const named =
+        path.item === undefined
+          ? configProperties.has(path.key)
+          : property?.type === "array" &&
+            propertyKeys(property.items).has(path.item);
+      if (!named)
         context.addIssue({
           code: "custom",
-          message: `configuredHosts names "${key}", which is not a property of configSchema`,
+          message:
+            path.item === undefined
+              ? `configuredHosts names "${entry}", which is not a property of configSchema`
+              : `configuredHosts names "${entry}", which is not an item property of an array in configSchema`,
           path: ["configuredHosts"],
         });
     }
@@ -522,6 +559,19 @@ export const connectorManifestSchema = z
         configKeys,
         "config field",
       );
+      for (const [key, field] of Object.entries(translation.config ?? {})) {
+        if (!field.items) continue;
+        const property = configProperty(manifest.configSchema, key);
+        unknownKeys(
+          locale,
+          `config.${key}.items`,
+          Object.keys(field.items),
+          property?.type === "array"
+            ? propertyKeys(property.items)
+            : new Set<string>(),
+          "config item field",
+        );
+      }
       unknownKeys(
         locale,
         "freshnessStreams",

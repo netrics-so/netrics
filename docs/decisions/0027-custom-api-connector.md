@@ -61,6 +61,12 @@ server keeps a connection's configured hosts fixed, so another host is a
 new connection with credentials entered for it. It is this decision
 applied to configuration-named hosts, so it needs no ADR of its own.
 
+A connector whose every auth strategy is `none` carries nothing a host
+could receive, so its configured hosts may change (SDK 0.2.21, #874): the
+HTTP check connector's URLs (`configuredHosts: ["checks[].url"]`, a URL in
+each item of the `checks` list) are edited like any setting. Should it gain
+credentials, its hosts become fixed by this rule again.
+
 ### 3. Egress
 
 The server sets the custom API egress values in one place
@@ -73,6 +79,14 @@ private hosts; `callOptionsFor` strips them from bundled connectors' calls.
 The executor refuses to run `custom-api` without these options (same-host
 redirects and a redaction set), so a call site that forgot `callOptionsFor`
 fails loudly.
+
+The HTTP check connector (#874) requests URLs a user entered too, so it
+gets its own values from the same place (`httpCheckEgress`): same-host
+redirects (the runtime also forces them for every `<key>[].<item>`
+configured URL), 1 MiB per body (decoded too), 10 s per request (a check's
+own limit only lowers it), and the same self-host private hosts
+(`NETRICS_CUSTOM_API_PRIVATE_HOSTS`). On the hosted service, where that
+list is empty, a check reaches public addresses only.
 
 ### 4. Redaction
 

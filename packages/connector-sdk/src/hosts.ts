@@ -34,21 +34,98 @@ export function configuredHost(value: unknown): string | null {
   return host;
 }
 
+/** An IPv4 address in dotted decimal, each part 0–255 without leading zeros. */
+const IPV4 =
+  /^(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/;
+
+/**
+ * The host of a URL a configuration item names (SDK 0.2.21, #874: a
+ * health check's URL), lowercased, or null. Accepted: an absolute https
+ * URL without user info, whose host is a name of at least two labels (as
+ * `configuredHost` reads it) or an IP address; any port, path and query.
+ * Refused: http and other schemes, single-label names ("localhost"),
+ * anything unparsable or longer than 2,048 characters. The egress guard
+ * still checks every address (no private, loopback or metadata addresses
+ * unless the host allows them).
+ */
+export function configuredUrlHost(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const text = value.trim();
+  if (text === "" || text.length > 2048) return null;
+  let url: URL;
+  try {
+    url = new URL(text);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:" || url.username || url.password) return null;
+  const host = url.hostname.toLowerCase();
+  if (host.startsWith("[") && host.endsWith("]")) {
+    // The URL parser has validated and normalized the IPv6 address.
+    return host.slice(1, -1);
+  }
+  if (IPV4.test(host)) return host;
+  return configuredHost(host);
+}
+
+/** A `configuredHosts` entry: a config key, or `<array key>[].<item key>`. */
+export function configuredHostPath(entry: string): {
+  key: string;
+  item?: string;
+} {
+  const match = /^([^[\]]+)\[\]\.([^[\].]+)$/.exec(entry);
+  return match ? { key: match[1]!, item: match[2]! } : { key: entry };
+}
+
 /**
  * The hosts a connection's configuration adds to its egress allowlist: the
  * valid value of each config key the manifest lists in `configuredHosts`.
- * Invalid or missing values add nothing.
+ * Invalid or missing values add nothing. An entry `<key>[].<item>` (SDK
+ * 0.2.21, #874) names a URL in each item of the array `<key>`: each valid
+ * URL's host (`configuredUrlHost`) is added.
  */
 export function configuredHostsOf(
   manifest: { configuredHosts?: readonly string[]; configSchema?: unknown },
   config: Record<string, unknown>,
 ): string[] {
   const hosts: string[] = [];
-  for (const key of manifest.configuredHosts ?? []) {
-    const host = configuredHost(effectiveValue(manifest, config, key));
+  const add = (host: string | null) => {
     if (host !== null && !hosts.includes(host)) hosts.push(host);
+  };
+  for (const entry of manifest.configuredHosts ?? []) {
+    const path = configuredHostPath(entry);
+    if (path.item === undefined) {
+      add(configuredHost(effectiveValue(manifest, config, path.key)));
+      continue;
+    }
+    const items = Object.hasOwn(config, path.key) ? config[path.key] : null;
+    if (!Array.isArray(items)) continue;
+    for (const item of items) {
+      if (item && typeof item === "object" && !Array.isArray(item)) {
+        const record = item as Record<string, unknown>;
+        add(
+          configuredUrlHost(
+            Object.hasOwn(record, path.item) ? record[path.item] : undefined,
+          ),
+        );
+      }
+    }
   }
   return hosts;
+}
+
+/**
+ * Whether a configured URL host is followed on redirects only to the same
+ * scheme, host and port (SDK 0.2.21, #874): a manifest with an item path
+ * in `configuredHosts` names user-entered URLs, whose redirects never go
+ * to another host, even one the configuration also names.
+ */
+export function configuredUrlsFollowSameHostOnly(manifest: {
+  configuredHosts?: readonly string[];
+}): boolean {
+  return (manifest.configuredHosts ?? []).some(
+    (entry) => configuredHostPath(entry).item !== undefined,
+  );
 }
 
 /**
@@ -108,8 +185,8 @@ function sameHosts(a: readonly string[], b: readonly string[]): boolean {
 /**
  * Freshly entered credentials, bound to the configured hosts of the config
  * they are checked and stored with. Unchanged for a manifest without
- * `configuredHosts`. Never apply it to stored credentials: that would move
- * them to another host.
+ * `configuredHosts` and for credentials without a secret. Never apply it
+ * to stored credentials: that would move them to another host.
  */
 export function bindCredentialHosts(
   manifest: { configuredHosts?: readonly string[]; configSchema?: unknown },
@@ -117,8 +194,11 @@ export function bindCredentialHosts(
   credentials: Record<string, unknown>,
 ): Record<string, unknown> {
   if (!manifest.configuredHosts?.length) return credentials;
+  // Nothing secret to bind (an HTTP check connection, #874): stored as is.
+  const secrets = withoutCredentialHosts(credentials);
+  if (Object.keys(secrets).length === 0) return secrets;
   return {
-    ...withoutCredentialHosts(credentials),
+    ...secrets,
     [CREDENTIAL_HOSTS_KEY]: configuredHostsOf(manifest, config),
   };
 }
@@ -155,12 +235,27 @@ export function credentialHostsMatch(
   return sameHosts(bound, configuredHostsOf(manifest, config));
 }
 
-/** Whether a config change names other configured hosts. */
+/**
+ * Whether a config change names other configured hosts. Never for a
+ * connector without credentials (every auth strategy "none", SDK 0.2.21,
+ * #874): with nothing to carry to another host, a health check may name
+ * new URLs.
+ */
 export function configuredHostsChanged(
-  manifest: { configuredHosts?: readonly string[]; configSchema?: unknown },
+  manifest: {
+    configuredHosts?: readonly string[];
+    configSchema?: unknown;
+    authStrategies?: readonly { strategy: string }[];
+  },
   before: Record<string, unknown>,
   after: Record<string, unknown>,
 ): boolean {
+  if (
+    manifest.authStrategies?.length &&
+    manifest.authStrategies.every((strategy) => strategy.strategy === "none")
+  ) {
+    return false;
+  }
   return !sameHosts(
     configuredHostsOf(manifest, before),
     configuredHostsOf(manifest, after),

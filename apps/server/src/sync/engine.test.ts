@@ -805,6 +805,7 @@ describe("catalog sync", () => {
       "google-play",
       "google-search-console",
       "hetzner-cloud",
+      "http-check",
       "leaky",
       "learning",
       "logging",

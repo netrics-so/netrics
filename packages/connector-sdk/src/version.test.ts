@@ -56,8 +56,8 @@ describe("assertManifestCompatible", () => {
     ).toThrow();
   });
 
-  it("keeps loading connectors written for SDK ^0.2.0 to ^0.2.20", () => {
-    expect(SDK_VERSION).toBe("0.2.20");
+  it("keeps loading connectors written for SDK ^0.2.0 to ^0.2.21", () => {
+    expect(SDK_VERSION).toBe("0.2.21");
     for (const sdkVersion of [
       "^0.2.0",
       "^0.2.1",
@@ -80,6 +80,7 @@ describe("assertManifestCompatible", () => {
       "^0.2.18",
       "^0.2.19",
       "^0.2.20",
+      "^0.2.21",
     ]) {
       expect(
         assertManifestCompatible({ ...validManifest(), sdkVersion }).id,
@@ -105,6 +106,57 @@ describe("assertManifestCompatible", () => {
     expect(() => assertManifestCompatible(withHosts(["url"]))).toThrow(
       /not a property of configSchema/,
     );
+  });
+
+  it("accepts configuredHosts that name a URL in each item of an array (0.2.21)", () => {
+    const withChecks = (configuredHosts: string[], items: unknown) => ({
+      ...validManifest(),
+      configSchema: {
+        type: "object",
+        properties: {
+          host: { type: "string" },
+          checks: { type: "array", items },
+        },
+      },
+      configuredHosts,
+    });
+    const items = { type: "object", properties: { url: { type: "string" } } };
+    expect(
+      assertManifestCompatible(withChecks(["checks[].url"], items))
+        .configuredHosts,
+    ).toEqual(["checks[].url"]);
+    expect(() =>
+      assertManifestCompatible(withChecks(["checks[].name"], items)),
+    ).toThrow(/not an item property of an array/);
+    expect(() =>
+      assertManifestCompatible(withChecks(["host[].url"], items)),
+    ).toThrow(/not an item property of an array/);
+  });
+
+  it("refuses item translations of unknown config item fields (0.2.21)", () => {
+    const manifest = (items: Record<string, { title: string }>) => ({
+      ...validManifest(),
+      configSchema: {
+        type: "object",
+        properties: {
+          checks: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: { url: { type: "string" } },
+            },
+          },
+        },
+      },
+      translations: { de: { config: { checks: { items } } } },
+    });
+    expect(
+      assertManifestCompatible(manifest({ url: { title: "Adresse" } }))
+        .translations?.de?.config?.checks?.items?.url?.title,
+    ).toBe("Adresse");
+    expect(() =>
+      assertManifestCompatible(manifest({ name: { title: "Name" } })),
+    ).toThrow(/unknown config item field/);
   });
 
   it("keeps the optional discoversBeforeFirstSync, off by default (0.2.19)", () => {

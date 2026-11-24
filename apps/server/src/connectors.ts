@@ -8,6 +8,7 @@ import {
   createDemoConnector,
   createGooglePlayConnector,
   createHetznerCloudConnector,
+  createHttpCheckConnector,
   createPostHogConnector,
   createRailwayConnector,
   createSearchConsoleConnector,
@@ -42,8 +43,9 @@ export interface DefaultRegistryOptions {
 /**
  * The connector bundle compiled into this server image: the demo connector,
  * Vercel Web Analytics, Google Search Console, App Store Connect, Google
- * Play, Apple Ads, Railway, PostHog and Hetzner Cloud. A preview connector
- * (PREVIEW_CONNECTORS, currently Railway, PostHog and Hetzner Cloud) is
+ * Play, Apple Ads, Railway, PostHog, Hetzner Cloud and HTTP checks. A
+ * preview connector (PREVIEW_CONNECTORS, currently Railway, PostHog,
+ * Hetzner Cloud and HTTP checks) is
  * registered outside
  * production, and in production only when listed in
  * NETRICS_PREVIEW_CONNECTORS. Reviewed connectors join here
@@ -73,6 +75,7 @@ export function createDefaultRegistry(
     createRailwayConnector(),
     createPostHogConnector(),
     createHetznerCloudConnector(),
+    createHttpCheckConnector(),
   ];
   for (const connector of connectors) {
     const id = connector.manifest.id;

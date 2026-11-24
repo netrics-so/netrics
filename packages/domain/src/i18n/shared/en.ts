@@ -195,6 +195,23 @@ export const sharedEn = {
         "Hetzner Cloud accepted the API token but refused to let it read the project's servers or prices. Create a new token in the Hetzner Console (your project → Security → API tokens) with Read permission.",
     },
     /**
+     * The HTTP check connector's refused configurations (#874), equal to
+     * the *_MESSAGE constants in @netrics/connectors/http-check.
+     */
+    httpCheck: {
+      noChecks: "Add at least one check, and at most 20.",
+      urlInvalid:
+        "Every check needs an https URL whose host is a full domain name or an IP address, without a user name or password, of at most 2,048 characters.",
+      nameDuplicate:
+        "Every check needs a name, and a name of its own: two checks in a connection cannot share one.",
+      statusInvalid:
+        "Expected status: a code (200), a range (200-299), a class (2xx), or up to ten of them separated by commas, all between 100 and 599.",
+      textInvalid:
+        "Expected text works only with GET: a HEAD request has no body to look in.",
+      headersInvalid:
+        "Request headers: one “Name: value” per line, at most ten. Headers that carry secrets (Authorization, Cookie, or a name with key, token, secret, auth, session, password or signature) and Host, Content-Length, Connection and Transfer-Encoding are not allowed: the configuration is not encrypted.",
+    },
+    /**
      * The runtime's refusal of credentials whose bound host differs from
      * the configuration (SDK 0.2.20 configuredHosts, #884 review), equal
      * to CREDENTIAL_HOST_MISMATCH_MESSAGE in @netrics/connector-runtime.

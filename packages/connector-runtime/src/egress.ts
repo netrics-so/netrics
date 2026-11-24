@@ -5,6 +5,7 @@ import { rootCertificates } from "node:tls";
 import type {
   ConnectorFetchInit,
   ConnectorResponse,
+  EgressRefusalReason,
 } from "@netrics/connector-sdk";
 import { Agent, fetch } from "undici";
 
@@ -14,9 +15,12 @@ import { Agent, fetch } from "undici";
  * architecture: "Connector trust and distribution").
  */
 export class EgressDeniedError extends Error {
-  constructor(message: string) {
+  /** Why (SDK 0.2.21): connector code may read it, never a host value. */
+  readonly reason: EgressRefusalReason;
+  constructor(message: string, reason: EgressRefusalReason) {
     super(message);
     this.name = "EgressDeniedError";
+    this.reason = reason;
   }
 }
 
@@ -491,6 +495,7 @@ export function createEgressFetch(options: EgressOptions) {
           callback(
             new EgressDeniedError(
               `egress denied: ${hostname} resolves to ${what}`,
+              "address",
             ),
             "",
             0,
@@ -523,23 +528,33 @@ export function createEgressFetch(options: EgressOptions) {
     try {
       url = new URL(raw);
     } catch {
-      throw new EgressDeniedError(`egress denied: invalid URL`);
+      throw new EgressDeniedError(`egress denied: invalid URL`, "url");
     }
     const insecureOk = options.allowInsecureHttp && url.protocol === "http:";
     if (url.protocol !== "https:" && !insecureOk) {
-      throw new EgressDeniedError(`egress denied: only https is allowed`);
+      throw new EgressDeniedError(
+        `egress denied: only https is allowed`,
+        "scheme",
+      );
     }
     if (url.username || url.password) {
-      throw new EgressDeniedError(`egress denied: credentials in URL`);
+      throw new EgressDeniedError(
+        `egress denied: credentials in URL`,
+        "credentials",
+      );
     }
     const host = url.hostname.replace(/^\[|\]$/g, "");
     if (!hostAllowed(host, options.allowedDomains)) {
       throw new EgressDeniedError(
         `egress denied: ${host} is not in the connector's outboundDomains`,
+        "host",
       );
     }
     if (isIP(host) && refusal(host, host) !== null) {
-      throw new EgressDeniedError(`egress denied: non-public address ${host}`);
+      throw new EgressDeniedError(
+        `egress denied: non-public address ${host}`,
+        "address",
+      );
     }
     return url;
   }
@@ -558,8 +573,9 @@ export function createEgressFetch(options: EgressOptions) {
 
   async function readBody(
     response: Awaited<ReturnType<typeof fetch>>,
+    request: { maxBytes: number; discard: boolean },
   ): Promise<Buffer> {
-    if (!bodyWanted(response.headers.get("content-type"))) {
+    if (request.discard || !bodyWanted(response.headers.get("content-type"))) {
       await response.body?.cancel();
       return Buffer.alloc(0);
     }
@@ -572,14 +588,19 @@ export function createEgressFetch(options: EgressOptions) {
     const decoded =
       codings.length > 0 &&
       codings.every((coding) => DECODED_CODINGS.has(coding));
+    const wireLimit = Math.min(maxBytes, request.maxBytes);
     const declared = Number(response.headers.get("content-length") ?? "0");
-    if (declared > maxBytes) {
+    if (declared > wireLimit) {
       await response.body?.cancel();
       throw new EgressDeniedError(
-        `egress denied: response exceeds ${maxBytes} bytes`,
+        `egress denied: response exceeds ${wireLimit} bytes`,
+        "size",
       );
     }
-    const limit = decoded ? maxDecompressedBytes : maxBytes;
+    const limit = Math.min(
+      decoded ? maxDecompressedBytes : maxBytes,
+      request.maxBytes,
+    );
     const chunks: Uint8Array[] = [];
     let size = 0;
     // Throwing inside the loop cancels the body stream.
@@ -590,6 +611,7 @@ export function createEgressFetch(options: EgressOptions) {
           decoded
             ? `egress denied: response exceeds ${limit} bytes once decompressed`
             : `egress denied: response exceeds ${limit} bytes`,
+          "size",
         );
       }
       chunks.push(chunk as Uint8Array);
@@ -603,8 +625,15 @@ export function createEgressFetch(options: EgressOptions) {
   ): Promise<ConnectorResponse> {
     let url = checkUrl(rawUrl);
     const first = url;
+    const method = init.method ?? "GET";
     const headers: Record<string, string> = { ...init.headers };
-    const timeout = AbortSignal.timeout(requestTimeoutMs);
+    // A connector's own limits only ever lower the host's (SDK 0.2.21).
+    const timeoutMs = lowered(requestTimeoutMs, init.timeoutMs);
+    const request = {
+      maxBytes: lowered(Number.POSITIVE_INFINITY, init.maxResponseBytes),
+      discard: init.discardBody === true || method === "HEAD",
+    };
+    const timeout = AbortSignal.timeout(timeoutMs);
     // One signal per request: every hop and the whole body read.
     const signal = AbortSignal.any([options.signal, timeout]);
     try {
@@ -612,7 +641,7 @@ export function createEgressFetch(options: EgressOptions) {
         let response: Awaited<ReturnType<typeof fetch>>;
         try {
           response = await fetch(url, {
-            method: init.method ?? "GET",
+            method,
             headers,
             ...(init.body !== undefined ? { body: init.body } : {}),
             redirect: "manual",
@@ -631,11 +660,13 @@ export function createEgressFetch(options: EgressOptions) {
           throw error;
         }
         const location = response.headers.get("location");
-        // "same-host" (custom APIs) follows redirects of GET requests only:
-        // a POST stays on the endpoint its definition names (ADR 0030 §2),
-        // so its 3xx comes back to the connector, unfollowed.
+        // "same-host" (custom APIs) follows redirects of GET and HEAD
+        // requests only: a POST stays on the endpoint its definition names
+        // (ADR 0030 §2), so its 3xx comes back to the connector, unfollowed.
         const follows =
-          options.redirects !== "same-host" || (init.method ?? "GET") === "GET";
+          options.redirects !== "same-host" ||
+          method === "GET" ||
+          method === "HEAD";
         if (
           follows &&
           response.status >= 300 &&
@@ -644,7 +675,10 @@ export function createEgressFetch(options: EgressOptions) {
         ) {
           await response.body?.cancel();
           if (redirects >= maxRedirects) {
-            throw new EgressDeniedError(`egress denied: too many redirects`);
+            throw new EgressDeniedError(
+              `egress denied: too many redirects`,
+              "redirects",
+            );
           }
           const next = checkUrl(new URL(location, url).toString());
           if (
@@ -653,6 +687,7 @@ export function createEgressFetch(options: EgressOptions) {
           ) {
             throw new EgressDeniedError(
               `egress denied: redirect to another host ${next.host}`,
+              "redirect_host",
             );
           }
           if (next.origin !== url.origin) {
@@ -666,7 +701,7 @@ export function createEgressFetch(options: EgressOptions) {
           url = next;
           continue;
         }
-        const body = await readBody(response);
+        const body = await readBody(response, request);
         const responseHeaders: Record<string, string> = {};
         response.headers.forEach((value, key) => {
           responseHeaders[key] = value;
@@ -681,12 +716,19 @@ export function createEgressFetch(options: EgressOptions) {
       ) {
         throw new EgressTimeoutError(
           url.hostname.replace(/^\[|\]$/g, ""),
-          requestTimeoutMs,
+          timeoutMs,
         );
       }
       throw error;
     }
   };
+}
+
+/** The host's limit, or a connector's own when it is a lower positive number. */
+function lowered(host: number, own: number | undefined): number {
+  return typeof own === "number" && Number.isFinite(own) && own > 0
+    ? Math.min(host, Math.floor(own))
+    : host;
 }
 
 /**

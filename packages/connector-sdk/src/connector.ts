@@ -166,10 +166,50 @@ export interface DatasetStageWriter {
 }
 
 export interface ConnectorFetchInit {
-  method?: "GET" | "POST";
+  /** "HEAD" since SDK 0.2.21 (#874): its body is empty. */
+  method?: "GET" | "POST" | "HEAD";
   headers?: Record<string, string>;
   body?: string;
+  /**
+   * Since SDK 0.2.21 (#874): a time limit for this request in ms, applied
+   * only when it is below the host's own per-request limit. Exceeding it
+   * fails the fetch like the host's limit does (an error named
+   * "EgressTimeoutError").
+   */
+  timeoutMs?: number;
+  /**
+   * Since SDK 0.2.21 (#874): a size limit for this response's body in
+   * bytes, applied only when it is below the host's own limit. A larger
+   * body fails the fetch like the host's limit does (an
+   * "EgressDeniedError" with reason "size").
+   */
+  maxResponseBytes?: number;
+  /**
+   * Since SDK 0.2.21 (#874): the body is not read. The response carries
+   * its status and headers and an empty body; only the time to the
+   * response headers counts.
+   */
+  discardBody?: boolean;
 }
+
+/**
+ * Why the host refused a request or response (SDK 0.2.21, #874): the
+ * `reason` of an error named "EgressDeniedError" that runtime.fetch
+ * throws. "url": not a valid URL; "scheme": not https; "credentials":
+ * user info in the URL; "host": not an allowed host; "address": a
+ * private, loopback or metadata address; "size": the body is larger than
+ * the limit; "redirects": too many redirects; "redirect_host": a redirect
+ * to another host where only the same host may be followed.
+ */
+export type EgressRefusalReason =
+  | "url"
+  | "scheme"
+  | "credentials"
+  | "host"
+  | "address"
+  | "size"
+  | "redirects"
+  | "redirect_host";
 
 /**
  * A fully buffered response. The whole body is read within the host's size

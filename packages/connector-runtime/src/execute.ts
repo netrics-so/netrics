@@ -2,6 +2,7 @@ import {
   ConnectorError,
   RateLimitedError,
   configuredHostsOf,
+  configuredUrlsFollowSameHostOnly,
   credentialHostsMatch,
   validateDatasetPage,
   withoutCredentialHosts,
@@ -196,6 +197,12 @@ async function withRuntime<T>(
   const controller = new AbortController();
   const egressFetch = createEgressFetch({
     ...options.egress,
+    // URLs a user entered (SDK 0.2.21, `<key>[].<item>` configuredHosts,
+    // #874) follow redirects on their own host only, whatever the call
+    // site passed (ADR 0027 §3).
+    ...(configuredUrlsFollowSameHostOnly(connector.manifest)
+      ? { redirects: "same-host" as const }
+      : {}),
     // The manifest's hosts, and the hosts this connection's configuration
     // names under the manifest's configuredHosts (SDK 0.2.20, #873): a
     // self-hosted provider, reachable by this connection only.

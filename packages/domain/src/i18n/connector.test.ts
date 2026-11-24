@@ -209,3 +209,51 @@ describe("dimension names", () => {
     expect(defaultDimensionName("route")).toBe("Route");
   });
 });
+
+describe("localized array item fields (#874)", () => {
+  it("translates the item fields of an array of objects", () => {
+    const base = manifest();
+    const withChecks: TranslatableManifest = {
+      ...base,
+      configSchema: {
+        type: "object",
+        properties: {
+          checks: {
+            type: "array",
+            title: "Checks",
+            items: {
+              type: "object",
+              properties: {
+                url: { type: "string", title: "URL" },
+                name: { type: "string", title: "Name" },
+              },
+            },
+          },
+        },
+      },
+      translations: {
+        de: {
+          config: {
+            checks: {
+              title: "Prüfungen",
+              items: { url: { title: "Adresse" } },
+            },
+          },
+        },
+      },
+    };
+    const checks = (
+      localizedManifest(withChecks, "de").configSchema!.properties as Record<
+        string,
+        {
+          title: string;
+          items: { properties: Record<string, { title: string }> };
+        }
+      >
+    ).checks!;
+    expect(checks.title).toBe("Prüfungen");
+    expect(checks.items.properties.url!.title).toBe("Adresse");
+    expect(checks.items.properties.name!.title).toBe("Name");
+    expect(localizedManifest(withChecks, "en")).toBe(withChecks);
+  });
+});

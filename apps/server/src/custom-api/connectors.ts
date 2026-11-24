@@ -24,6 +24,7 @@ import {
   type CustomApiCredentials,
   type CustomApiPin,
 } from "@netrics/connectors/custom-api";
+import { HTTP_CHECK_CONNECTOR_ID } from "@netrics/connectors";
 import type { ConnectionCustomApi } from "@netrics/database";
 
 export interface ResolvedConnector extends RegisteredConnector {
@@ -115,9 +116,45 @@ export function customApiEgress(
 }
 
 /**
+ * The egress bounds of the HTTP check connector (#874): a check reads at
+ * most 1 MiB of a body (decoded too) and waits at most 10 s per request
+ * (a check's own limit, 1 to 10 s, only lowers it); 20 checks, ten at a
+ * time, stay inside the 60 s call.
+ */
+export const HTTP_CHECK_LIMITS = {
+  responseBytes: 1024 * 1024,
+  requestTimeoutMs: 10_000,
+  callTimeoutMs: 60_000,
+} as const;
+
+/**
+ * The HTTP check egress values, in one place (ADR 0027 §3 applied to
+ * user-entered URLs, #874): same-host redirects (the runtime forces them
+ * for item URLs as well), the HTTP check bounds, and the self-host private
+ * hosts of the custom API (`NETRICS_CUSTOM_API_PRIVATE_HOSTS`): a check
+ * reaches the same private hosts a custom API may, and on the hosted
+ * service, where the list is empty, public addresses only. `base` carries
+ * test-only options (lookup, tlsCa, allowPrivateHosts).
+ */
+export function httpCheckEgress(
+  privateHosts: readonly string[],
+  base?: ExecuteOptions["egress"],
+): Egress {
+  return {
+    ...base,
+    redirects: "same-host",
+    maxResponseBytes: HTTP_CHECK_LIMITS.responseBytes,
+    maxDecompressedBytes: HTTP_CHECK_LIMITS.responseBytes,
+    requestTimeoutMs: HTTP_CHECK_LIMITS.requestTimeoutMs,
+    allowPrivateHosts: [...(base?.allowPrivateHosts ?? []), ...privateHosts],
+  };
+}
+
+/**
  * For custom-api: egress = customApiEgress(privateHosts, base.egress),
- * timeoutMs 60_000, redactValues += customApiSecretValues(...). Bundled:
- * base, never with private hosts.
+ * timeoutMs 60_000, redactValues += customApiSecretValues(...). For
+ * http-check: egress = httpCheckEgress(privateHosts, base.egress), timeoutMs
+ * 60_000. Other bundled connectors: base, never with private hosts.
  */
 export function callOptionsFor(
   resolved: ResolvedConnector,
@@ -128,6 +165,13 @@ export function callOptionsFor(
     config?: Record<string, unknown>;
   },
 ): ExecuteOptions {
+  if (!resolved.customApi && resolved.manifest.id === HTTP_CHECK_CONNECTOR_ID) {
+    return {
+      ...base,
+      egress: httpCheckEgress(input.privateHosts, base.egress),
+      timeoutMs: HTTP_CHECK_LIMITS.callTimeoutMs,
+    };
+  }
   if (!resolved.customApi) {
     if (!base.egress?.allowPrivateHosts) return base;
     const { allowPrivateHosts: _private, ...egress } = base.egress;
