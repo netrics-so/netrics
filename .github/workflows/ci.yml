@@ -246,6 +246,33 @@ jobs:
           echo "web keep-alive timeout: ${timeout:-none} s"
           docker rm -f web-keepalive >/dev/null
           test "${timeout:-0}" -gt 120 || { echo "::error::web server closes idle connections before the proxy does"; exit 1; }
+      # The runtime stage is plain Alpine plus the Node binary. The node base
+      # image's npm, which neither container runs, carried every high-severity
+      # finding in the first image scan (#906). Keep it out.
+      - name: Check images ship no npm
+        run: |
+          for image in netrics-server:ci netrics-web:ci; do
+            docker run --rm --entrypoint node "$image" -e 'console.log(process.version)'
+            if docker run --rm --entrypoint sh "$image" -c 'command -v npm || command -v npx || test -d /usr/local/lib/node_modules'; then
+              echo "::error::$image ships npm"
+              exit 1
+            fi
+          done
+      # Fail on known high and critical vulnerabilities that have a fix: bump
+      # the base digests (Dependabot proposes them) or the dependency. One
+      # architecture is enough; both install the same packages.
+      - name: Scan images for vulnerabilities
+        if: matrix.arch == 'amd64'
+        run: |
+          mkdir -p "$RUNNER_TEMP/trivy"
+          for image in netrics-server:ci netrics-web:ci; do
+            docker run --rm \
+              -v /var/run/docker.sock:/var/run/docker.sock \
+              -v "$RUNNER_TEMP/trivy:/root/.cache" \
+              aquasec/trivy:0.76.2@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb \
+              image --quiet --scanners vuln --ignore-unfixed \
+              --severity HIGH,CRITICAL --exit-code 1 "$image"
+          done
 
   # The supported self-hosted install must keep working end to end: build the
   # images from this commit, run install.sh, start deploy/compose, and complete

@@ -15,7 +15,14 @@ COPY . .
 RUN pnpm install --frozen-lockfile
 RUN pnpm --filter @netrics/web... build
 
-FROM node:26-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS runner
+# Runtime: plain Alpine plus the Node binary, without npm (#906). Same pair of
+# base digests and reasons as apps/server/Dockerfile; keep them in step.
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS runner
+RUN apk upgrade --no-cache \
+ && apk add --no-cache libstdc++ libgcc libatomic \
+ && addgroup -g 1000 node \
+ && adduser -u 1000 -G node -s /bin/sh -D node
+COPY --from=base /usr/local/bin/node /usr/local/bin/node
 # NETRICS_API_URL (where the web server reaches the API) is read at request
 # time; set it per deployment, e.g. http://api:3001 in Compose. Nothing about
 # the API location is baked into the image.

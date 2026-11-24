@@ -26,7 +26,21 @@ RUN cd /prod/server \
       -o -name docs -o -name bench -o -name benchmark -o -name benchmarks \) \
       -path '*/node_modules/*' -prune -exec rm -rf {} +
 
-FROM node:26-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS runner
+# Runtime: plain Alpine plus the Node binary, nothing else. The node image
+# also ships npm and its bundled dependencies, which this container never runs
+# and which carried every high-severity finding in the image scan (#906).
+# Node bundles its own OpenSSL and zlib and links only musl, libstdc++, libgcc
+# and libatomic. Keep this Alpine release the one the node image above is
+# built on (/etc/alpine-release in it) when bumping either digest; the web
+# Dockerfile uses the same pair.
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS runner
+# apk upgrade ships fixed Alpine packages (OpenSSL, zlib for apk and busybox)
+# without waiting for a new base digest; CI fails on fixable high findings.
+RUN apk upgrade --no-cache \
+ && apk add --no-cache libstdc++ libgcc libatomic \
+ && addgroup -g 1000 node \
+ && adduser -u 1000 -G node -s /bin/sh -D node
+COPY --from=base /usr/local/bin/node /usr/local/bin/node
 ARG APP_VERSION=0.0.0-dev
 ARG GIT_SHA=dev
 ENV NODE_ENV=production \

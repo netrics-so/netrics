@@ -406,7 +406,9 @@ Single App Mode, power, mounting), follow
 
 ## Docker
 
-Production images (multi-stage, `node:26-alpine`, no dev dependencies):
+Production images (multi-stage: built on `node:26-alpine`, run on plain
+`alpine` with only the Node binary; no npm, no dev dependencies, scanned
+for known vulnerabilities in CI):
 
 ```sh
 docker build -f apps/server/Dockerfile -t netrics-server .
