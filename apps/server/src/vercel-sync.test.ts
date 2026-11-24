@@ -8,6 +8,7 @@ import type {
   SyncRequest,
   SyncResult,
 } from "@netrics/connector-sdk";
+import { RateLimitedError } from "@netrics/connector-sdk";
 import { createVercelConnector, vercelManifest } from "@netrics/connectors";
 import {
   createDatabase,
@@ -196,12 +197,14 @@ function fakeVercel(projects: Project[], skus = 2): ConnectorRuntime {
 }
 
 /** The connector, reading Vercel through the offline stand-in. */
-function vercelWith(projects: Project[], skus?: number): Connector {
-  const connector = createVercelConnector({
-    now: () => Date.parse(NOW),
-    sleep: async () => {},
-  });
-  const runtime = fakeVercel(projects, skus);
+function vercelWith(
+  projects: Project[],
+  skus?: number,
+  wrap: (runtime: ConnectorRuntime) => ConnectorRuntime = (runtime) => runtime,
+  now: () => number = () => Date.parse(NOW),
+): Connector {
+  const connector = createVercelConnector({ now, sleep: async () => {} });
+  const runtime = wrap(fakeVercel(projects, skus));
   return {
     ...connector,
     sync: (ctx, request) => connector.sync(ctx, request, runtime),
@@ -322,6 +325,127 @@ describe("Vercel syncs through the host's validation (#871)", () => {
       expect((result.datasetPages ?? []).length).toBeLessThanOrEqual(20);
     }
     expectChains(results);
+  });
+});
+
+// The follow-ups of #894 through the host's validation.
+describe("Vercel follow-ups through the host's validation (#894)", () => {
+  const request: SyncRequest = {
+    mode: "incremental",
+    from: "2024-12-29T00:00:00.000Z",
+    to: NOW,
+  };
+  const context: ConnectionContext = {
+    connectionId: "vercel-host-test",
+    config: {},
+    credentials: { token: TOKEN },
+  };
+
+  it("publishes the month's cost once, every day, adding up to the rounded month", async () => {
+    const results = await syncThroughHost(
+      vercelWith([
+        { id: "prj_site", analytics: true, deployments: 2 },
+        { id: "prj_api", analytics: false, deployments: 2 },
+      ]),
+      request,
+    );
+    const withCost = results.filter((result) =>
+      result.observations.some((o) => o.metricKey === "vercel.cost"),
+    );
+    // One result carries the whole month, after every day was read.
+    expect(withCost).toHaveLength(1);
+    const cost = withCost[0]!.observations.filter(
+      (o) => o.metricKey === "vercel.cost",
+    );
+    for (const project of ["prj_site", "prj_api"]) {
+      const own = cost.filter((o) => o.dimensions.resource === project);
+      expect(own).toHaveLength(31);
+      // Two SKUs of 0.50 USD on the 1st: 100 cents, zero after.
+      expect(own.reduce((total, o) => total + o.value, 0)).toBe(100);
+      expect(own[0]).toMatchObject({
+        sourceTimestamp: "2024-12-01T00:00:00.000Z",
+        value: 100,
+      });
+    }
+  });
+
+  it("a rate limit that ended a page holds for the next page", async () => {
+    let deployments = 0;
+    const limited = (runtime: ConnectorRuntime): ConnectorRuntime => ({
+      ...runtime,
+      fetch: async (raw, init) => {
+        const url = new URL(raw);
+        if (url.pathname === "/v7/deployments" && (deployments += 1) === 3) {
+          return {
+            ...answer(429, { error: { code: "rate_limited" } }),
+            headers: { "retry-after": "3600" },
+          };
+        }
+        return runtime.fetch(raw, init);
+      },
+    });
+    const vercel = vercelWith(
+      [{ id: "prj_site", analytics: false, deployments: 2 }],
+      1,
+      limited,
+    );
+    const first = await executeSync(vercel, context, request);
+    expect(first.done).toBe(false);
+    const asked = deployments;
+    const error = await executeSync(vercel, context, {
+      ...request,
+      cursor: first.nextCursor!,
+    }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(RateLimitedError);
+    expect((error as RateLimitedError).retryAt).toBe(
+      new Date(Date.parse(NOW) + 3600 * 1000).toISOString(),
+    );
+    expect(deployments).toBe(asked);
+    // After the reset the run continues and completes.
+    const later = vercelWith(
+      [{ id: "prj_site", analytics: false, deployments: 2 }],
+      1,
+      undefined,
+      () => Date.parse(NOW) + 3601 * 1000,
+    );
+    const rest = await syncThroughHost(later, request, first.nextCursor);
+    expect(rest.at(-1)!.done).toBe(true);
+  });
+
+  it("an analytics answer of JSON null is repeated, not taken as no data", async () => {
+    let nulled = false;
+    let visits = 0;
+    const nulling = (runtime: ConnectorRuntime): ConnectorRuntime => ({
+      ...runtime,
+      fetch: async (raw, init) => {
+        const url = new URL(raw);
+        if (url.pathname === "/v1/query/web-analytics/visits/aggregate") {
+          if (url.searchParams.getAll("by").join() === "day") visits += 1;
+          if (!nulled) {
+            nulled = true;
+            return answer(200, "null");
+          }
+        }
+        return runtime.fetch(raw, init);
+      },
+    });
+    const results = await syncThroughHost(
+      vercelWith(
+        [{ id: "prj_site", analytics: true, deployments: 2 }],
+        1,
+        nulling,
+      ),
+      request,
+    );
+    expect(visits).toBe(2);
+    const pageviews = results
+      .flatMap((result) => result.observations)
+      .filter((o) => o.metricKey === "vercel.pageviews");
+    expect(pageviews).toHaveLength(3);
+    expect(results.at(-1)!.freshness).toContainEqual({
+      stream: "web_analytics",
+      resource: "prj_site",
+    });
   });
 });
 

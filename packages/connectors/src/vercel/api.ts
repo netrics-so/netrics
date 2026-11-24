@@ -96,12 +96,36 @@ export function parseAnswer<T>(
   return parsed.data;
 }
 
+/**
+ * The time a call had for Vercel ran out before a request could be made
+ * (#894, #901): the page ends with what it read, or the host retries it.
+ */
+export class VercelTimeoutError extends Error {
+  constructor() {
+    super("Vercel did not answer in time. netrics tries again later.");
+    this.name = "VercelTimeoutError";
+  }
+}
+
 export type Query = Record<string, string | string[] | undefined>;
+
+/** The longest one request to Vercel may take (the host allows 60 s). */
+export const REQUEST_TIMEOUT_MS = 20_000;
 
 export interface ClientOptions {
   /** Waits between retries; replaced in tests. */
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
   now?: () => number;
+}
+
+export interface CallOptions {
+  /**
+   * When every request and wait of this call has to be over (ms since the
+   * epoch): each request is bounded to it, and a wait that would end after
+   * it is not made (#901 item 1). The host's own deadline for the call is
+   * later, so the connector still returns its checkpoint.
+   */
+  deadline?: number;
 }
 
 function buildUrl(path: string, query: Query): string {
@@ -169,19 +193,23 @@ function rateLimited(message: string, resetAt: number): RateLimitedError {
 export function createVercelClient(
   runtime: ConnectorRuntime,
   token: string,
-  options: ClientOptions = {},
+  options: ClientOptions & CallOptions = {},
 ) {
   const sleep = options.sleep ?? abortableSleep;
   const now = options.now ?? Date.now;
+  const deadline = options.deadline ?? Number.POSITIVE_INFINITY;
   /** The window as Vercel last reported it. */
   let window: { remaining: number; resetAt: number } | null = null;
+
+  /** A wait of `ms` from now would end after the call's deadline. */
+  const pastDeadline = (ms: number) => now() + ms >= deadline;
 
   /** Stops before the window runs out: waits for a near reset, else defers. */
   async function pace(): Promise<void> {
     if (!window || window.remaining >= MIN_REMAINING_REQUESTS) return;
     const { remaining, resetAt } = window;
     const wait = resetAt - now();
-    if (wait > MAX_RATE_LIMIT_WAIT_MS) {
+    if (wait > MAX_RATE_LIMIT_WAIT_MS || (wait > 0 && pastDeadline(wait))) {
       throw rateLimited(
         `Vercel's API rate limit is nearly used up (${remaining} requests left). netrics continues after the reset.`,
         resetAt,
@@ -203,11 +231,16 @@ export function createVercelClient(
     const url = buildUrl(path, query);
     for (let attempt = 1; ; attempt += 1) {
       await pace();
+      // A stalled request ends in time for the page to return its
+      // checkpoint (#901 item 1).
+      const left = deadline - now();
+      if (left <= 0) throw new VercelTimeoutError();
       const response = await runtime.fetch(url, {
         headers: {
           authorization: `Bearer ${token}`,
           accept: "application/json",
         },
+        timeoutMs: Math.ceil(Math.min(REQUEST_TIMEOUT_MS, left)),
       });
       const remaining = Number(response.headers["x-ratelimit-remaining"]);
       const resetAt = rateLimitReset(
@@ -241,7 +274,9 @@ export function createVercelClient(
         const wait = reset === null ? BASE_BACKOFF_MS : reset - now();
         if (
           reset !== null &&
-          (wait > MAX_RATE_LIMIT_WAIT_MS || attempt >= MAX_ATTEMPTS)
+          (wait > MAX_RATE_LIMIT_WAIT_MS ||
+            attempt >= MAX_ATTEMPTS ||
+            pastDeadline(wait))
         ) {
           // The host waits for the reset instead of retrying (#781).
           throw rateLimited(
@@ -249,14 +284,16 @@ export function createVercelClient(
             reset,
           );
         }
-        if (attempt >= MAX_ATTEMPTS) throw error;
+        if (attempt >= MAX_ATTEMPTS || pastDeadline(wait)) throw error;
         window = null;
         await sleep(wait, runtime.signal);
         continue;
       }
       if (attempt >= MAX_ATTEMPTS) throw error;
       if (response.status >= 500) {
-        await sleep(BASE_BACKOFF_MS * 2 ** (attempt - 1), runtime.signal);
+        const backoff = BASE_BACKOFF_MS * 2 ** (attempt - 1);
+        if (pastDeadline(backoff)) throw error;
+        await sleep(backoff, runtime.signal);
         continue;
       }
       throw error;

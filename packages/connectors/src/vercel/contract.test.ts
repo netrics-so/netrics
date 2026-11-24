@@ -1562,6 +1562,364 @@ describe("vercel review round 2 (#889)", () => {
   });
 });
 
+describe("vercel follow-ups (#894)", () => {
+  const PREFIX = "vercel.v1:";
+  const decode = (cursor: string) =>
+    JSON.parse(
+      Buffer.from(cursor.slice(PREFIX.length), "base64url").toString("utf8"),
+    ) as Record<string, unknown>;
+  const encode = (state: Record<string, unknown>) =>
+    PREFIX + Buffer.from(JSON.stringify(state)).toString("base64url");
+  const costOf = (observations: Observation[], resource: string) =>
+    observations.filter(
+      (o) =>
+        o.metricKey === "vercel.cost" && o.dimensions.resource === resource,
+    );
+  const sum = (observations: Observation[]) =>
+    observations.reduce((total, o) => total + o.value, 0);
+
+  it("1: a cost series the export no longer has drops to zero on every day", async () => {
+    const one = await syncAll(fake().runtime, RECENT);
+    expect(sum(costOf(one.observations, "prj_beta"))).toBe(31 * 25);
+    const two = await syncAll(fake({ unbilled: ["prj_beta"] }).runtime, {
+      ...RECENT,
+      cursor: one.pages.at(-1)!.nextCursor,
+    });
+    const beta = costOf(two.observations, "prj_beta");
+    expect(beta).toHaveLength(31);
+    expect(beta.every((o) => o.value === 0)).toBe(true);
+    // A done cursor from before #894 (no cost series) still resumes.
+    const legacy = decode(one.pages.at(-1)!.nextCursor!);
+    delete legacy.cost;
+    const three = await syncAll(fake({ unbilled: ["prj_beta"] }).runtime, {
+      ...RECENT,
+      cursor: encode(legacy),
+    });
+    expect(three.pages.at(-1)!.done).toBe(true);
+    expect(sum(costOf(three.observations, "prj_alpha"))).toBe(31 * 25);
+  });
+
+  it("1 (review): a series of a team not read this run is not zeroed, and is kept", async () => {
+    const other: FakeProject = {
+      id: "prj_delta",
+      name: "delta-site",
+      accountId: "team_other",
+      analytics: false,
+    };
+    const one = await syncAll(
+      fake({ projects: [...FAKE_PROJECTS, other] }).runtime,
+      RECENT,
+    );
+    expect(sum(costOf(one.observations, "prj_delta"))).toBe(31 * 25);
+    // team_other's projects are no longer listed: its charges are not read.
+    const two = await syncAll(fake().runtime, {
+      ...RECENT,
+      cursor: one.pages.at(-1)!.nextCursor,
+    });
+    expect(costOf(two.observations, "prj_delta")).toEqual([]);
+    expect(costOf(two.observations, "team_other")).toEqual([]);
+    const kept = decode(two.pages.at(-1)!.nextCursor!).cost as {
+      series: string[][];
+    };
+    expect(kept.series).toContainEqual(["prj_delta", "team_other", "USD"]);
+    expect(kept.series).toContainEqual(["prj_alpha", "team_fixture", "USD"]);
+  });
+
+  it("2: a refused day publishes no cost at all, and the snapshot stays", async () => {
+    const { pages, observations } = await syncAll(
+      fake({
+        failAfter: { after: 5, status: 402, path: "/v1/billing/charges" },
+      }).runtime,
+      RECENT,
+    );
+    expect(observations.filter((o) => o.metricKey === "vercel.cost")).toEqual(
+      [],
+    );
+    expect(pages.at(-1)!.receivedDatasets).not.toContain("billing_charges");
+    expect(freshnessEntry(pages.at(-1)!, BILLING_STREAM)).toBeUndefined();
+  });
+
+  it("2: a run begun before #894 reads its billing again and publishes the month whole", async () => {
+    const api = fake();
+    const pages: SyncResult[] = [];
+    let cursor: string | undefined;
+    // Run until billing is under way, then strip the new state.
+    for (;;) {
+      const page = await connector().sync(
+        context(),
+        { ...RECENT, ...(cursor ? { cursor } : {}) },
+        api.runtime,
+      );
+      pages.push(page);
+      cursor = page.nextCursor;
+      const state = decode(cursor!);
+      if (state.billing && (state.billing as { day: number }).day > 0) {
+        if (
+          (state.billing as { day: number }).day >
+          Date.parse("2024-12-05T00:00:00.000Z")
+        ) {
+          delete state.costs;
+          cursor = encode(state);
+          break;
+        }
+      }
+    }
+    const rest = await syncAll(api.runtime, { ...RECENT, cursor });
+    const alpha = costOf(rest.observations, "prj_alpha");
+    expect(alpha).toHaveLength(31);
+    expect(sum(alpha)).toBe(31 * 25);
+  });
+
+  it("2 (review): a run whose billing was staged before #894 reads it again in a new refresh", async () => {
+    const api = fake();
+    let cursor: string | undefined;
+    const before: SyncResult[] = [];
+    for (;;) {
+      const page = await connector().sync(
+        context(),
+        { ...RECENT, ...(cursor ? { cursor } : {}) },
+        api.runtime,
+      );
+      before.push(page);
+      cursor = page.nextCursor;
+      const state = decode(cursor!);
+      if (state.billingDone) {
+        // The checkpoint as a run begun before #894 left it.
+        delete state.costs;
+        delete state.costSeries;
+        cursor = encode(state);
+        break;
+      }
+    }
+    const staged = before
+      .flatMap((page) => page.datasetPages ?? [])
+      .filter((page) => page.datasetKey === "billing_charges");
+    expect(staged.length).toBeGreaterThan(0);
+    const rest = await syncAll(api.runtime, { ...RECENT, cursor });
+    const alpha = costOf(rest.observations, "prj_alpha");
+    expect(alpha).toHaveLength(31);
+    expect(sum(alpha)).toBe(31 * 25);
+    const billing = rest.datasetPages.filter(
+      (page) => page.datasetKey === "billing_charges",
+    );
+    // One new refresh, chained from its start and completed, with every row.
+    const refreshes = new Set(billing.map((page) => page.refreshKey));
+    expect(refreshes.size).toBe(1);
+    expect(refreshes.has(staged[0]!.refreshKey)).toBe(false);
+    expect(billing[0]!.previousPageKey).toBeNull();
+    expect(billing.at(-1)!.complete).toBe(true);
+    expect(rows(billing, "billing_charges")).toHaveLength(
+      rows(staged, "billing_charges").length,
+    );
+    expect(rest.pages.at(-1)!.receivedDatasets).toContain("billing_charges");
+  });
+
+  it("3: a rate limit that ended a page holds for the next page's first request", async () => {
+    const api = fake({
+      failAfter: {
+        after: 2,
+        status: 429,
+        path: "/v7/deployments",
+        headers: { "retry-after": "3600" },
+      },
+    });
+    const first = await connector().sync(context(), RECENT, api.runtime);
+    expect(first.done).toBe(false);
+    const asked = api.requests.length;
+    const error = await connector()
+      .sync(context(), { ...RECENT, cursor: first.nextCursor }, api.runtime)
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(RateLimitedError);
+    expect((error as RateLimitedError).retryAt).toBe(
+      new Date(clock() + 3600 * 1000).toISOString(),
+    );
+    expect(api.requests.length).toBe(asked);
+    // After the reset the page goes on where the last one stopped.
+    const later = () => clock() + 3601 * 1000;
+    const next = await connector(later).sync(
+      context(),
+      { ...RECENT, cursor: first.nextCursor },
+      api.runtime,
+    );
+    expectHostAccepts(next);
+    expect(api.requests.length).toBeGreaterThan(asked);
+  });
+
+  it("4: a rolling release is not the promoted build production is compared with", async () => {
+    const project = { ...FAKE_PROJECTS[0]!, deployments: 20 };
+    for (const substate of ["ROLLING", "STAGED"]) {
+      const { datasetPages } = await syncAll(
+        fake({
+          projects: [project],
+          states: { dpl_prj_alpha_0: "READY" },
+          substates: { dpl_prj_alpha_0: substate },
+          live: { prj_alpha: "dpl_prj_alpha_6" },
+        }).runtime,
+        RECENT,
+      );
+      expect(rows(datasetPages, "production_deployments")[0]).toMatchObject({
+        state: "up",
+        rolled_back: false,
+        live_deployment_id: "dpl_prj_alpha_6",
+      });
+    }
+  });
+
+  it("5: daily cents add up to the month's rounded total", async () => {
+    const { observations } = await syncAll(
+      fake({ usageCost: 0.004 }).runtime,
+      RECENT,
+    );
+    const alpha = costOf(observations, "prj_alpha");
+    expect(alpha).toHaveLength(31);
+    expect(alpha.every((o) => Number.isInteger(o.value))).toBe(true);
+    // 31 × 0.4 cents = 12.4 cents: 12, not 31 × round(0.4) = 0.
+    expect(sum(alpha)).toBe(12);
+  });
+
+  it("5 (review): cost is summed exactly before rounding: $1.20 + $0.055 is 126 cents", async () => {
+    const day = "2024-12-01";
+    const { observations } = await syncAll(
+      createFakeVercel({ today: day, usageCost: 1.2, extraCost: 0.055 })
+        .runtime,
+      {
+        mode: "incremental",
+        from: `${day}T00:00:00.000Z`,
+        to: `${day}T13:00:00.000Z`,
+      },
+      context(),
+      () => Date.parse(`${day}T13:00:00.000Z`),
+    );
+    expect(costOf(observations, "prj_alpha")).toEqual([
+      expect.objectContaining({
+        sourceTimestamp: `${day}T00:00:00.000Z`,
+        value: 126,
+      }),
+    ]);
+  });
+
+  it("6: deployments are reported per project by every run or by none", async () => {
+    // 1,000 projects with Web Analytics: per-project deployment entries
+    // would not fit with theirs. A run whose analytics of two projects are
+    // gone still reports deployments for the connection only.
+    const projects = Array.from({ length: 1_000 }, (_, index) => ({
+      ...FAKE_PROJECTS[0]!,
+      id: `prj_${String(index).padStart(4, "0")}`,
+      deployments: 0,
+    }));
+    const { pages } = await syncAll(
+      fake({ projects, analyticsGone: ["prj_0001", "prj_0002"] }).runtime,
+      { ...RECENT, from: "2024-12-31T00:00:00.000Z" },
+    );
+    const done = pages.at(-1)!;
+    expect(freshnessEntry(done, DEPLOYS_STREAM)).toBeDefined();
+    expect(
+      (done.freshness ?? []).filter(
+        (entry) => entry.stream === DEPLOYS_STREAM && entry.resource,
+      ),
+    ).toEqual([]);
+    expect(
+      (done.freshness ?? []).filter(
+        (entry) => entry.stream === ANALYTICS_STREAM,
+      ),
+    ).toHaveLength(998);
+  }, 120_000);
+
+  it("7: an analytics answer of JSON null is invalid, not 'no retained days'", async () => {
+    const api = fake();
+    let nulled = 0;
+    const runtime: ConnectorRuntime = {
+      ...api.runtime,
+      fetch: async (raw, init) => {
+        const url = new URL(raw);
+        if (
+          nulled === 0 &&
+          url.pathname === "/v1/query/web-analytics/visits/aggregate" &&
+          url.searchParams.getAll("by").join() === "day"
+        ) {
+          nulled += 1;
+          api.requests.push({ url, init });
+          return reply(200, "null");
+        }
+        return api.runtime.fetch(raw, init);
+      },
+    };
+    const { observations } = await syncAll(runtime, RECENT);
+    const visits = api.requests.filter(
+      ({ url }) =>
+        url.pathname === "/v1/query/web-analytics/visits/aggregate" &&
+        url.searchParams.getAll("by").join() === "day" &&
+        url.searchParams.get("projectId") === "prj_alpha",
+    );
+    // The null answer failed its step, which the next page repeated.
+    expect(visits).toHaveLength(2);
+    expect(
+      observations.filter(
+        (o) =>
+          o.metricKey === "vercel.pageviews" &&
+          o.dimensions.resource === "prj_alpha",
+      ),
+    ).toHaveLength(3);
+  });
+});
+
+describe("vercel pages end before the host's deadline (#901 item 1)", () => {
+  /** A clock the fake advances: a second per answer, plus every wait. */
+  function timed(stallAt: number | null, limitedAt: number | null = null) {
+    const api = fake();
+    let t = clock();
+    let count = 0;
+    const runtime: ConnectorRuntime = {
+      ...api.runtime,
+      fetch: async (raw, init) => {
+        count += 1;
+        if (count === stallAt) {
+          // Vercel never answers: the request ends at its time limit.
+          t += init?.timeoutMs ?? 60_000;
+          throw Object.assign(new Error("egress timeout"), {
+            name: "EgressTimeoutError",
+          });
+        }
+        t += 1_000;
+        if (count === limitedAt) {
+          return {
+            ...reply(429, { error: { code: "rate_limited" } }),
+            headers: { "retry-after": "30" },
+          };
+        }
+        return api.runtime.fetch(raw, init);
+      },
+    };
+    const vercel = createVercelConnector({
+      now: () => t,
+      sleep: async (ms) => {
+        t += ms;
+      },
+    });
+    return { runtime, vercel, elapsed: () => t - clock() };
+  }
+
+  it("a request that stalls late in a page ends in time to return the checkpoint", async () => {
+    const { runtime, vercel, elapsed } = timed(19);
+    const page = await vercel.sync(context(), RECENT, runtime);
+    expect(page.done).toBe(false);
+    expectHostAccepts(page);
+    expect(elapsed()).toBeLessThanOrEqual(45_000);
+  });
+
+  it("a rate-limit wait that would pass the deadline ends the page with its reset", async () => {
+    // At 19 s Vercel asks for 30 s; then a request stalls.
+    const { runtime, vercel, elapsed } = timed(20, 19);
+    const page = await vercel.sync(context(), RECENT, runtime);
+    expect(page.done).toBe(false);
+    expect(elapsed()).toBeLessThanOrEqual(45_000);
+    const error = await vercel
+      .sync(context(), { ...RECENT, cursor: page.nextCursor }, runtime)
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(RateLimitedError);
+  });
+});
+
 describe("vercel production state", () => {
   it("is building, up, failed or down", () => {
     // (newest production build's state, the production target's state)

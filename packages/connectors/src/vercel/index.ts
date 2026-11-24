@@ -17,6 +17,7 @@ import type {
 import {
   VercelApiError,
   createVercelClient,
+  type CallOptions,
   type ClientOptions,
 } from "./api.js";
 import {
@@ -37,6 +38,7 @@ import {
   BILLING_STREAM,
   DEPLOYS_STREAM,
   METRICS,
+  PAGE_DEADLINE_MS,
   TOP_LIMIT,
   emptyRun,
   syncPage,
@@ -358,12 +360,16 @@ export function createVercelConnector(
 ): Connector {
   const now = options.now ?? Date.now;
 
-  function client(context: ConnectionContext, runtime: ConnectorRuntime) {
+  function client(
+    context: ConnectionContext,
+    runtime: ConnectorRuntime,
+    call: CallOptions = {},
+  ) {
     const token = tokenOf(context);
     if (!token) {
       throw new Error("Vercel connection has no access token");
     }
-    return createVercelClient(runtime, token, options);
+    return createVercelClient(runtime, token, { ...options, ...call });
   }
 
   return {
@@ -449,10 +455,16 @@ export function createVercelConnector(
       // read, and nothing is reported as checked.
       const empty = emptyRun(request);
       if (empty) return empty;
-      return syncPage(client(context, runtime), context, request, {
-        now,
-        log: runtime.log,
-      });
+      // Every request and wait of the page ends by its deadline, well
+      // before the host's, so a stalled request still returns the
+      // checkpoint (#901 item 1).
+      const deadline = now() + PAGE_DEADLINE_MS;
+      return syncPage(
+        client(context, runtime, { deadline }),
+        context,
+        request,
+        { now, log: runtime.log },
+      );
     },
   };
 }

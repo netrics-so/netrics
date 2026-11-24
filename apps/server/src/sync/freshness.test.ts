@@ -371,6 +371,37 @@ describe("a succeeded run", () => {
     ]);
   });
 
+  it("retires a continuous stream's resource rows its connection entry supersedes (#894)", async () => {
+    const id = await createConnection("freshness-fixture");
+    reply = {
+      freshness: [
+        sales("2026-11-14", undefined, { resource: "site-1" }),
+        { stream: "reviews" },
+        { stream: "reviews", resource: "site-1" },
+        { stream: "reviews", resource: "site-2" },
+      ],
+    };
+    await sync(id);
+    clockMs = START + HOUR;
+    // The connection entry, and one resource still reported.
+    reply = {
+      freshness: [
+        { stream: "reviews" },
+        { stream: "reviews", resource: "site-2" },
+      ],
+    };
+    await sync(id);
+    const stored = await rows(id);
+    expect(
+      stored.map((row) => [row.stream, row.resource, row.checked_at]),
+    ).toEqual([
+      ["reviews", "", new Date(START + HOUR)],
+      ["reviews", "site-2", new Date(START + HOUR)],
+      // A periodic row stays (a partial run).
+      ["sales", "site-1", new Date(START)],
+    ]);
+  });
+
   it("schedules from selected resources only", async () => {
     const id = await createConnection("freshness-fixture");
     await admin`

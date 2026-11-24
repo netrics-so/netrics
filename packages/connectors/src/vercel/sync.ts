@@ -35,6 +35,7 @@ import { createHash } from "node:crypto";
 import {
   DATASET_LIMITS,
   FRESHNESS_LIMITS,
+  RateLimitedError,
   type ConnectionContext,
   type ConnectorLogger,
   type DatasetPage,
@@ -93,6 +94,13 @@ export const DEPLOYMENTS_BACKFILL_DAYS = 90;
 export const MAX_REQUESTS_PER_PAGE = 20;
 /** No step starts after this much of a page has passed. */
 export const PAGE_TIME_BUDGET_MS = 20_000;
+/**
+ * Every request and wait of a page is over by this much after it started
+ * (#901 item 1): a step begun just inside PAGE_TIME_BUDGET_MS whose request
+ * stalls still ends in time for the page to return its checkpoint before
+ * the host's 60-second deadline for the call.
+ */
+export const PAGE_DEADLINE_MS = 45_000;
 /** Deployments per listing request (Vercel's maximum is 100). */
 export const DEPLOYMENTS_PER_REQUEST = 100;
 /** Top routes, countries and events kept per calendar month; the rest is "Others". */
@@ -157,6 +165,13 @@ function isResponseTooLarge(error: unknown): boolean {
 
 /** Targets every day has a count for, zero included. */
 const COUNTED_TARGETS = ["production", "preview"];
+
+/**
+ * READY substates of builds that were not promoted to serve all of
+ * production: a staged one never served, a rolling release is still being
+ * rolled out (#894).
+ */
+const NOT_PROMOTED = new Set(["STAGED", "ROLLING"]);
 
 /**
  * Billing answers that mean "this token or plan may not read charges":
@@ -252,6 +267,35 @@ interface ProjectProgress {
 /** [id, name, account id, Web Analytics enabled (1) or not (0)]. */
 type ProjectEntry = [string, string, string, 0 | 1];
 
+/** A `vercel.cost` series: [resource, team, currency]. */
+type CostKey = [string, string, string];
+
+/**
+ * A cost series of this month being read: its key, and the effective cost
+ * of each day read so far, in millionths of the billing currency's unit
+ * (integers, summed exactly), by day of the month (0: the 1st).
+ */
+type CostSeries = [string, string, string, number[]];
+
+/** Cost is summed in millionths of a currency unit, as integers (#894). */
+const MICROS = 1_000_000;
+
+/**
+ * An amount in millionths of its unit. Vercel's FOCUS export sends plain
+ * decimals; up to six fraction digits this is exact (the product is
+ * within half a unit of the integer it stands for).
+ */
+function micros(amount: number): number {
+  return Math.round(amount * MICROS);
+}
+
+/** Millionths of a unit to minor units, half away from zero. */
+function minorOf(total: number, currency: string): number {
+  const units = (total * minorUnits(currency)) / MICROS;
+  const rounded = Math.sign(units) * Math.round(Math.abs(units));
+  return rounded === 0 ? 0 : rounded;
+}
+
 /** One charge row being summed: its values, and the running sums. */
 interface ChargeSum {
   values: Record<string, unknown>;
@@ -301,6 +345,29 @@ interface RunState {
   billingPartial?: boolean;
   /** Every team and day was read; the rows are in `queue`. */
   billingDone?: boolean;
+  /**
+   * The month's daily cost per series, published only once every team and
+   * day was read (#894). Absent in a run begun before #894: its billing is
+   * read again from the start.
+   */
+  costs?: CostSeries[];
+  /**
+   * The series the previous run published for this month: a series this
+   * run no longer finds is written as zero (#894, ADR 0008).
+   */
+  costPrior?: CostKey[];
+  /** The series this run published, for the next run. */
+  costSeries?: CostKey[];
+  /**
+   * The billing dataset's refresh, when it is not the run's: a run begun
+   * before #894 reads its billing again in a refresh of its own (#894).
+   */
+  billingRefresh?: string;
+  /**
+   * Vercel's rate-limit reset, when a step after others was rate-limited:
+   * the next page waits for it before its first request (#894).
+   */
+  retryAt?: number;
   /** Charge rows not yet sent. */
   queue: DatasetRecord[];
   /** Dataset refresh chains: last page key per refresh, page counter. */
@@ -320,6 +387,21 @@ interface DoneState {
   connection: string;
   scope: string;
   remember: Remembered;
+  /**
+   * The `vercel.cost` series published for a month (its start): the next
+   * run of that month writes zero for one it no longer finds (#894).
+   * Absent in a cursor from before #894.
+   */
+  cost?: { month: number; series: CostKey[] };
+}
+
+/** The message of a rate limit carried over from the page before. */
+const RATE_LIMIT_CARRIED =
+  "Vercel's API rate limit is used up. netrics continues after the reset.";
+
+/** A cost series's key as a Map key. */
+function costKey([resource, team, currency]: CostKey | CostSeries): string {
+  return JSON.stringify([resource, team, currency]);
 }
 
 const CURSOR_PREFIX = "vercel.v1:";
@@ -403,7 +485,11 @@ function datasetPage(
   records: DatasetRecord[],
   complete: boolean,
 ): DatasetPage {
-  const refreshKey = `${state.refresh}:${datasetKey}`;
+  const refresh =
+    datasetKey === billingChargesDataset.key && state.billingRefresh
+      ? state.billingRefresh
+      : state.refresh;
+  const refreshKey = `${refresh}:${datasetKey}`;
   state.pages += 1;
   const pageKey = `p${String(state.pages).padStart(6, "0")}`;
   const page: DatasetPage = {
@@ -452,6 +538,13 @@ const ANALYTICS_PARTS = [
     top: true,
   },
 ] as const;
+
+/**
+ * The plan keeps none of a month's days: nothing was asked. Distinct from
+ * any answer, so an answer of JSON `null` is validated like every other
+ * (#894) and is an invalid answer.
+ */
+const NO_DAYS: unique symbol = Symbol("no retained days");
 
 /** The charges of a FOCUS JSONL export. Any invalid line is an invalid answer. */
 function parseCharges(text: unknown) {
@@ -584,12 +677,46 @@ export async function syncPage(
           : [],
       remember: [],
       charges: {},
+      costs: [],
+      // The previous run's series of this month, to zero the ones gone.
+      ...(decoded?.kind === "done" &&
+      decoded.cost?.month === startOfUtcMonth(at) &&
+      Array.isArray(decoded.cost.series)
+        ? { costPrior: decoded.cost.series }
+        : {}),
       queue: [],
       last: {},
       pages: 0,
     };
+  } else if (state.costs === undefined) {
+    // A run begun before #894 published the cost of the days it read as it
+    // went: its billing is read again, so the month is published whole.
+    // Charge rows it already sent belong to a refresh that is never
+    // completed: the rows read again go to a new one (#894).
+    state.costs = [];
+    if (state.billingDone) {
+      state.billingRefresh = createHash("sha256")
+        .update(`${state.refresh}|billing-894`)
+        .digest("hex")
+        .slice(0, 32);
+      delete state.billingDone;
+      delete state.finishing;
+      state.queue = [];
+    }
+    delete state.billing;
+    delete state.billingPartial;
+    state.charges = {};
   }
   const run = state;
+
+  // A rate limit that ended the page before: nothing is asked before its
+  // reset (#894). The host waits for it and repeats this page.
+  if (run.retryAt !== undefined) {
+    if (run.retryAt > now()) {
+      throw new RateLimitedError(RATE_LIMIT_CARRIED, new Date(run.retryAt));
+    }
+    delete run.retryAt;
+  }
   const out: PageOutput = {
     observations: [],
     deployments: [],
@@ -685,8 +812,9 @@ export async function syncPage(
 
   /**
    * The newest READY production build that was promoted (a STAGED one never
-   * served traffic): production pointing at an older one was rolled back
-   * (owner decision, 2026-11-24).
+   * served traffic, a ROLLING one is still being rolled out): production
+   * pointing at an older one was rolled back (owner decision, 2026-11-24;
+   * #894).
    */
   async function readyStep(project: ProjectEntry, progress: ProjectProgress) {
     const deployments = await productionList(project, {
@@ -698,7 +826,7 @@ export async function syncPage(
       .filter(
         (deployment) =>
           stateOf(deployment) === "READY" &&
-          deployment.readySubstate !== "STAGED",
+          !NOT_PROMOTED.has(deployment.readySubstate ?? ""),
       )
       .sort((a, b) => b.created - a.created)[0];
     progress.ready = newest ? latestOf(newest) : null;
@@ -965,7 +1093,7 @@ export async function syncPage(
     const monthLastDay = Math.min(startOfNextUtcMonth(month) - DAY_MS, today);
     const query = async (): Promise<unknown> => {
       const since = analyticsSince(accountId, month);
-      if (since === null) return null;
+      if (since === null) return NO_DAYS;
       return ask(part.path, {
         ...ownerQuery(accountId),
         projectId: id,
@@ -1007,7 +1135,7 @@ export async function syncPage(
       const ms = Date.parse(timestamp);
       return ms >= run.startMs && ms < run.toMs;
     };
-    if (body !== null) {
+    if (body !== NO_DAYS) {
       const sourceTimestamp = (timestamp: string) =>
         new Date(timestamp).toISOString();
       if (part.by.length === 1) {
@@ -1062,7 +1190,7 @@ export async function syncPage(
     }
 
     const nextPart = (progress.part ?? 0) + 1;
-    if (body !== null && nextPart < ANALYTICS_PARTS.length) {
+    if (body !== NO_DAYS && nextPart < ANALYTICS_PARTS.length) {
       progress.part = nextPart;
       return;
     }
@@ -1119,12 +1247,13 @@ export async function syncPage(
       });
       run.billingPartial = true;
       run.charges = {};
+      run.costs = [];
       run.billing = { team: run.teams!.length, day: billingFirstDay };
       return;
     }
     const selected = new Set(run.projects.map(([id]) => id));
     const sums: Record<string, ChargeSum> = {};
-    /** The day's effective cost per resource and currency, in minor units. */
+    /** The day's effective cost per resource and currency, in millionths. */
     const daily = new Map<
       string,
       { resource: string; currency: string; cost: number }
@@ -1180,7 +1309,7 @@ export async function syncPage(
         currency: charge.BillingCurrency,
         cost: 0,
       };
-      day.cost += charge.EffectiveCost;
+      day.cost += micros(charge.EffectiveCost);
       daily.set(dailyKey, day);
       sums[key] = {
         values: sum.values,
@@ -1199,24 +1328,89 @@ export async function syncPage(
       });
       run.billingPartial = true;
       run.charges = {};
+      run.costs = [];
       run.billing = { team: run.teams!.length, day: billingFirstDay };
       return;
     }
+    // Kept until every team and day was read (#894): a later refusal
+    // publishes no cost at all.
+    const offset = Math.round((position.day - billingFirstDay) / DAY_MS);
+    const series = new Map(
+      (run.costs ?? []).map((entry) => [costKey(entry), entry] as const),
+    );
     for (const { resource, currency, cost } of daily.values()) {
-      out.observations.push({
-        metricKey: METRICS.cost,
-        sourceTimestamp: iso(position.day),
-        value: Math.round(cost * minorUnits(currency)),
-        dimensions: { resource, team, currency },
-      });
+      const key = costKey([resource, team, currency]);
+      const entry: CostSeries = series.get(key) ?? [
+        resource,
+        team,
+        currency,
+        [],
+      ];
+      while (entry[3].length <= offset) entry[3].push(0);
+      entry[3][offset]! += cost;
+      series.set(key, entry);
     }
+    run.costs = [...series.values()];
     nextBillingDay(position);
+  }
+
+  /**
+   * The month's `vercel.cost`, once every team and day was read (#894): per
+   * series and day, the difference of the rounded month-to-date totals, so
+   * the days add up to the month's rounded total. Every day of the month
+   * so far gets a value, zero included, for every series read now or
+   * published by the previous run: a series that vanished from its team's
+   * export drops to zero (ADR 0008). A previous series of a team not read
+   * this run (its projects no longer listed) is left as stored, and kept
+   * for the next run.
+   */
+  function publishCosts() {
+    const series = new Map(
+      (run.costs ?? []).map((entry) => [costKey(entry), entry] as const),
+    );
+    const read = new Set(run.teams ?? []);
+    const unread: CostKey[] = [];
+    for (const [resource, team, currency] of run.costPrior ?? []) {
+      const key = costKey([resource, team, currency]);
+      if (series.has(key)) continue;
+      if (read.has(team)) {
+        series.set(key, [resource, team, currency, []]);
+      } else {
+        unread.push([resource, team, currency]);
+      }
+    }
+    const days = Math.round((today - billingFirstDay) / DAY_MS) + 1;
+    for (const [resource, team, currency, daily] of series.values()) {
+      let total = 0;
+      let published = 0;
+      for (let offset = 0; offset < days; offset += 1) {
+        total += daily[offset] ?? 0;
+        const rounded = minorOf(total, currency);
+        const value = rounded - published;
+        published = rounded;
+        out.observations.push({
+          metricKey: METRICS.cost,
+          sourceTimestamp: iso(billingFirstDay + offset * DAY_MS),
+          // Never -0.
+          value: value === 0 ? 0 : value,
+          dimensions: { resource, team, currency },
+        });
+      }
+    }
+    run.costSeries = [
+      ...(run.costs ?? []).map(
+        ([resource, team, currency]) => [resource, team, currency] as CostKey,
+      ),
+      ...unread,
+    ];
+    run.costs = [];
   }
 
   /** Every team and day read: the sums become the snapshot's rows. */
   function stageCharges() {
     run.billingDone = true;
     if (run.billingPartial) return;
+    publishCosts();
     const month = isoDay(billingFirstDay);
     for (const sum of Object.values(run.charges)) {
       run.queue.push({
@@ -1301,6 +1495,11 @@ export async function syncPage(
       // waits for a rate limit's reset). A later one ends the page with
       // what it read: the next page starts with the failed step.
       if (steps === 0 || isFatal(error)) throw error;
+      // A rate limit's reset holds for the next page too (#894).
+      if (error instanceof RateLimitedError) {
+        const retryAt = Date.parse(error.retryAt);
+        if (Number.isFinite(retryAt)) run.retryAt = retryAt;
+      }
       log?.warn("step failed, the next page repeats it", {
         error: error instanceof Error ? error.name : "unknown",
       });
@@ -1367,25 +1566,37 @@ export async function syncPage(
 
   const freshness: FreshnessEntry[] = [];
   // Deployments: for the connection when every selected project was read,
-  // and per project read completely. Every per-project entry the
-  // connection entry already covers is left out when the entries would
-  // exceed the bound, so Web Analytics, which has no connection entry,
-  // keeps its per-project entries (review round 2 of #889, ADR 0025 §3).
+  // and per project read completely. A per-project entry wins over the
+  // connection entry (ADR 0025 §3), so the per-project entries are reported
+  // by every run or by none: an entry one run leaves out would keep its
+  // older check and hide the connection entry's newer one (#894). Which
+  // one depends on the listing alone: per project when the entries of
+  // every listed project, its Web Analytics included, fit the bound;
+  // otherwise the connection entry only, so Web Analytics, which has no
+  // connection entry, keeps its per-project entries (review round 2 of
+  // #889). The host then retires the per-project rows stored before: a
+  // continuous stream's connection entry supersedes the ones a result does
+  // not report (ADR 0025 §4).
   const deploysComplete = everySelected(run.deploysDone);
   if (deploysComplete) freshness.push({ stream: DEPLOYS_STREAM });
-  const deployEntries = run.deploysDone.map((id) => ({
-    stream: DEPLOYS_STREAM,
-    resource: id,
-  }));
+  const withAnalytics = run.projects.filter(([, , , on]) => on === 1).length;
+  const perProject =
+    Math.max(listed.length, request.resources?.length ?? 0) +
+      withAnalytics +
+      2 <=
+    FRESHNESS_LIMITS.entries;
+  if (perProject) {
+    freshness.push(
+      ...run.deploysDone.map((id) => ({
+        stream: DEPLOYS_STREAM,
+        resource: id,
+      })),
+    );
+  }
   const analyticsEntries = run.analyticsDone.map((id) => ({
     stream: ANALYTICS_STREAM,
     resource: id,
   }));
-  const spare =
-    FRESHNESS_LIMITS.entries - freshness.length - analyticsEntries.length - 1;
-  if (!deploysComplete || deployEntries.length <= spare) {
-    freshness.push(...deployEntries);
-  }
   // Web Analytics: per project only. A project without it gets no entry,
   // and no connection entry covers it: it never claims data (#871).
   freshness.push(...analyticsEntries);
@@ -1399,6 +1610,9 @@ export async function syncPage(
     return memory ? [[id, memory] as [string, Memory]] : [];
   });
   const resumeAt = iso(run.resumeMs);
+  // The cost series for the next run of this month: the ones published,
+  // or, when charges were not read, the previous run's still.
+  const costSeries = billingComplete ? (run.costSeries ?? []) : run.costPrior;
   return {
     observations: out.observations,
     datasetPages,
@@ -1410,6 +1624,9 @@ export async function syncPage(
       connection: run.connection,
       scope: run.scope,
       remember: carried,
+      ...(costSeries && costSeries.length > 0
+        ? { cost: { month: billingFirstDay, series: costSeries } }
+        : {}),
     }),
     nextFrom: resumeAt,
     done: true,

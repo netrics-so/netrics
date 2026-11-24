@@ -7,6 +7,7 @@ import type {
 import {
   listConnectionFreshness,
   recordConnectionFreshness,
+  retireConnectionFreshness,
   type ConnectionFreshnessRow,
   type Transaction,
 } from "@netrics/database";
@@ -112,6 +113,24 @@ export async function recordFreshness(
         };
       }),
     });
+    // A continuous stream's connection entry covers every resource (ADR
+    // 0025 §3): a per-resource row the same result did not report would
+    // keep an older check and hide the newer one, so it is retired (#894:
+    // Vercel reporting deployments for the connection only). Periodic
+    // rows stay: theirs may carry a later dataThrough.
+    for (const stream of streams) {
+      if (stream.kind !== "continuous") continue;
+      const own = input.entries.filter((entry) => entry.stream === stream.key);
+      if (!own.some((entry) => entry.resource === undefined)) continue;
+      await retireConnectionFreshness(tx, {
+        workspaceId: input.workspaceId,
+        connectionId: input.connectionId,
+        stream: stream.key,
+        keepResources: own.flatMap((entry) =>
+          entry.resource === undefined ? [] : [entry.resource],
+        ),
+      });
+    }
   }
   const rows = relevantFreshnessRows(
     await listConnectionFreshness(tx, input.workspaceId, input.connectionId),
