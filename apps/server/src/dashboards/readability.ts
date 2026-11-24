@@ -1,6 +1,7 @@
 import {
   clockWidgetOptionsSchema,
   statusWidgetOptionsSchema,
+  stateWidgetOptionsSchema,
   countdownWidgetOptionsSchema,
   measureWidgetBindingSchema,
   measureWidgetOptionsSchema,
@@ -346,6 +347,15 @@ export function dashboardFormatWarnings(
       }
       // A latest-items widget's label is its title, as a measure's (#810).
       if (type === "items") return { ...base, label: widget.title };
+      if (type === "state") {
+        // A state list's rows: its limit; "+N more" past them (#875).
+        const options = stateWidgetOptionsSchema.safeParse(widget.options).data;
+        return {
+          ...base,
+          label: widget.title,
+          rows: options?.layout === "list" ? options.limit : null,
+        };
+      }
       if (isDataWidgetType(type) || type === "review") {
         return { ...base, label: inputs.labelOf(widget) };
       }

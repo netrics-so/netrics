@@ -10,6 +10,8 @@ import {
   imageWidgetOptionsSchema,
   itemsWidgetBindingSchema,
   itemsWidgetOptionsSchema,
+  stateWidgetBindingSchema,
+  stateWidgetOptionsSchema,
   lineWidgetOptionsSchema,
   measureWidgetBindingSchema,
   measureWidgetOptionsSchema,
@@ -615,6 +617,8 @@ const optionSchemas: Record<string, z.ZodType> = {
   measure: measureWidgetOptionsSchema,
   // A customer's latest-items widget (#810); templates have none.
   items: itemsWidgetOptionsSchema,
+  // A state widget (#875), as the Developer Portfolio template uses (#876).
+  state: stateWidgetOptionsSchema,
   metric: metricWidgetOptionsSchema,
   line: lineWidgetOptionsSchema,
   bar: barWidgetOptionsSchema,
@@ -669,7 +673,9 @@ function widgetValue(row: Record<string, unknown>): unknown {
           ? withDefaults(measureWidgetBindingSchema, binding)
           : type === "items"
             ? withDefaults(itemsWidgetBindingSchema, binding)
-            : binding,
+            : type === "state"
+              ? withDefaults(stateWidgetBindingSchema, binding)
+              : binding,
     filterExclusions: row.filterExclusions,
     options: withDefaults(optionSchemas[type], row.options),
     connectionId: row.connectionId,
@@ -911,7 +917,7 @@ export function normalizeTemplateDashboard(
               ...input,
               id: `template:${key}`,
               modelBinding:
-                widget.type === "measure"
+                widget.type === "measure" || widget.type === "state"
                   ? widget.binding
                   : (input.measure ?? null),
               denominatorConnectionId: denominator?.connectionId,

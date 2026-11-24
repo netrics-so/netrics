@@ -11,6 +11,7 @@ import type {
   DashboardWidget,
   DashboardWidgetData,
   ItemsWidgetData,
+  StateWidgetData,
 } from "@netrics/contracts";
 import type {
   DashboardDataFilter,
@@ -22,6 +23,8 @@ const Context = createContext<{
   widgets: ReadonlyMap<string, DashboardWidgetData>;
   /** Latest-items widgets' data (#810); absent in older test doubles. */
   items?: ReadonlyMap<string, ItemsWidgetData>;
+  /** State widgets' data (#875); absent in older test doubles. */
+  states?: ReadonlyMap<string, StateWidgetData>;
   loading: boolean;
 } | null>(null);
 export const useDashboardData = () => useContext(Context);
@@ -36,6 +39,55 @@ type ItemsWidget = Extract<DashboardWidget, { type: "items" }>;
 type ItemsQuery = Pick<ItemsWidget, "id" | "binding" | "options"> & {
   scope?: SlideFilterScope;
 };
+
+type StateWidget = Extract<DashboardWidget, { type: "state" }>;
+/** A state widget as queried (#875), with its slide's scope. */
+type StateQuery = Pick<StateWidget, "id" | "binding" | "options"> & {
+  scope?: SlideFilterScope;
+};
+
+/**
+ * The state widgets after a failed load (#875): with `keepLastGood` each
+ * one's last items, else none, with the error.
+ */
+export function failedStates(
+  widgets: readonly Pick<StateWidget, "id" | "binding">[],
+  previous: ReadonlyMap<string, StateWidgetData> | undefined,
+  keepLastGood: boolean,
+): Map<string, StateWidgetData> {
+  return new Map(
+    widgets.map((widget) => {
+      const last = keepLastGood ? previous?.get(widget.id) : undefined;
+      return [
+        widget.id,
+        last && !last.error
+          ? // Kept, but never as current (final review of #875).
+            {
+              ...last,
+              status: last.items.length ? ("stale" as const) : last.status,
+            }
+          : {
+              widgetId: widget.id,
+              status: "no_data",
+              items: [],
+              total: 0,
+              counts: {
+                up: 0,
+                down: 0,
+                failed: 0,
+                building: 0,
+                sleeping: 0,
+                unknown: 0,
+                rolledBack: 0,
+              },
+              sourceValues: [],
+              error: "data_storage_failed",
+              exclusions: widget.binding.exclusions,
+            },
+      ];
+    }),
+  );
+}
 
 /**
  * The latest-items widgets after a failed load (#810): with `keepLastGood`
@@ -179,6 +231,22 @@ export function DashboardDataProvider({
           : [],
       ),
     ),
+    states: slides.flatMap((slide) =>
+      slide.widgets.flatMap((widget): StateQuery[] =>
+        widget.type === "state"
+          ? [
+              {
+                id: widget.id,
+                binding: widget.binding,
+                options: widget.options,
+                ...(slide.scope && Object.keys(slide.scope).length
+                  ? { scope: slide.scope }
+                  : {}),
+              },
+            ]
+          : [],
+      ),
+    ),
     filters,
     values,
   });
@@ -186,23 +254,36 @@ export function DashboardDataProvider({
     key: string;
     widgets: Map<string, DashboardWidgetData>;
     items: Map<string, ItemsWidgetData>;
+    states: Map<string, StateWidgetData>;
     loading: boolean;
-  }>({ key, widgets: new Map(), items: new Map(), loading: true });
+  }>({
+    key,
+    widgets: new Map(),
+    items: new Map(),
+    states: new Map(),
+    loading: true,
+  });
   useEffect(() => {
     let alive = true;
     const input = JSON.parse(key) as {
       widgets: MeasureQuery[];
       items: ItemsQuery[];
+      states: StateQuery[];
       filters: DashboardDataFilter[];
       values: Record<string, DashboardFilterValue>;
     };
     async function refresh() {
-      if (!input.widgets.length && !input.items.length) {
+      if (
+        !input.widgets.length &&
+        !input.items.length &&
+        !input.states.length
+      ) {
         if (alive)
           setState({
             key,
             widgets: new Map(),
             items: new Map(),
+            states: new Map(),
             loading: false,
           });
         return;
@@ -212,9 +293,11 @@ export function DashboardDataProvider({
           key,
           widgets: state.key === key ? state.widgets : new Map(),
           items: state.key === key ? state.items : new Map(),
+          states: state.key === key ? state.states : new Map(),
           loading: true,
         }));
       let items = new Map<string, ItemsWidgetData>();
+      let states = new Map<string, StateWidgetData>();
       const result = await loadDashboardData(
         async () => {
           const response = await previewDashboardMeasures(
@@ -223,15 +306,19 @@ export function DashboardDataProvider({
             input.values,
             input.widgets,
             input.items,
+            input.states,
           );
           items = new Map(response.items.map((data) => [data.widgetId, data]));
+          states = new Map(
+            response.states.map((data) => [data.widgetId, data]),
+          );
           return response;
         },
         (at) => loaded.current?.(at),
       );
       if (!alive) return;
       if (result) {
-        setState({ key, widgets: result, items, loading: false });
+        setState({ key, widgets: result, items, states, loading: false });
       } else {
         setState((state) => ({
           key,
@@ -243,6 +330,11 @@ export function DashboardDataProvider({
           items: failedItems(
             input.items,
             state.key === key ? state.items : undefined,
+            keepLastGood,
+          ),
+          states: failedStates(
+            input.states,
+            state.key === key ? state.states : undefined,
             keepLastGood,
           ),
           loading: false,
@@ -262,7 +354,12 @@ export function DashboardDataProvider({
       value={
         state.key === key
           ? state
-          : { widgets: new Map(), items: new Map(), loading: true }
+          : {
+              widgets: new Map(),
+              items: new Map(),
+              states: new Map(),
+              loading: true,
+            }
       }
     >
       {children}

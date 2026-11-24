@@ -370,6 +370,8 @@ export const DEFAULT_WIDGET_SIZE: Readonly<
   measure: { w: 4, h: 3 },
   // Room for a few items with their images (#810).
   items: { w: 6, h: 4 },
+  // A few rows of a list (#875).
+  state: { w: 4, h: 4 },
 };
 
 /**
@@ -583,7 +585,9 @@ export function documentProblems(
         )
           continue;
         const exclusions =
-          widget.type === "measure" || widget.type === "items"
+          widget.type === "measure" ||
+          widget.type === "items" ||
+          widget.type === "state"
             ? widget.binding.exclusions
             : (widget.filterExclusions ?? []);
         const excluded = exclusions.find(
@@ -592,7 +596,9 @@ export function documentProblems(
         if (
           dataWidgetCost(widget.type) > 0 &&
           ((!excluded &&
-            ((widget.type !== "measure" && widget.type !== "items") ||
+            ((widget.type !== "measure" &&
+              widget.type !== "items" &&
+              widget.type !== "state") ||
               !filter.mappings.some(
                 (mapping) => mapping.modelId === widget.binding.modelId,
               ))) ||
@@ -1077,6 +1083,16 @@ export function createStudioReducer(newId: () => string) {
                       const ids = new Set(
                         action.patch.dataFilters!.map((filter) => filter.id),
                       );
+                      if (widget.type === "state")
+                        return {
+                          ...widget,
+                          binding: {
+                            ...widget.binding,
+                            exclusions: widget.binding.exclusions.filter(
+                              (exclusion) => ids.has(exclusion.filterId),
+                            ),
+                          },
+                        };
                       if (widget.type === "items")
                         return {
                           ...widget,

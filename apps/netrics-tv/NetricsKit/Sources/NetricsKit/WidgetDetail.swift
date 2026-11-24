@@ -79,7 +79,7 @@ public struct WidgetDetail: Sendable, Equatable, Identifiable {
     /** Whether a widget has a detail sheet: the widgets with numbers. */
     public static func available(_ widget: DeviceWidget) -> Bool {
         switch widget.content {
-        case .metric, .line, .bar, .table, .status, .compare, .gauge, .review, .measure, .items: return true
+        case .metric, .line, .bar, .table, .status, .compare, .gauge, .review, .measure, .items, .state: return true
         case .image, .text, .clock, .countdown, .unsupported: return false
         }
     }
@@ -302,6 +302,27 @@ public struct WidgetDetail: Sendable, Equatable, Identifiable {
             return detail(
                 [Row(.value, ItemsText.count(data.items.count, language: language)), freshness], items: items,
                 fallbackTitle: KitStrings.text(.latestItems, language))
+        case .state(_, let data):
+            // Each item's state and the time it changed (#875).
+            let items = data.items.map { item in
+                Item(
+                    label: item.name ?? "—", value: StateBoard.stateText(item, language: language),
+                    lines: StateBoard.changed(item.changedAt, now: now, language: language).map {
+                        [Item.Line(text: $0, warning: false)]
+                    } ?? [])
+            }
+            // Failing means down or failed, over every item (review): building,
+            // sleeping and a rollback are no failure.
+            let attention = data.counts.down + data.counts.failed
+            let summary = data.items.isEmpty
+                ? KitStrings.text(.stateEmpty, language)
+                : [
+                    ItemsText.count(data.total, language: language),
+                    attention > 0 ? KitStrings.text(.statusFailing, language, attention) : nil,
+                ].compactMap { $0 }.joined(separator: " · ")
+            let freshness = data.freshness.map { updated(nil, freshness: $0, status: data.status) }
+            return detail(
+                [Row(.value, summary), freshness], items: items, fallbackTitle: KitStrings.text(.stateLabel, language))
         case .image, .text, .clock, .countdown, .unsupported:
             return nil
         }

@@ -262,7 +262,8 @@ export function registerDeviceRoutes(
               "?schema=2, schema 3 (primary and custom layouts per screen " +
               "format, device rotation and display mode) with ?schema=3, " +
               "each when server info lists it; ?features=items adds " +
-              "latest-items widgets (others get a text in their place); " +
+              "latest-items widgets and ?features=state state widgets " +
+              "(others get a text in their place); " +
               "ETags are per schema and features: send If-None-Match with " +
               "the last ETag to get 304 when nothing changed",
             tags: ["devices"],

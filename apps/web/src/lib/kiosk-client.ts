@@ -868,7 +868,7 @@ export function createKioskClient(options: KioskClientOptions): KioskClient {
       wanted === 1
         ? "/v1/device/dashboard"
         : // What the kiosk draws beyond its schema (#784).
-          `/v1/device/dashboard?schema=${wanted}&features=measure_split,items`,
+          `/v1/device/dashboard?schema=${wanted}&features=measure_split,items,state`,
       {
         headers: {
           authorization: `Bearer ${credentials?.accessToken ?? ""}`,

@@ -2030,6 +2030,7 @@ a.health-badge:hover {
 .sw-bar,
 .sw-table,
 .sw-status,
+.sw-svc,
 .sw-compare,
 .sw-review,
 .sw-items,
@@ -2127,6 +2128,7 @@ a.health-badge:hover {
 .sw-table > .sw-notice,
 .sw-table > .sw-footer,
 .sw-status > .sw-footer,
+.sw-svc > .sw-footer,
 .sw-compare > .sw-notice,
 .sw-review > .sw-review-author,
 .sw-footer {
@@ -2738,6 +2740,94 @@ a.health-badge:hover {
 }
 
 .sw-status-empty {
+  margin-top: calc(var(--u) * 12);
+}
+
+/* State widgets (#875): the status board's rows with an icon of its own
+   shape per state, the state's word and the age of the change; one item
+   at a large size in the single form. The tone (up, down, warning, muted)
+   colours icon and word only: the word and the shape tell the state. */
+.sw-svc-icon {
+  flex: none;
+  fill: none;
+  stroke: var(--sw-dot);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sw-svc-icon circle {
+  fill: color-mix(in srgb, var(--sw-dot) 16%, transparent);
+  stroke-width: 1.6;
+}
+
+.sw-svc-text {
+  flex: none;
+  margin-left: auto;
+  color: var(--sw-dot);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.sw-svc-row.muted .sw-svc-text {
+  color: var(--t-label);
+}
+
+.sw-svc-row .sw-status-age {
+  margin-left: 0;
+}
+
+.sw-svc--single {
+  --sw-dot: var(--t-muted);
+}
+
+.sw-svc--single.up {
+  --sw-dot: var(--t-up);
+}
+
+.sw-svc--single.warning {
+  --sw-dot: var(--t-warning);
+}
+
+.sw-svc--single.down {
+  --sw-dot: var(--t-down);
+}
+
+.sw-svc-single {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 8);
+  margin-top: auto;
+  min-width: 0;
+}
+
+.sw-svc-single p {
+  margin-top: 0;
+}
+
+.sw-svc-name {
+  color: var(--t-label);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sw-svc-word {
+  display: flex;
+  align-items: center;
+  gap: 0.25em;
+  color: var(--sw-dot);
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.sw-svc--single.muted .sw-svc-word {
+  color: var(--t-text);
+}
+
+.sw-svc-empty {
   margin-top: calc(var(--u) * 12);
 }
 

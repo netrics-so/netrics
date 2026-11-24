@@ -1,5 +1,6 @@
 "use client";
 import { ItemsFields } from "./items-fields";
+import { StateFields } from "./state-fields";
 import { MeasureFields } from "./measure-fields";
 import { FilterExclusions } from "./shared-filters";
 
@@ -324,6 +325,15 @@ export function WidgetPanel(props: WidgetPanelProps) {
         />
       ) : widget.type === "items" ? (
         <ItemsFields
+          key={widget.id}
+          widget={widget}
+          models={props.models ?? []}
+          filters={props.dataFilters ?? []}
+          workspaceId={props.workspaceId}
+          dispatch={dispatch}
+        />
+      ) : widget.type === "state" ? (
+        <StateFields
           key={widget.id}
           widget={widget}
           models={props.models ?? []}

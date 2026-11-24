@@ -588,9 +588,13 @@ export function formatWarnings(
       });
       if (!fit.fits)
         warn("rows_cut", widget.id, null, { shown: fit.shown, limit: lines });
-    } else if (widget.type === "status" && widget.rows) {
-      // More sources than rows: the last row says "+N more" (info; the
-      // problems sort first, ADR 0019 section 7).
+    } else if (
+      (widget.type === "status" || widget.type === "state") &&
+      widget.rows
+    ) {
+      // More sources (or state items, #875) than rows: the last row says
+      // "+N more" (info; the problems sort first, ADR 0019 sections 7
+      // and 15).
       const box = contentBoxIn(placement, format, context.showHeader);
       const { rowCapacity } = statusLayout({
         label: widget.label ?? "",

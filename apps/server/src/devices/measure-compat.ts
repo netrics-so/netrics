@@ -7,8 +7,9 @@
 // freshness (which older clients show anyway).
 
 /** The device payload features a client can ask for: a total with its
- * split (#784), and the latest-items widget (#810, items-compat.ts). */
-export const DEVICE_FEATURES = ["measure_split", "items"] as const;
+ * split (#784), the latest-items widget (#810) and the state widget (#875,
+ * both in items-compat.ts). */
+export const DEVICE_FEATURES = ["measure_split", "items", "state"] as const;
 export type DeviceFeature = (typeof DEVICE_FEATURES)[number];
 
 /** `?features=a,b` as the known features it names; unknown ones are ignored. */

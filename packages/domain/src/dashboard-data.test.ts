@@ -25,6 +25,11 @@ import {
   validateSlideFilterScope,
   itemsModelQuery,
   ITEMS_COUNT_MEASURE_ID,
+  stateModelQuery,
+  STATE_RANK_MEASURE_ID,
+  STATE_TIER_MEASURE_IDS,
+  STATE_QUERY_MAX,
+  type StateWidgetBinding,
   type DashboardDataFilter,
   type DashboardFilterValue,
   type DeviceFilterScope,
@@ -1253,5 +1258,193 @@ describe("a measure widget's time grains (#838)", () => {
         measureBindingGrains(weekly, { dimensions, reset: fixed }).groupByGrain,
       ).toEqual({ taken: "month" });
     });
+  });
+});
+
+describe("stateModelQuery (#875)", () => {
+  const services: DataTable = {
+    fields: [
+      { id: "service", name: "Service", type: "string", nullable: false },
+      { id: "project", name: "Project", type: "string", nullable: false },
+      { id: "state", name: "State", type: "string", nullable: false },
+      { id: "changed", name: "Changed", type: "timestamp", nullable: true },
+      { id: "rolled", name: "Rolled back", type: "boolean", nullable: true },
+    ],
+    rows: [
+      ["web", "shop", "up", "2026-11-20T10:00:00.000Z", false],
+      ["api", "shop", "failed", "2026-11-21T10:00:00.000Z", false],
+      ["site", "blog", "up", null, true],
+    ].map(([service, project, state, changed, rolled]) => ({
+      service,
+      project,
+      state,
+      changed,
+      rolled,
+    })),
+  };
+  const model: SemanticModelDefinition = {
+    version: 1,
+    datasets: ["services"],
+    relationships: [],
+    dimensions: ["service", "project", "state", "changed", "rolled"].map(
+      (id) => ({ id, name: id, datasetId: "services", fieldId: id }),
+    ),
+    measures: [],
+  };
+  const stateBinding: StateWidgetBinding = {
+    modelId: "ops",
+    nameDimensionId: "service",
+    stateDimensionId: "state",
+    changedAtDimensionId: "changed",
+    rolledBackDimensionId: "rolled",
+    exclusions: [],
+  };
+  const projectFilter: DashboardDataFilter = {
+    id: "project",
+    name: "Project",
+    type: "string",
+    mode: "values",
+    mappings: [{ modelId: "ops", dimensionId: "project" }],
+    defaultValue: null,
+  };
+  const run = (
+    item: string | null = null,
+    values: Record<string, DashboardFilterValue> = {},
+    filters: DashboardDataFilter[] = [],
+  ) => {
+    const built = stateModelQuery(model, filters, values, stateBinding, item);
+    return querySemanticModel(
+      built.model,
+      new Map([["services", services]]),
+      built.query,
+    ).rows.map((row) => row.dimensions);
+  };
+
+  it("groups by name, state, changed-at and rolled-back with a count", () => {
+    const { model: counted, query } = stateModelQuery(
+      model,
+      [],
+      {},
+      stateBinding,
+    );
+    expect(query).toMatchObject({
+      measureIds: [STATE_RANK_MEASURE_ID],
+      groupBy: ["service", "state", "changed", "rolled"],
+      limit: STATE_QUERY_MAX,
+      orderBy: { measureId: STATE_RANK_MEASURE_ID, direction: "asc" },
+    });
+    expect(counted.measures.at(-1)).toMatchObject({
+      id: STATE_RANK_MEASURE_ID,
+      kind: "formula",
+    });
+    expect(model.measures).toEqual([]);
+    expect(run()).toHaveLength(3);
+  });
+
+  it("leaves the optional dimensions out of the grouping", () => {
+    const {
+      changedAtDimensionId: _c,
+      rolledBackDimensionId: _r,
+      ...plain
+    } = stateBinding;
+    expect(stateModelQuery(model, [], {}, plain).query.groupBy).toEqual([
+      "service",
+      "state",
+    ]);
+  });
+
+  it("keeps one item for the single form", () => {
+    expect(run("api").map((row) => row.service)).toEqual(["api"]);
+    expect(run("nope")).toEqual([]);
+  });
+
+  it("follows a dashboard filter mapped to the model", () => {
+    expect(
+      run(null, { project: { kind: "values", values: ["blog"] } }, [
+        projectFilter,
+      ]).map((row) => row.service),
+    ).toEqual(["site"]);
+    expect(() =>
+      stateModelQuery(
+        model,
+        [{ ...projectFilter, mappings: [] }],
+        {},
+        stateBinding,
+      ),
+    ).toThrow("dashboard_filter_not_applicable");
+  });
+
+  it("reads the distinct state values, or only items of given values (review)", () => {
+    const read = (stateRead: Parameters<typeof stateModelQuery>[7]) => {
+      const built = stateModelQuery(
+        model,
+        [],
+        {},
+        stateBinding,
+        null,
+        {},
+        {},
+        stateRead,
+      );
+      return querySemanticModel(
+        built.model,
+        new Map([["services", services]]),
+        built.query,
+      );
+    };
+    const rows = read({});
+    // Ranked inside the query: failed, then up after a rollback, then up.
+    expect(rows.rows.map((row) => row.dimensions.service)).toEqual([
+      "api",
+      "site",
+      "web",
+    ]);
+    expect(
+      rows.rows.map((row) => row.measures[STATE_RANK_MEASURE_ID]!.value),
+    ).toEqual([1, 5, 6]);
+    const first = read({ limit: 1 });
+    expect(first.rows.map((row) => row.dimensions.service)).toEqual(["api"]);
+    expect(first.totalRows).toBe(3);
+    const [counts] = read({ kind: "counts" }).rows;
+    expect(
+      STATE_TIER_MEASURE_IDS.map((id) => counts!.measures[id]!.value),
+    ).toEqual([0, 1, 0, 0, 0, 1, 1]);
+    expect(read({ kind: "unknownValues" }).rows).toEqual([]);
+  });
+
+  it("applies the widget's overrides inside the query (final review)", () => {
+    const built = stateModelQuery(
+      model,
+      [],
+      {},
+      stateBinding,
+      null,
+      {},
+      {},
+      {},
+      { FAILED: "sleeping" },
+    );
+    const result = querySemanticModel(
+      built.model,
+      new Map([["services", services]]),
+      built.query,
+    );
+    expect(
+      result.rows.map((row) => row.measures[STATE_RANK_MEASURE_ID]!.value),
+    ).toEqual([4, 5, 6]);
+  });
+
+  it("refuses a state dimension the model does not have", () => {
+    expect(() =>
+      stateModelQuery(
+        model,
+        [],
+        {},
+        {
+          ...stateBinding,
+          stateDimensionId: "nope",
+        },
+      ),
+    ).toThrow("state_dimension_unknown");
   });
 });

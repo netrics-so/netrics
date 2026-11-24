@@ -1200,6 +1200,8 @@ public enum WidgetContent: Sendable, Equatable {
     case gauge(GaugeWidgetOptions, GaugeWidgetData)
     /** The newest items of a model (#810): their image ids are among the payload's images, else nil. */
     case items(ItemsWidgetOptions, ItemsWidgetData)
+    /** The states of a model's items (#875), not healthy first. */
+    case state(StateWidgetOptions, StateWidgetData)
     /** A type this build does not know, or fields it cannot read. */
     case unsupported
 }
@@ -1317,6 +1319,9 @@ public struct DeviceWidget: Codable, Sendable, Equatable, Identifiable {
         case "items":
             guard let data = c.lenient(ItemsWidgetData.self, .data) else { return .unsupported }
             return .items(c.lenient(ItemsWidgetOptions.self, .options) ?? .init(), data)
+        case "state":
+            guard let data = c.lenient(StateWidgetData.self, .data) else { return .unsupported }
+            return .state(c.lenient(StateWidgetOptions.self, .options) ?? .init(), data)
         default:
             return .unsupported
         }
@@ -1360,6 +1365,9 @@ public struct DeviceWidget: Codable, Sendable, Equatable, Identifiable {
             try c.encode(options, forKey: .options)
             try c.encode(data, forKey: .data)
         case .items(let options, let data):
+            try c.encode(options, forKey: .options)
+            try c.encode(data, forKey: .data)
+        case .state(let options, let data):
             try c.encode(options, forKey: .options)
             try c.encode(data, forKey: .data)
         case .review(let imageId, let options, let data):

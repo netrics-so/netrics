@@ -8,6 +8,13 @@ export const apiErrorsDe: Catalog<typeof apiErrorsEn> = {
     items_image_dimension_invalid: "Wähle ein Feld, das als Bild markiert ist.",
     items_time_dimension_invalid: "Wähle ein Datums- oder Zeitfeld.",
     items_dimension_unknown: "Dieses Feld gibt es im Modell nicht mehr.",
+    state_dimension_unknown: "Dieses Feld gibt es im Modell nicht mehr.",
+    state_name_dimension_invalid: "Wähle ein Textfeld für den Namen.",
+    state_state_dimension_invalid:
+      "Wähle ein Text- oder Ja/Nein-Feld für den Status.",
+    state_changed_dimension_invalid: "Wähle ein Datums- oder Zeitfeld.",
+    state_rolled_back_dimension_invalid: "Wähle ein Ja/Nein-Feld.",
+    state_dimensions_not_distinct: "Wähle für jeden Teil ein anderes Feld.",
     store_mapping_duplicate:
       "Jede App darf nur zu einem verknüpften Produkt gehören.",
     store_scope_invalid:

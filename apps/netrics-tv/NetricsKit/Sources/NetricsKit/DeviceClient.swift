@@ -859,9 +859,10 @@ public actor DeviceClient {
 
     /**
      * Payload features this build draws: a measure value view's total with
-     * its split (#784), and the latest-items widget (#811).
+     * its split (#784), the latest-items widget (#811) and the state widget
+     * (#875).
      */
-    static let dashboardFeatures = "measure_split,items"
+    static let dashboardFeatures = "measure_split,items,state"
 
     private func refreshAfter(_ payload: DashboardPayload) -> Duration {
         .seconds(payload.refreshAfterSec > 0 ? payload.refreshAfterSec : Self.defaultRefreshAfterSeconds)

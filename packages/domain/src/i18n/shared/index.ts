@@ -143,6 +143,23 @@ export function itemsNeedNewerAppText(locale: Locale = "en"): string {
   return sharedTranslator(locale)("itemsNeedNewerApp");
 }
 
+/** A state widget's label (#875): its title, else "Status". */
+export function stateWidgetLabel(
+  title: string | null,
+  locale: Locale = "en",
+): string {
+  const trimmed = title?.trim() ?? "";
+  return trimmed !== "" ? trimmed : sharedTranslator(locale)("serviceStatus");
+}
+
+/**
+ * The text an older screen shows in place of a state widget (#875):
+ * "Update netrics TV to show the status."
+ */
+export function stateNeedNewerAppText(locale: Locale = "en"): string {
+  return sharedTranslator(locale)("stateNeedNewerApp");
+}
+
 /**
  * The reason codes the server records next to a provider message (#795),
  * and the shared catalog entry each one reads. A code is stable: the
