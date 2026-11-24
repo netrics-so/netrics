@@ -468,9 +468,9 @@ function reportedOf(run: RunState): string[] {
 }
 
 /**
- * Where each server's refused metrics continue after this run: the
- * earlier of a carried position and this run's refusal, for servers it did
- * not read whole. Positions Hetzner no longer keeps metrics for move up to
+ * Where each server's refused metrics continue after this run: where this
+ * run was refused, else the carried position, for servers it did not read
+ * whole. Positions Hetzner no longer keeps metrics for move up to
  * the oldest it does; at most MAX_RETRY_SERVERS are kept. `done`: the run
  * listed every server, so one it did not list is gone.
  */
@@ -486,10 +486,9 @@ function retryOf(run: RunState, done: boolean): Record<string, number> {
   ])) {
     if (run.metricsRead.includes(Number(id))) continue;
     if (done && !run.serversShifted && !listed.has(id)) continue;
-    const at = Math.min(
-      carried[id] ?? Number.POSITIVE_INFINITY,
-      refused[id] ?? Number.POSITIVE_INFINITY,
-    );
+    // A refusal in this run is the first hour still missing: the hours
+    // before it, a carried position's included, went out (#904).
+    const at = refused[id] ?? carried[id]!;
     entries.push([id, Math.max(at, oldest)]);
   }
   return Object.fromEntries(
@@ -516,6 +515,14 @@ function carriedOf(
   return null;
 }
 
+/** The rate limit a checkpoint holds, handed to the host. Fixed text. */
+function rateLimited(until: number): RateLimitedError {
+  return new RateLimitedError(
+    "Hetzner Cloud's API rate limit is used up. netrics continues once it refills.",
+    new Date(until),
+  );
+}
+
 export async function syncPage(
   get: HetznerGet,
   context: ConnectionContext,
@@ -533,12 +540,27 @@ export async function syncPage(
   let carried = request.cursor
     ? carriedOf(request.cursor, context.connectionId, scope)
     : carriedOf(request.previousCursor, context.connectionId, scope);
-  if (state && pageStarted - state.at > MAX_RUN_AGE_MS) {
-    // Its dataset refreshes may have expired: a new run, new refresh keys.
-    log?.info("checkpoint too old to resume, the run starts over", {
+  // A pending rate limit holds whatever the checkpoint is (#904).
+  if (state?.limitedUntil !== undefined && pageStarted < state.limitedUntil) {
+    throw rateLimited(state.limitedUntil);
+  }
+  // A checkpoint of the version before #893 inside a listing has no page
+  // bounds to verify that listing with.
+  const legacy =
+    state?.listing !== undefined &&
+    state.listing.page > 1 &&
+    state.listing.bounds === undefined;
+  /** The refresh of the run a restart replaces. */
+  let replaced = "";
+  if (state && (legacy || pageStarted - state.at > MAX_RUN_AGE_MS)) {
+    // Its dataset refreshes may have expired, or cannot be completed: a new
+    // run, new refresh keys.
+    log?.info("checkpoint not resumable, the run starts over", {
       hours: Math.floor((pageStarted - state.at) / HOUR_MS),
+      legacy,
     });
     carried = { reported: reportedOf(state), retry: retryOf(state, false) };
+    replaced = state.refresh;
     state = null;
   }
   if (!state) {
@@ -558,7 +580,9 @@ export async function syncPage(
       scope,
       at,
       refresh: createHash("sha256")
-        .update(`${context.connectionId}|${scope}|${at}`)
+        // A restarted run's keys differ from the run it replaces, even
+        // when both started in the same millisecond.
+        .update(`${context.connectionId}|${scope}|${at}|${replaced}`)
         .digest("hex")
         .slice(0, 32),
       metricsFrom,
@@ -577,12 +601,7 @@ export async function syncPage(
   }
   const run = state;
   if (run.limitedUntil !== undefined) {
-    if (now() < run.limitedUntil) {
-      throw new RateLimitedError(
-        "Hetzner Cloud's API rate limit is used up. netrics continues once it refills.",
-        new Date(run.limitedUntil),
-      );
-    }
+    if (now() < run.limitedUntil) throw rateLimited(run.limitedUntil);
     delete run.limitedUntil;
   }
   const out = {
