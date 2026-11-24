@@ -3,6 +3,14 @@
 # Base pinned by digest; bump deliberately (Dependabot proposes updates).
 FROM node:26-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS base
 RUN npm install -g pnpm@10.34.5
+# The runtime stage copies only the Node binary, so ship its license (with
+# the notices of everything Node bundles) next to it. The upstream arm64
+# image builds Node from source and has no LICENSE file, so fetch the one of
+# this exact release on every platform.
+RUN mkdir -p /usr/local/share/licenses/node \
+ && wget -qO /usr/local/share/licenses/node/LICENSE \
+      "https://raw.githubusercontent.com/nodejs/node/$(node -p process.version)/LICENSE" \
+ && test -s /usr/local/share/licenses/node/LICENSE
 WORKDIR /app
 
 FROM base AS build
@@ -41,6 +49,7 @@ RUN apk upgrade --no-cache \
  && addgroup -g 1000 node \
  && adduser -u 1000 -G node -s /bin/sh -D node
 COPY --from=base /usr/local/bin/node /usr/local/bin/node
+COPY --from=base /usr/local/share/licenses/node /usr/local/share/licenses/node
 ARG APP_VERSION=0.0.0-dev
 ARG GIT_SHA=dev
 ENV NODE_ENV=production \

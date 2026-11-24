@@ -17,7 +17,11 @@ does (see `docs/architecture.md`, "Application release").
    exactly once per platform, natively (`linux/amd64` on `ubuntu-24.04`,
    `linux/arm64` on `ubuntu-24.04-arm`, no QEMU), with
    `docker/build-push-action` and the GHA layer cache, and pushed by digest.
-   The publish job joins each pair into a multi-arch index tagged with the
+   The runtime stage (plain Alpine, `apk upgrade`, the Node binary) is never
+   taken from the cache. Each pushed digest must pass
+   `scripts/check-image.sh` before anything is signed: no npm, Node has its
+   security releases, no fixable high or critical vulnerability (Trivy). CI
+   runs the same script on every pull request. The publish job joins each pair into a multi-arch index tagged with the
    immutable commit SHA: `ghcr.io/netrics-so/{server,web}:<sha>`. The build
    version and commit SHA are baked in as build args (`APP_VERSION` /
    `GIT_SHA`; `NEXT_PUBLIC_*` for web), so the running API reports them on

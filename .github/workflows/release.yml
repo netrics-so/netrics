@@ -164,6 +164,16 @@ jobs:
           # scanned (#906). It is small: Alpine, the Node binary, the app.
           no-cache-filters: runner
 
+      # The exact image that gets signed and deployed must pass the same
+      # checks as CI (#906): Alpine packages can change between the CI build
+      # and this one. A failure stops the release before anything is signed.
+      - name: Check the pushed image
+        env:
+          IMAGE: ${{ env.IMAGE_PREFIX }}/${{ matrix.image }}@${{ steps.build.outputs.digest }}
+        run: |
+          docker pull -q "$IMAGE"
+          scripts/check-image.sh "$IMAGE"
+
       - name: Record digest
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
