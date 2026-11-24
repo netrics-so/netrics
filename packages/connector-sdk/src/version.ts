@@ -37,7 +37,9 @@ import { satisfiesRange } from "./semver.js";
 // configuredHosts may name a URL in each item of an array (`key[].url`),
 // followed on redirects to the same host only; credential-less connectors
 // may change their configured hosts (#874).
-export const SDK_VERSION = "0.2.21";
+// 0.2.22: optional SyncRequest.previousCursor: a fresh backfill's first
+// page carries the stored cursor it does not resume from (#893).
+export const SDK_VERSION = "0.2.22";
 
 /**
  * Validates a manifest against the contract schema and verifies that its

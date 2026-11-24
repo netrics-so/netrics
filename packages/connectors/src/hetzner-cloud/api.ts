@@ -31,6 +31,8 @@ const BASE_BACKOFF_MS = 1_000;
 export const MIN_REMAINING_REQUESTS = 20;
 /** When Hetzner names no reset: try again after this long. */
 const DEFAULT_RETRY_MS = 60_000;
+/** The longest one request to Hetzner may take (the host allows 60 s). */
+export const REQUEST_TIMEOUT_MS = 20_000;
 
 export type HetznerErrorKind =
   /** 401 `unauthorized`: the token is wrong or was deleted. */
@@ -82,6 +84,18 @@ function describe(
       return `Hetzner Cloud's answer does not have the expected shape: ${detail.slice(0, 200)}`;
     default:
       return `Hetzner Cloud API answered ${status}.`;
+  }
+}
+
+/**
+ * The time a sync page has for Hetzner ran out before a request or a wait
+ * could be made (#893, #901): the page ends with what it read, or the host
+ * retries it.
+ */
+export class HetznerTimeoutError extends Error {
+  constructor() {
+    super("Hetzner Cloud did not answer in time. netrics tries again later.");
+    this.name = "HetznerTimeoutError";
   }
 }
 
@@ -192,6 +206,13 @@ export interface ClientOptions {
    * passes a short one: the host gives it 15 s for everything.
    */
   maxWaitMs?: number;
+  /**
+   * When every request and wait of this client has to be over (ms since
+   * the epoch): each request is bounded to it, and a wait that would end
+   * after it is not made (#901 item 1). The host's own deadline for the
+   * call is later, so a sync page still returns its checkpoint.
+   */
+  deadline?: number;
 }
 
 /** What a connection check may wait for the rate limit, all in all. */
@@ -220,12 +241,16 @@ export function createHetznerClient(
     options.maxWaitMs ?? MAX_RATE_LIMIT_WAIT_MS,
     MAX_RATE_LIMIT_WAIT_MS,
   );
+  const deadline = options.deadline ?? Number.POSITIVE_INFINITY;
   let window: ReturnType<typeof rateWindow> = null;
+
+  /** A wait of `ms` from now would end after the deadline. */
+  const pastDeadline = (ms: number) => now() + ms >= deadline;
 
   async function pace(): Promise<void> {
     if (!window || window.remaining >= MIN_REMAINING_REQUESTS) return;
     const wait = refillMs(window, MIN_REMAINING_REQUESTS, now());
-    if (wait > maxWait) {
+    if (wait > maxWait || (wait > 0 && pastDeadline(wait))) {
       throw new RateLimitedError(
         "Hetzner Cloud's API rate limit is nearly used up. netrics continues once it refills.",
         new Date(now() + wait),
@@ -243,12 +268,17 @@ export function createHetznerClient(
     const url = `${HETZNER_API}${path}${search ? `?${search}` : ""}`;
     for (let attempt = 1; ; attempt += 1) {
       await pace();
+      // A stalled request ends in time for the page to return its
+      // checkpoint (#901 item 1).
+      const left = deadline - now();
+      if (left <= 0) throw new HetznerTimeoutError();
       const response = await runtime.fetch(url, {
         method: "GET",
         headers: {
           authorization: `Bearer ${token}`,
           accept: "application/json",
         },
+        timeoutMs: Math.ceil(Math.min(REQUEST_TIMEOUT_MS, left)),
       });
       window = rateWindow(response.headers) ?? window;
 
@@ -259,7 +289,7 @@ export function createHetznerClient(
         const wait = reported
           ? Math.max(1_000, refillMs(reported, 1, now()))
           : BASE_BACKOFF_MS * 2 ** (attempt - 1);
-        if (attempt >= MAX_ATTEMPTS || wait > maxWait) {
+        if (attempt >= MAX_ATTEMPTS || wait > maxWait || pastDeadline(wait)) {
           const retry = reported
             ? Math.max(wait, refillMs(reported, MIN_REMAINING_REQUESTS, now()))
             : DEFAULT_RETRY_MS;
@@ -273,10 +303,11 @@ export function createHetznerClient(
         continue;
       }
       if (response.status >= 500) {
-        if (attempt >= MAX_ATTEMPTS) {
+        const backoff = BASE_BACKOFF_MS * 2 ** (attempt - 1);
+        if (attempt >= MAX_ATTEMPTS || pastDeadline(backoff)) {
           throw new HetznerApiError(response.status, "unavailable");
         }
-        await sleep(BASE_BACKOFF_MS * 2 ** (attempt - 1), runtime.signal);
+        await sleep(backoff, runtime.signal);
         continue;
       }
 

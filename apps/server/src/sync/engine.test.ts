@@ -1896,6 +1896,10 @@ describe("fresh and resumed backfills (#153)", () => {
     await atPage4;
     const first = freshPager.requests[0]!;
     expect(first.cursor).toBeUndefined();
+    // The stored cursor goes along as the baseline only (#893), on the
+    // page without a cursor.
+    expect(first.previousCursor).toBe(incrementalCursor);
+    expect(freshPager.requests[1]!.previousCursor).toBeUndefined();
     expect(Date.parse(first.from)).toBeLessThan(Date.now() - 69 * DAY_MS);
     const checkpoint = freshPager.requests[3]!.cursor!;
     expect((await committed(connectionId)).cursor).toBe(checkpoint);
@@ -1905,6 +1909,7 @@ describe("fresh and resumed backfills (#153)", () => {
     freshPager = { resources, requests: [] };
     await runAttempt("connection.backfill", workspaceA, connectionId, 1, jobId);
     expect(freshPager.requests[0]!.cursor).toBe(checkpoint);
+    expect(freshPager.requests[0]!.previousCursor).toBeUndefined();
     expect(
       freshPager.requests.every(
         (request) =>
@@ -1926,9 +1931,11 @@ describe("fresh and resumed backfills (#153)", () => {
     expect(final.observations).toBe(final.days * resources);
 
     // Yet another backfill is a new job again: whole window.
+    const stored = (await committed(connectionId)).cursor!;
     freshPager = { resources, requests: [] };
     await runAttempt("connection.backfill", workspaceA, connectionId, 0);
     expect(freshPager.requests[0]!.cursor).toBeUndefined();
+    expect(freshPager.requests[0]!.previousCursor).toBe(stored);
     expect(freshPager.requests.length).toBe(windowDays);
     const last = (await syncRunsFor(workspaceA, connectionId)).at(-1)!;
     expect(last.cursor_before).toBeNull();

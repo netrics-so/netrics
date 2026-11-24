@@ -117,7 +117,10 @@ Each stream is one read that can fail on its own:
   during the run.
 - **Metrics** (`metrics`, continuous, per server): reported only for each
   server whose metrics this run read, its whole window. A server whose
-  metrics are refused (403) is skipped and only that server goes stale.
+  metrics are refused (403) is skipped and only that server goes stale;
+  the run's cursor keeps where its window stopped, so a later run reads
+  the refused hours once access returns (as far back as Hetzner keeps
+  metrics, for up to 1,000 servers) while the others move on.
   When no hour completed since the last sync, nothing is read and nothing
   is reported: the stored freshness stays.
 - **Cost estimate** (`cost`, continuous): reported when the price list and
@@ -135,6 +138,19 @@ page starts with the failed step. A 401 always fails at once. A rate limit
 stays a rate limit: when a later step hits it, the progress goes out and
 the next page hands the limit to the host before it sends anything.
 
+Every request and wait of a page is over 45 seconds after the page
+started, well before the host's 60-second limit for the call: a request
+may take 20 seconds at most (less when the page has less time left), and
+a rate-limit wait or retry that would end later is not made. So a request
+that hangs ends the page with its checkpoint instead of losing the page,
+and a rate-limit wait that does not fit becomes the rate limit the next
+page hands to the host.
+
+A run is resumed only within 12 hours of its start. A dataset's pages
+expire with its retention, which may be as short as a day; an older run
+starts over, with new refreshes, and keeps only the reported resources
+and the metrics positions it carries.
+
 The cursor belongs to the connection and its token (a salted, shortened
 hash, never the token); another token starts a new run. A run uses the time
 it started for the metrics window and the cost day; rows carry the time
@@ -146,7 +162,13 @@ Hetzner pages by position. An item created or deleted between two pages of
 a listing shifts the rest, so a page may repeat an item or leave one out:
 the connector drops a repeated item and, when an item repeats or
 `total_entries` changes between pages, does not complete the snapshot (the
-stored one stays) and reports no freshness for it. When the server list
+stored one stays) and reports no freshness for it. An item deleted and
+another created between two pages keep the total and repeat nothing, yet
+the next page starts one item later. So a listing of several pages is
+verified once its last page is read: every page before the last is read
+again and must still start and end with the same IDs (a deletion moves the
+last ID of every page before it) and name the same total; otherwise the
+listing counts as shifted. When the server list
 shifted, a server may have been left out with all its hours unread, so the
 next window starts where this one did (`nextFrom` does not advance). A
 server that answers
@@ -192,7 +214,11 @@ cost is unknown, not zero), and the run reports no cost freshness. A
 resource that had a value before and holds nothing now (an unattached IP
 assigned to a server, a deleted server) gets zero, so its last value does
 not count on: a finished run hands the resources it reported to the next
-one in its cursor (bound to the connection and token like the run's).
+one in its cursor (bound to the connection and token like the run's). A
+history reload (a fresh backfill) starts without a cursor; the host hands
+it the stored one as `previousCursor` (SDK 0.2.22), and the reload takes
+the reported resources from it, from a finished run's cursor or an
+unfinished run's checkpoint alike.
 
 Not included: traffic beyond what a server or load balancer includes
 (`servers` shows the traffic so far), Object Storage, Storage Boxes and

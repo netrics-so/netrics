@@ -56,8 +56,8 @@ describe("assertManifestCompatible", () => {
     ).toThrow();
   });
 
-  it("keeps loading connectors written for SDK ^0.2.0 to ^0.2.21", () => {
-    expect(SDK_VERSION).toBe("0.2.21");
+  it("keeps loading connectors written for SDK ^0.2.0 to ^0.2.22", () => {
+    expect(SDK_VERSION).toBe("0.2.22");
     for (const sdkVersion of [
       "^0.2.0",
       "^0.2.1",
@@ -81,6 +81,7 @@ describe("assertManifestCompatible", () => {
       "^0.2.19",
       "^0.2.20",
       "^0.2.21",
+      "^0.2.22",
     ]) {
       expect(
         assertManifestCompatible({ ...validManifest(), sdkVersion }).id,

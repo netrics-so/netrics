@@ -56,6 +56,15 @@ export const syncRequestSchema = z
      * shape it ever returned, for example by prefixing a version tag.
      */
     cursor: z.string().min(1).optional(),
+    /**
+     * Optional (SDK 0.2.22, #893): on the first page of a fresh backfill,
+     * which starts without a cursor, the cursor the connection had stored
+     * before it (an earlier run's last cursor or checkpoint), exactly as
+     * returned. Never a position to resume from: only for what a connector
+     * carries from run to run, such as the resources it reported, so a
+     * history reload does not lose it. Absent whenever `cursor` is set.
+     */
+    previousCursor: z.string().min(1).optional(),
     resources: z.array(z.string().min(1)).optional(),
   })
   .refine((request) => request.from < request.to, {

@@ -21,7 +21,14 @@
 //
 // A finished run leaves a cursor of its own (`hetzner-cloud.done1:`): the
 // resources whose cost it reported, so the next run reports zero for one
-// that no longer holds anything, instead of leaving its last value.
+// that no longer holds anything, instead of leaving its last value, and
+// where each server whose metrics were refused continues. A fresh backfill
+// starts without a cursor; it takes both from the stored cursor the host
+// hands it as `previousCursor` (#893).
+//
+// A run older than MAX_RUN_AGE_MS is not resumed: its dataset refreshes
+// may have expired with the shortest retention, so it starts over with new
+// refresh keys and keeps only what it carries (#893).
 
 import { createHash } from "node:crypto";
 
@@ -85,6 +92,22 @@ const DAY_MS = 24 * HOUR_MS;
 export const MAX_REQUESTS_PER_PAGE = 10;
 /** A page also ends after this long, so it never runs into the call timeout. */
 export const PAGE_TIME_BUDGET_MS = 20_000;
+/**
+ * Every request and wait of a page is over by this much after it started
+ * (#901 item 1): a step begun just inside PAGE_TIME_BUDGET_MS whose request
+ * stalls still ends in time for the page to return its checkpoint before
+ * the host's 60-second deadline for the call.
+ */
+export const PAGE_DEADLINE_MS = 45_000;
+/**
+ * A run is resumed only this long after it started. A dataset refresh
+ * expires with its retention, which a connection or workspace may set to
+ * a single day; an older run's chains may be gone, and resuming them
+ * would fail every page from then on (#893).
+ */
+export const MAX_RUN_AGE_MS = 12 * 60 * 60 * 1000;
+/** Servers whose refused metrics a finished run keeps a position for. */
+export const MAX_RETRY_SERVERS = 1_000;
 /** Items per listing request: the API's maximum. */
 export const PER_PAGE = 50;
 /** The step of the metrics netrics reads: one sample an hour. */
@@ -174,6 +197,15 @@ interface ListingProgress {
   total: number | null;
   /** IDs read so far, to notice an item a shifted page repeats. */
   seen: number[];
+  /**
+   * The first and last ID of each page read (index: page - 1), to check
+   * the boundaries again once the last page is read (#893).
+   */
+  bounds?: Array<[number, number] | null>;
+  /** The listing changed while it was read: nothing more to verify. */
+  shifted?: boolean;
+  /** All pages are read; this one is read again to verify its bounds. */
+  verify?: number;
 }
 
 interface RunState {
@@ -211,6 +243,13 @@ interface RunState {
   /** Servers whose metrics window was read whole. */
   metricsRead: number[];
   /**
+   * Where the metrics of a server refused by an earlier run continue (ms,
+   * by server ID): its window starts there, not at metricsFrom (#893).
+   */
+  retry?: Record<string, number>;
+  /** Servers whose metrics this run was refused, and from where. */
+  refused?: Record<string, number>;
+  /**
    * A listing changed while it was read (an item repeated, the total
    * moved) or a server disappeared during the run: the snapshot it feeds
    * is left incomplete, so the stored one stays.
@@ -240,6 +279,8 @@ interface DoneState {
   scope: string;
   /** Resources with a reported cost (or a stored one not yet replaced). */
   reported: string[];
+  /** Servers whose refused metrics continue here (ms, by server ID). */
+  retry?: Record<string, number>;
 }
 
 function encodeDone(state: DoneState): string {
@@ -259,16 +300,32 @@ function decodeDone(
         "utf8",
       ),
     ) as DoneState;
-    return state.v === 1 &&
-      state.connection === connection &&
-      state.scope === scope &&
-      Array.isArray(state.reported) &&
-      state.reported.every((resource) => typeof resource === "string")
-      ? state
-      : null;
+    if (
+      state.v !== 1 ||
+      state.connection !== connection ||
+      state.scope !== scope ||
+      !Array.isArray(state.reported) ||
+      !state.reported.every((resource) => typeof resource === "string")
+    ) {
+      return null;
+    }
+    return { ...state, retry: positions(state.retry) };
   } catch {
     return null;
   }
+}
+
+/** Retry positions as stored: server ID → ms; anything else is dropped. */
+function positions(value: unknown): Record<string, number> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).filter(
+      (entry): entry is [string, number] =>
+        /^\d{1,16}$/.test(entry[0]) &&
+        typeof entry[1] === "number" &&
+        Number.isFinite(entry[1]),
+    ),
+  );
 }
 
 /** A salted, shortened hash of the token: another token starts a new run. */
@@ -301,7 +358,11 @@ function decodeState(
     return state.v === 1 &&
       state.connection === connection &&
       state.scope === scope
-      ? state
+      ? {
+          ...state,
+          retry: positions(state.retry),
+          refused: positions(state.refused),
+        }
       : null;
   } catch {
     return null;
@@ -385,6 +446,76 @@ function addUnits(
   ];
 }
 
+/** The run read the price list and every listing consistently. */
+function costComplete(run: RunState): boolean {
+  return !run.costPartial && run.currency !== undefined;
+}
+
+/**
+ * The resources with a cost the dashboards hold once this run went as far
+ * as it did: those it reported (its cost goes out when every step is
+ * done), and the earlier ones it could not price (their value stays
+ * stored); before that, the previous run's.
+ */
+function reportedOf(run: RunState): string[] {
+  if (!run.finishing || !costComplete(run)) return run.previous;
+  return [
+    ...Object.keys(run.totals).filter(
+      (resource) => !run.unpriced.includes(resource),
+    ),
+    ...run.previous.filter((resource) => run.unpriced.includes(resource)),
+  ].sort();
+}
+
+/**
+ * Where each server's refused metrics continue after this run: the
+ * earlier of a carried position and this run's refusal, for servers it did
+ * not read whole. Positions Hetzner no longer keeps metrics for move up to
+ * the oldest it does; at most MAX_RETRY_SERVERS are kept. `done`: the run
+ * listed every server, so one it did not list is gone.
+ */
+function retryOf(run: RunState, done: boolean): Record<string, number> {
+  const oldest = run.metricsTo - METRICS_RETENTION_DAYS * DAY_MS;
+  const carried = run.retry ?? {};
+  const refused = run.refused ?? {};
+  const listed = new Set(run.servers.map(String));
+  const entries: Array<[string, number]> = [];
+  for (const id of new Set([
+    ...Object.keys(carried),
+    ...Object.keys(refused),
+  ])) {
+    if (run.metricsRead.includes(Number(id))) continue;
+    if (done && !run.serversShifted && !listed.has(id)) continue;
+    const at = Math.min(
+      carried[id] ?? Number.POSITIVE_INFINITY,
+      refused[id] ?? Number.POSITIVE_INFINITY,
+    );
+    entries.push([id, Math.max(at, oldest)]);
+  }
+  return Object.fromEntries(
+    entries
+      .sort(([a], [b]) => Number(a) - Number(b))
+      .slice(0, MAX_RETRY_SERVERS),
+  );
+}
+
+/**
+ * What a run carries from the one before it: the resources reported and
+ * the metrics positions of refused servers, from a finished run's cursor
+ * or an unfinished run's checkpoint of this connection and token.
+ */
+function carriedOf(
+  cursor: string | undefined,
+  connection: string,
+  scope: string,
+): { reported: string[]; retry: Record<string, number> } | null {
+  const done = decodeDone(cursor, connection, scope);
+  if (done) return { reported: done.reported, retry: done.retry ?? {} };
+  const run = decodeState(cursor, connection, scope);
+  if (run) return { reported: reportedOf(run), retry: retryOf(run, false) };
+  return null;
+}
+
 export async function syncPage(
   get: HetznerGet,
   context: ConnectionContext,
@@ -397,6 +528,19 @@ export async function syncPage(
   const scope = scopeOf(context.connectionId, token);
 
   let state = decodeState(request.cursor, context.connectionId, scope);
+  // What a new run carries: from the cursor (a finished run's), or from
+  // the stored cursor a fresh backfill does not resume (#893).
+  let carried = request.cursor
+    ? carriedOf(request.cursor, context.connectionId, scope)
+    : carriedOf(request.previousCursor, context.connectionId, scope);
+  if (state && pageStarted - state.at > MAX_RUN_AGE_MS) {
+    // Its dataset refreshes may have expired: a new run, new refresh keys.
+    log?.info("checkpoint too old to resume, the run starts over", {
+      hours: Math.floor((pageStarted - state.at) / HOUR_MS),
+    });
+    carried = { reported: reportedOf(state), retry: retryOf(state, false) };
+    state = null;
+  }
   if (!state) {
     const at = now();
     const toMs = Date.parse(request.to);
@@ -420,12 +564,13 @@ export async function syncPage(
       metricsFrom,
       metricsTo,
       servers: [],
-      previous:
-        decodeDone(request.cursor, context.connectionId, scope)?.reported ?? [],
+      previous: carried?.reported ?? [],
       totals: {},
       unpriced: [],
       metricsIndex: 0,
       metricsRead: [],
+      retry: carried?.retry ?? {},
+      refused: {},
       last: {},
       pages: 0,
     };
@@ -554,7 +699,65 @@ export async function syncPage(
     }
   }
 
+  /** The listing changed while it was read: unfit for a snapshot. */
+  function shifted(listing: ListingProgress) {
+    log?.info("listing changed while it was read", { listing: listing.kind });
+    listing.shifted = true;
+    run.costPartial = true;
+    if (listing.kind === "servers") {
+      run.serversPartial = true;
+      run.serversShifted = true;
+    }
+  }
+
+  /** The run moves on to the next listing, or past the last one. */
+  function listingDone(listing: ListingProgress) {
+    const index = LISTINGS.indexOf(listing.kind);
+    if (index + 1 < LISTINGS.length) {
+      run.listing = {
+        kind: LISTINGS[index + 1]!,
+        page: 1,
+        total: null,
+        seen: [],
+      };
+    } else {
+      delete run.listing;
+      delete run.book;
+      run.listed = true;
+    }
+  }
+
+  /**
+   * Reads a page of a listing whose pages were all read once more. Hetzner
+   * pages by position: an item deleted from a page already read pulls the
+   * next page's first item onto it, so that item is never read, even when
+   * an item created meanwhile keeps the total and no ID repeats (#893). The
+   * deletion moves the last ID of every page before it, so each page but
+   * the last must still begin and end where it did.
+   */
+  async function verifyStep(listing: ListingProgress, page: number) {
+    const answer = await readListing(listing.kind, page);
+    const total = answer.pagination.total_entries ?? null;
+    const bounds = listing.bounds?.[page - 1] ?? null;
+    const same =
+      bounds !== null &&
+      answer.ids[0] === bounds[0] &&
+      answer.ids.at(-1) === bounds[1] &&
+      (listing.total === null || total === listing.total);
+    if (!same) {
+      shifted(listing);
+      listingDone(listing);
+    } else if (page + 1 < listing.page) {
+      listing.verify = page + 1;
+    } else {
+      listingDone(listing);
+    }
+  }
+
   async function listingStep(listing: ListingProgress) {
+    if (listing.verify !== undefined) {
+      return verifyStep(listing, listing.verify);
+    }
     const book = run.book!;
     const answer = await readListing(listing.kind, listing.page);
     // Nothing of the run changes before the answer is known to be whole.
@@ -574,14 +777,7 @@ export async function syncPage(
       listing.total !== null &&
       total !== null &&
       total !== listing.total;
-    if (repeated || moved) {
-      log?.info("listing changed while it was read", { listing: listing.kind });
-      run.costPartial = true;
-      if (listing.kind === "servers") {
-        run.serversPartial = true;
-        run.serversShifted = true;
-      }
-    }
+    if ((repeated || moved) && !listing.shifted) shifted(listing);
     const checkedAt = iso(now());
     for (const item of answer.apply(book, checkedAt)) {
       out.costs.push(costRecord(item, book.currency, checkedAt));
@@ -592,23 +788,20 @@ export async function syncPage(
     }
     if (listing.page === 1) listing.total = total;
     listing.seen.push(...answer.ids);
+    const bounds = (listing.bounds ??= []);
+    bounds[listing.page - 1] =
+      answer.ids.length > 0 ? [answer.ids[0]!, answer.ids.at(-1)!] : null;
     if (next !== null) {
       listing.page = next;
       return;
     }
-    const index = LISTINGS.indexOf(listing.kind);
-    if (index + 1 < LISTINGS.length) {
-      run.listing = {
-        kind: LISTINGS[index + 1]!,
-        page: 1,
-        total: null,
-        seen: [],
-      };
-    } else {
-      delete run.listing;
-      delete run.book;
-      run.listed = true;
+    // Read whole across pages: the pages before the last are read again
+    // before the listing counts as consistent.
+    if (listing.page > 1 && !listing.shifted) {
+      listing.verify = 1;
+      return;
     }
+    listingDone(listing);
   }
 
   function nextServer() {
@@ -616,9 +809,24 @@ export async function syncPage(
     delete run.metrics;
   }
 
+  /**
+   * Where a server's metrics window starts: the run's, or earlier where an
+   * earlier run was refused its metrics (#893), as far back as Hetzner
+   * keeps them.
+   */
+  function windowStart(serverId: number): number {
+    return Math.max(
+      run.metricsTo - METRICS_RETENTION_DAYS * DAY_MS,
+      Math.min(
+        run.metricsFrom,
+        run.retry?.[String(serverId)] ?? Number.POSITIVE_INFINITY,
+      ),
+    );
+  }
+
   async function metricsStep() {
     const serverId = run.servers[run.metricsIndex]!;
-    const from = run.metrics?.from ?? run.metricsFrom;
+    const from = run.metrics?.from ?? windowStart(serverId);
     const to = Math.min(from + METRICS_CHUNK_HOURS * HOUR_MS, run.metricsTo);
     let answer;
     try {
@@ -644,8 +852,9 @@ export async function syncPage(
       }
       if (error instanceof HetznerApiError && error.kind === "forbidden") {
         // Refused on its own: the other servers go on; this one's metrics
-        // stay stale.
+        // stay stale, and a later run reads them from here (#893).
         log?.warn("server metrics refused, skipped", { server: serverId });
+        (run.refused ??= {})[String(serverId)] = from;
         nextServer();
         return;
       }
@@ -693,12 +902,15 @@ export async function syncPage(
       const listing = run.listing;
       return () => listingStep(listing);
     }
-    if (
-      run.metricsFrom < run.metricsTo &&
-      run.metricsIndex < run.servers.length
+    // A server with no complete hour to read is passed without a request.
+    while (
+      run.metricsIndex < run.servers.length &&
+      !run.metrics &&
+      windowStart(run.servers[run.metricsIndex]!) >= run.metricsTo
     ) {
-      return metricsStep;
+      run.metricsIndex += 1;
     }
+    if (run.metricsIndex < run.servers.length) return metricsStep;
     return null;
   }
 
@@ -759,7 +971,6 @@ export async function syncPage(
     datasetPages.push(datasetPage(run, costItemsDataset.key, chunk, false));
   }
 
-  const costComplete = !run.costPartial && run.currency !== undefined;
   const today = startOfUtcDay(run.at);
 
   // Every step done: the cost of each resource goes out on this page, which
@@ -767,7 +978,7 @@ export async function syncPage(
   // refuses a final result with an incomplete page (ADR 0026 §7), so the
   // final result carries nothing but the empty pages that complete them.
   if (!step && !run.finishing) {
-    if (costComplete) {
+    if (costComplete(run)) {
       const currency = run.currency!;
       const observe = (resource: string, value: number) =>
         out.observations.push({
@@ -819,7 +1030,7 @@ export async function syncPage(
   for (const id of run.metricsRead) {
     freshness.push({ stream: METRICS_STREAM, resource: serverResource(id) });
   }
-  if (costComplete && run.unpriced.length === 0) {
+  if (costComplete(run) && run.unpriced.length === 0) {
     freshness.push({ stream: COST_STREAM });
   }
   const bounded = boundFreshness(
@@ -838,16 +1049,7 @@ export async function syncPage(
         : Math.max(run.metricsTo, run.metricsFrom),
     ),
   );
-  // The resources with a cost the dashboards hold now: those reported, and
-  // the earlier ones this run could not price (their value stays stored).
-  const reported = costComplete
-    ? [
-        ...Object.keys(run.totals).filter(
-          (resource) => !run.unpriced.includes(resource),
-        ),
-        ...run.previous.filter((resource) => run.unpriced.includes(resource)),
-      ].sort()
-    : run.previous;
+  const retry = retryOf(run, true);
   return {
     observations: [],
     datasetPages,
@@ -857,7 +1059,8 @@ export async function syncPage(
       v: 1,
       connection: run.connection,
       scope: run.scope,
-      reported,
+      reported: reportedOf(run),
+      ...(Object.keys(retry).length > 0 ? { retry } : {}),
     }),
     nextFrom: resumeAt,
     done: true,
