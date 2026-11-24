@@ -1070,16 +1070,26 @@ dashboard.
 
 **Projects.** Every resource of a source belongs to a workspace project
 through the install's links table (a manual dataset, `app_key` =
-`<connectionId>:<resourceId>` → `product_id` = the project id), named by
-its projects table (`product_id` → `product_name`): the App Portfolio's
-table columns, so its store preparations read the same tables. The install
-seeds the projects table with the workspace's projects (not archived) and
-the links table with every resource of a connection that is in a project
-(the connection's project), then the request's explicit links. A resource
-without a link is its own entry, as an app without a product is. The
-tables are the customer's: a link added, changed or removed, or a project
-renamed, is offered as a template update (as changed apps are), whose plan
-shows the slide changes. A one-flow "add a product" comes with #879.
+`<connectionId>:<resourceId>` → `product_id` = `product:<projectId>`),
+named by its projects table (`product_id` → `product_name`): the App
+Portfolio's table columns and product values, so its store preparations
+read the same tables and a project slide's freshness resolves its
+resources through the links table as an app slide's does (`linksDatasetId`
+beside `mappingDatasetId`, ADR 0025). The install seeds the projects table
+with the workspace's projects (not archived) and the links table with the
+request's explicit links, then every resource of a connection that is in a
+project (the connection's project). A resource without a link is its own
+entry, as an app without a product is.
+
+The tables are the customer's: a link added, changed or removed, or a
+project renamed, is offered as a template update (as changed apps are),
+whose plan shows the slide changes. So is what the tables lack (owner
+decision C): a workspace project created since, and a resource of a
+connection in a project that no link names yet (a connection moved into a
+project, a resource discovered later). Nothing is linked behind the
+customer's back: the update reads those rows for its plan and writes them
+to the tables when it is applied. A one-flow "add a product" (#879) will
+apply such updates.
 
 **Families.** Four families of ordinary preparations, each a preparation per
 source (its rows in common columns, joined to the links and projects
@@ -1090,7 +1100,13 @@ tables), one append with two sources or more, and a model:
 | `state`    | Railway `service_states`, Vercel `production_deployments`, Hetzner `servers`, HTTP `checks`                                   | `items` (count); dimensions item, item with project, state, since, rolled back |
 | `deploys`  | Railway `deployments`, Vercel `deployments` (target `production`)                                                             | `deploys`, `failed_deploys`, `last_deploy`, `last_status`                      |
 | `costs`    | Railway `project_usage` (`cost_usd`), Vercel `billing_charges` (`effective_cost`), Hetzner `cost_items` (`monthly_net`)       | `cost`, per currency                                                           |
-| `audience` | Vercel `vercel.visitors`, Search Console `google-search-console.clicks`, PostHog `posthog.dau` / `posthog.mau` (observations) | `visitors`, `clicks`, `dau`, `mau`                                             |
+| `audience` | Vercel `vercel.visitors`, Search Console `google-search-console.clicks`, PostHog `posthog.dau` / `wau` / `mau` (observations) | `visitors`, `clicks`, `dau`, `wau`, `mau`                                      |
+
+Items and services are identities, not names: the state model's `item`
+dimension is the connection-qualified item key labelled with its name, and
+the deploys model's `service` the connection-qualified service (Railway) or
+project (Vercel), so two of one name stay two rows. A Vercel charge
+without a project is its team's (`team_id` is its resource).
 
 App Store Connect and Google Play reuse the App Portfolio's records
 (version 7, frozen as `storeTemplateV7`): their downloads, proceeds and
@@ -1103,17 +1119,25 @@ models never convert currencies, so `cost` is read per currency and a
 table's total is one per currency. Days are UTC for every source, PostHog
 included. A Vercel project whose production points at an older build than
 the newest ready one is "up · rolled back" (the state widget's flag).
-`dau` and `mau` are each project's newest day, summed over projects, never
-over days.
+Active users are yesterday's complete UTC day (owner decision B): DAU, and
+WAU and MAU as PostHog reports them for that day, summed over projects,
+never over days.
 
-**Dashboard.** The overview: the state list over every item named with its
-project (problems first, with the count of what is not up), deploys today
-per provider, spend this month per provider and currency, active users per
-project and, with a store, downloads per project. Then one slide per
-project with a linked resource, scoped to it (`project`), in name order:
-downloads, revenue and ratings (stores), usage (visitors, clicks, daily
-users over 30 days), latest deploys, spend this month, and the state list,
-as far as its links fill them. The dashboard's filters (project, provider,
+Two measure-widget options read these UTC days (`measureWidgetOptionsSchema`,
+#876): `periodTimeZone: "UTC"` makes `period` read UTC days instead of the
+workspace's ("today" is the UTC day the deploys and charges are dated by),
+and `periodWindow: "previous"` reads the period just before it ("today" →
+yesterday). Widgets without them read as before.
+
+**Dashboard.** The overview: the state summary in its single form ("All
+23 up", "2 of 23 down", owner decision A) over the list of every item
+named with its project (problems first), deploys today per provider (UTC),
+spend this month per provider and currency (UTC), yesterday's usage per
+project (the measures its sources fill: users, visitors, clicks) and,
+with a store, downloads per project. Then one slide per project with a
+linked resource, scoped to it (`project`), in name order: downloads,
+revenue and ratings (stores), yesterday's usage, latest deploys, spend
+this month, and the state list, as far as its links fill them. The dashboard's filters (project, provider,
 day) map to every model; widgets with a period of their own exclude the
 day filter, the state lists exclude it too. Projects past the Studio's
 limits (12 slides, 48 data widgets) show in the overview only and are

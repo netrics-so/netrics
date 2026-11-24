@@ -174,6 +174,9 @@ export const dashboardsEn = {
       "google-play": "Google Play",
     },
     install: "Create dashboard",
+    chosen:
+      "{count, plural, one {# source} other {# sources}} chosen, at most {max}.",
+    tooMany: "Choose at most {max} sources: one dashboard reads up to {max}.",
     installing: "Creating…",
     omitted: "The dashboard is full: {names} show in the overview only.",
     open: "Open the dashboard",

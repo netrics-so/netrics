@@ -22,7 +22,10 @@ import {
   type TestDatabase,
 } from "../test-db.js";
 import { developerTemplate } from "./developer-template.js";
-import { createDeveloperTemplateService } from "./developer-template-service.js";
+import {
+  createDeveloperTemplateService,
+  projectProduct,
+} from "./developer-template-service.js";
 import { createDeveloperTemplateUpdateService } from "./developer-template-updates.js";
 import { createStoreTemplateUpdateService } from "./store-template-updates.js";
 import type { StoreTemplateDefinition } from "./store-template.js";
@@ -279,7 +282,7 @@ describe("Developer Portfolio updates", { timeout: TIMEOUT_MS }, () => {
           {
             values: {
               app_key: `${target.connections[1]}:prj_beta`,
-              product_id: target.projects[1]!,
+              product_id: projectProduct(target.projects[1]!),
             },
           },
         ],
@@ -300,7 +303,10 @@ describe("Developer Portfolio updates", { timeout: TIMEOUT_MS }, () => {
     ]);
     const beta = copy.slides[2]!;
     expect(beta.scope).toEqual({
-      project: { kind: "values", values: [target.projects[1]] },
+      project: {
+        kind: "values",
+        values: [projectProduct(target.projects[1]!)],
+      },
     });
     // Vercel fills its usage, deploys, cost and state.
     expect(beta.widgets.map((widget) => widget.type).sort()).toEqual([
@@ -312,5 +318,109 @@ describe("Developer Portfolio updates", { timeout: TIMEOUT_MS }, () => {
     expect((await updates().list(target.actor)).installs[0]).toMatchObject({
       updateAvailable: false,
     });
+  });
+
+  it("offers a new workspace project and its connection's resources as an update (owner decision C)", async () => {
+    const target = await setup();
+    const { requestId, result } = await install(target, developerTemplate);
+    // After the install: a new project, and the Vercel connection moved
+    // into it with a project it has discovered.
+    const [gamma] = await owner<{ id: string }[]>`
+      insert into projects (workspace_id, name)
+      values (${target.workspaceId}, 'Gamma') returning id`;
+    await owner`update connections set project_id = ${gamma!.id}
+      where id = ${target.connections[1]!}`;
+    await owner`insert into connection_resources
+        (connection_id, workspace_id, resource_id, name, kind)
+      values (${target.connections[1]!}, ${target.workspaceId}, 'prj_gamma',
+        'gamma-web', 'project')`;
+    // Not applied by itself: offered for review.
+    const listed = await updates().list(target.actor);
+    expect(listed.installs[0]).toMatchObject({
+      updateAvailable: true,
+      newerVersion: false,
+    });
+    const before = await withWorkspace(
+      db,
+      { workspaceId: target.workspaceId },
+      (tx) => findDashboard(tx, target.workspaceId, result.dashboardId),
+    );
+    expect(before!.slides.map((slide) => slide.name)).toEqual([
+      "Overview",
+      "Alpha",
+    ]);
+    const { copy } = await applyUpdate(target, requestId);
+    expect(copy.slides.map((slide) => slide.name)).toEqual([
+      "Overview",
+      "Alpha",
+      "Gamma",
+    ]);
+    // Applying wrote the rows the slide was reviewed with.
+    const data = createDataService(db, at);
+    const links = await data.readManual(target.actor, result.linksDatasetId, {
+      offset: 0,
+      limit: 1000,
+    });
+    expect(links.records.map((record) => record.values)).toContainEqual({
+      app_key: `${target.connections[1]}:prj_gamma`,
+      product_id: projectProduct(gamma!.id),
+    });
+    const projects = await data.readManual(
+      target.actor,
+      result.projectsDatasetId,
+      { offset: 0, limit: 1000 },
+    );
+    expect(projects.records.map((record) => record.values)).toContainEqual({
+      product_id: projectProduct(gamma!.id),
+      product_name: "Gamma",
+    });
+    expect((await updates().list(target.actor)).installs[0]).toMatchObject({
+      updateAvailable: false,
+    });
+  });
+
+  it("refuses the App Portfolio's routes on a Developer Portfolio update", async () => {
+    const target = await setup();
+    const { requestId, result } = await install(target, older);
+    const service = updates(newer);
+    const plan = await service.plan(target.actor, requestId);
+    const update = await service.apply(target.actor, requestId, {
+      basis: plan.basis,
+      decisions: decisions(plan),
+    });
+    const data = createDataService(db, at);
+    for (const draft of update.drafts)
+      if (draft.kind === "preparation")
+        await data.publishPreparation(
+          target.actor,
+          draft.recordId,
+          draft.version,
+        );
+      else await data.publishModel(target.actor, draft.recordId, draft.version);
+    const store = createStoreTemplateUpdateService({ db, registry, now: at });
+    const notFound = { code: "store_template_update_not_found", status: 404 };
+    await expect(
+      store.createCopy(target.actor, update.id, "dashboard:portfolio"),
+    ).rejects.toMatchObject(notFound);
+    await expect(
+      store.swap(target.actor, update.id, "dashboard:portfolio"),
+    ).rejects.toMatchObject(notFound);
+    await expect(
+      store.swapBack(target.actor, update.id, "dashboard:portfolio"),
+    ).rejects.toMatchObject(notFound);
+    await expect(
+      store.closeUpdate(target.actor, requestId, update.id),
+    ).rejects.toMatchObject(notFound);
+    // Nothing changed: no copy, still open.
+    const [row] = await owner<{ closed: boolean; dashboards: unknown }[]>`
+      select closed_at is not null as closed, dashboards
+      from data_template_updates where id = ${update.id}`;
+    expect(row!.closed).toBe(false);
+    expect(row!.dashboards).toEqual([
+      expect.objectContaining({
+        originalId: result.dashboardId,
+        copyId: null,
+      }),
+    ]);
   });
 });

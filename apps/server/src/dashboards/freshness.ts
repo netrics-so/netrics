@@ -662,7 +662,8 @@ export interface FilterChoices {
  * slide's scope, a screen's scope (#500), the viewer's chosen filter
  * values and the dashboard's fixed ones (#776) all pick, as the data rows
  * apply them; a linked product's through the install's mapping table
- * (scopedFreshnessResources, #767). A connection they name no app of adds
+ * (scopedFreshnessResources, #767), or a Developer Portfolio project's through
+ * its links table (#876, `linksDatasetId`). A connection they name no app of adds
  * nothing, and when none picks apps every selected resource counts.
  */
 export async function sourceFreshnessDependencies(
@@ -884,14 +885,14 @@ async function isStoreTemplateModel(
   if (unknown.length) {
     const installs = await tx
       .select({
-        mapping: sql<string>`${schema.dataTemplateInstalls.result}->>'mappingDatasetId'`,
+        mapping: sql<string>`coalesce(${schema.dataTemplateInstalls.result}->>'mappingDatasetId', ${schema.dataTemplateInstalls.result}->>'linksDatasetId')`,
       })
       .from(schema.dataTemplateInstalls)
       .where(
         and(
           eq(schema.dataTemplateInstalls.workspaceId, workspaceId),
           inArray(
-            sql`${schema.dataTemplateInstalls.result}->>'mappingDatasetId'`,
+            sql`coalesce(${schema.dataTemplateInstalls.result}->>'mappingDatasetId', ${schema.dataTemplateInstalls.result}->>'linksDatasetId')`,
             unknown,
           ),
         ),
@@ -1009,14 +1010,14 @@ export async function mappedProductApps(
     for (const id of unknown) cache.isMapping.set(id, false);
     for (const install of await tx
       .select({
-        mapping: sql<string>`${schema.dataTemplateInstalls.result}->>'mappingDatasetId'`,
+        mapping: sql<string>`coalesce(${schema.dataTemplateInstalls.result}->>'mappingDatasetId', ${schema.dataTemplateInstalls.result}->>'linksDatasetId')`,
       })
       .from(schema.dataTemplateInstalls)
       .where(
         and(
           eq(schema.dataTemplateInstalls.workspaceId, workspaceId),
           inArray(
-            sql`${schema.dataTemplateInstalls.result}->>'mappingDatasetId'`,
+            sql`coalesce(${schema.dataTemplateInstalls.result}->>'mappingDatasetId', ${schema.dataTemplateInstalls.result}->>'linksDatasetId')`,
             unknown,
           ),
         ),

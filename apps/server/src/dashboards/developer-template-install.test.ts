@@ -155,9 +155,11 @@ describe("Developer Portfolio install statements", () => {
       // The links and projects tables' rows: read once, by the first
       // preparation that reads them.
       expect(reads(sent, "data_records")).toBe(2);
-      // Each published version read once, by its publication's second pass.
+      // Each published version read once, by its publication's second pass,
+      // and once more by each of the overview's two state widgets (the
+      // summary and the list, owner decision A) when the dashboard is saved.
       expect(reads(sent, "data_preparation_versions")).toBeLessThanOrEqual(
-        records!.preparations,
+        records!.preparations + 2,
       );
     }
   }, 120_000);

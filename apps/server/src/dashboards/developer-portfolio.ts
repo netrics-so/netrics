@@ -149,14 +149,17 @@ export const developerTemplateCopy = (locale: Locale) =>
         visitors: "Besucher",
         clicks: "Suchklicks",
         dau: "Aktive Nutzer (Tag)",
+        wau: "Aktive Nutzer (Woche)",
         mau: "Aktive Nutzer (Monat)",
         notHealthy: "Was nicht läuft",
         deploysToday: "Deploys heute",
         spend: "Kosten diesen Monat",
-        activeUsers: "Aktive Nutzer",
+        activeUsers: "Aktive Nutzer gestern",
+        usage: "Nutzung gestern",
+        stateSummary: "Alle Dienste",
         latestDeploys: "Letzte Deploys",
         services: "Status",
-        audience: "Besucher, Klicks und Nutzer (30 Tage)",
+        audience: "Gestern (UTC)",
         downloads: "Downloads (30 Tage)",
         revenue: "Erlöse (30 Tage)",
         ratings: "Bewertungen",
@@ -207,14 +210,17 @@ export const developerTemplateCopy = (locale: Locale) =>
         visitors: "Visitors",
         clicks: "Search clicks",
         dau: "Daily active users",
+        wau: "Weekly active users",
         mau: "Monthly active users",
         notHealthy: "What is not up",
         deploysToday: "Deploys today",
         spend: "Spend this month",
-        activeUsers: "Active users",
+        activeUsers: "Active users yesterday",
+        usage: "Usage yesterday",
+        stateSummary: "All services",
         latestDeploys: "Latest deploys",
         services: "State",
-        audience: "Visitors, clicks and users (30 days)",
+        audience: "Yesterday (UTC)",
         downloads: "Downloads (30 days)",
         revenue: "Revenue (30 days)",
         ratings: "Ratings",
@@ -253,9 +259,33 @@ export const DEVELOPER_AUDIENCE_METRICS: Partial<
   ],
   posthog: [
     { key: "posthog.dau", metric: "dau" },
+    { key: "posthog.wau", metric: "wau" },
     { key: "posthog.mau", metric: "mau" },
   ],
 };
+/** The audience model's metrics, in the order widgets show them. */
+export const AUDIENCE_METRICS = [
+  "dau",
+  "wau",
+  "mau",
+  "visitors",
+  "clicks",
+] as const;
+export type AudienceMetric = (typeof AUDIENCE_METRICS)[number];
+/** The audience metrics the given sources fill, in widget order. */
+export function audienceMetricsOf(
+  sources: readonly Pick<DeveloperSource, "connectorId">[],
+): AudienceMetric[] {
+  const read = new Set(
+    sources.flatMap(
+      (source) =>
+        DEVELOPER_AUDIENCE_METRICS[source.connectorId]?.map(
+          (entry) => entry.metric,
+        ) ?? [],
+    ),
+  );
+  return AUDIENCE_METRICS.filter((metric) => read.has(metric));
+}
 
 /** The source datasets each family reads, per connector. */
 export const DEVELOPER_FAMILY_DATASETS: Record<
@@ -415,11 +445,19 @@ function deploysSpec(source: DeveloperSource, t: Copy): FamilySpec | null {
     id: DeveloperSource["id"],
     service: DataExpression,
     status: string,
+    serviceId: DataExpression,
   ): [string, string, DataExpression][] => [
     [
       "deploy_key",
       "Deploy ID",
       call("concat", text(id + ":"), field("deployment_id")),
+    ],
+    // The service's identity, qualified by its connection: two services
+    // of one name stay apart; the name is its label.
+    [
+      "service_key",
+      t.service + " ID",
+      call("concat", text(id + ":"), serviceId),
     ],
     ["deploy_service", t.service, service],
     ["status", t.status, field(status)],
@@ -443,6 +481,7 @@ function deploysSpec(source: DeveloperSource, t: Copy): FamilySpec | null {
             text("—"),
           ),
           "status",
+          call("coalesce", field("service_id"), field("project_id")),
         ),
       };
     case "vercel":
@@ -452,7 +491,12 @@ function deploysSpec(source: DeveloperSource, t: Copy): FamilySpec | null {
         filter: call("eq", field("target"), text("production")),
         resource: field("project_id"),
         resourceName: field("project_name"),
-        columns: common(source.id, field("project_name"), "state"),
+        columns: common(
+          source.id,
+          field("project_name"),
+          "state",
+          field("project_id"),
+        ),
       };
     default:
       return null;
@@ -484,7 +528,14 @@ function costsSpec(source: DeveloperSource, t: Copy): FamilySpec | null {
     case "vercel":
       return {
         datasetKey: "billing_charges",
-        resource: field("project_id"),
+        // A team-wide charge (no project) is its team's: linkable by the
+        // team ID, never one shared empty key across teams.
+        resource: call(
+          "if",
+          call("eq", field("project_id"), text("")),
+          field("team_id"),
+          field("project_id"),
+        ),
         resourceName: call(
           "coalesce",
           field("project_name"),
@@ -652,6 +703,7 @@ export function familyColumns(family: DeveloperFamily): string[] {
     case "deploys":
       return [
         "deploy_key",
+        "service_key",
         "deploy_service",
         "status",
         "failed",
@@ -668,7 +720,7 @@ export function familyColumns(family: DeveloperFamily): string[] {
         ...PROJECT_COLUMNS,
       ];
     case "audience":
-      return ["day", "metric", "quantity", "latest", ...PROJECT_COLUMNS];
+      return ["day", "metric", "quantity", ...PROJECT_COLUMNS];
   }
 }
 
@@ -768,9 +820,8 @@ export function buildDeveloperPreparation(
 /**
  * Vercel visitors, Search Console clicks and PostHog active users of one
  * connection: its observation datasets' daily rows (UTC days) per
- * resource, each tagged with its metric. `latest` marks each resource's
- * newest day of a metric: active users are that day's, never a sum of
- * days.
+ * resource, each tagged with its metric. The model reads them for one
+ * complete day (yesterday, UTC): active users are never a sum of days.
  */
 function audiencePreparation(
   source: DeveloperSource,
@@ -824,44 +875,7 @@ function audiencePreparation(
     nodes.push({ id: "metrics", type: "append", inputs: tagged });
     current = "metrics";
   }
-  // Each resource's newest day per metric.
-  nodes.push(
-    {
-      id: "newest",
-      type: "group",
-      input: current,
-      keys: ["link_resource", "metric"],
-      aggregates: [
-        { id: "newest_day", name: t.day, op: "max", fieldId: "day" },
-      ],
-    },
-    {
-      id: "join_newest",
-      type: "join",
-      left: current,
-      right: "newest",
-      keys: [
-        { left: "link_resource", right: "link_resource" },
-        { left: "metric", right: "metric" },
-      ],
-      mode: "left",
-      cardinality: "many_to_one",
-      rightPrefix: "newest.",
-    },
-    {
-      id: "column_latest",
-      type: "calculate",
-      input: "join_newest",
-      fieldId: "latest",
-      name: t.day,
-      expression: call(
-        "coalesce",
-        call("eq", field("day"), field("newest.newest_day")),
-        bool(false),
-      ),
-    },
-  );
-  const related = projectNodes(source, "column_latest", null, ids, t);
+  const related = projectNodes(source, current, null, ids, t);
   nodes.push(...related.nodes, {
     id: "output",
     type: "select",
@@ -919,8 +933,12 @@ export function buildDeveloperModel(
   let measures: ModelMeasure[];
   if (family === "state") {
     dimensions.push(
-      dimension("item", t.item, "item_name"),
-      dimension("item_full", t.itemFull, "item_full"),
+      // The item's identity, named by its label: two items of one name
+      // stay apart.
+      dimension("item", t.item, "item_key", { labelFieldId: "item_name" }),
+      dimension("item_full", t.itemFull, "item_key", {
+        labelFieldId: "item_full",
+      }),
       dimension("state", t.state, "state"),
       dimension("changed_at", t.changedAt, "changed_at", {
         timeAlignment: "instant",
@@ -930,7 +948,9 @@ export function buildDeveloperModel(
     measures = [aggregate("items", t.items, "count")];
   } else if (family === "deploys") {
     dimensions.push(
-      dimension("service", t.service, "deploy_service"),
+      dimension("service", t.service, "service_key", {
+        labelFieldId: "deploy_service",
+      }),
       dimension("status", t.status, "status"),
       dimension("day", t.day, "day", { timeAlignment: "reporting_date" }),
       dimension("created_at", t.createdAt, "created_at", {
@@ -959,25 +979,14 @@ export function buildDeveloperModel(
       dimension("day", t.day, "day", { timeAlignment: "reporting_date" }),
       dimension("metric", t.metric, "metric"),
     );
-    const of = (metric: string, latest: boolean) =>
-      latest
-        ? call(
-            "and",
-            call("eq", field("metric"), text(metric)),
-            call("eq", field("latest"), bool(true)),
-          )
-        : call("eq", field("metric"), text(metric));
-    measures = [
-      aggregate("visitors", t.visitors, "sum", "quantity", {
-        filter: of("visitors", false),
+    // Per metric, the sum over the query's days: the widgets read one
+    // complete UTC day (yesterday, owner decision #876), so active users
+    // are summed over projects, never over days.
+    measures = AUDIENCE_METRICS.map((metric) =>
+      aggregate(metric, t[metric], "sum", "quantity", {
+        filter: call("eq", field("metric"), text(metric)),
       }),
-      aggregate("clicks", t.clicks, "sum", "quantity", {
-        filter: of("clicks", false),
-      }),
-      // Each project's newest day, summed over projects: never days.
-      aggregate("dau", t.dau, "sum", "quantity", { filter: of("dau", true) }),
-      aggregate("mau", t.mau, "sum", "quantity", { filter: of("mau", true) }),
-    ];
+    );
   }
   return {
     version: 1,
@@ -994,6 +1003,8 @@ export interface DeveloperPortfolio {
   models: Partial<Record<DeveloperFamily | StoreMetric, string>>;
   /** Every project that can have a slide, in slide order. */
   projects: DeveloperProjectIdentity[];
+  /** The audience metrics the install's sources fill. */
+  audience: AudienceMetric[];
 }
 
 /** A short stable key of a project's slide and widgets. */
@@ -1023,7 +1034,7 @@ export function projectSlideWidgets(
 /** The overview's widgets: those whose model the install has. */
 function overviewWidgets(models: DeveloperPortfolio["models"]) {
   return (
-    ["state", "deploys", "costs", "audience", "downloads"] as const
+    ["state", "state", "deploys", "costs", "audience", "downloads"] as const
   ).filter((family) => models[family]);
 }
 
@@ -1181,6 +1192,10 @@ export function buildDeveloperDashboard(
       view: "value" | "table";
       limit: number;
       period?: "today" | "this_month" | "last_30_days";
+      /** The template's own rows are dated in UTC (#876). */
+      periodTimeZone?: "UTC";
+      /** "previous": yesterday, the last complete day. */
+      periodWindow?: "previous";
       order?: { measureId: string; direction: "asc" | "desc" };
     },
     filter?: DataExpression,
@@ -1196,9 +1211,18 @@ export function buildDeveloperDashboard(
     },
     options,
   });
-  const state = (dimension: "item" | "item_full", limit: number): Unplaced => ({
+  const state = (
+    dimension: "item" | "item_full",
+    limit: number,
+    layout: "list" | "single" = "list",
+  ): Unplaced => ({
     type: "state",
-    title: dimension === "item_full" ? t.notHealthy : t.services,
+    title:
+      layout === "single"
+        ? t.stateSummary
+        : dimension === "item_full"
+          ? t.notHealthy
+          : t.services,
     binding: {
       modelId: models.state!,
       nameDimensionId: dimension,
@@ -1208,7 +1232,7 @@ export function buildDeveloperDashboard(
       exclusions: [{ filterId: "day", reason: t.noDate }],
     },
     options: {
-      layout: "list",
+      layout,
       item: null,
       limit,
       showChanged: true,
@@ -1218,10 +1242,10 @@ export function buildDeveloperDashboard(
 
   // ── Overview ──────────────────────────────────────────────────────────
   const overview: Entry[] = [];
-  if (models.state)
-    // Every item, problems first (the list ranks them), with the count
-    // of what is not up in its summary.
-    overview.push({ key: "widget:state", widget: state("item_full", 8) });
+  // The audience measures the install's sources fill (yesterday, UTC).
+  const audienceOf = (wanted: readonly AudienceMetric[]) =>
+    wanted.filter((metric) => portfolio.audience.includes(metric));
+  const overviewAudience = audienceOf(["dau", "mau", "visitors", "clicks"]);
   if (models.deploys)
     overview.push({
       key: "widget:deploys",
@@ -1230,7 +1254,7 @@ export function buildDeveloperDashboard(
         t.deploysToday,
         ["provider"],
         ["deploys", "failed_deploys"],
-        { view: "table", limit: 5, period: "today" },
+        { view: "table", limit: 5, period: "today", periodTimeZone: "UTC" },
       ),
     });
   if (models.costs)
@@ -1241,21 +1265,29 @@ export function buildDeveloperDashboard(
         t.spend,
         ["provider", "currency"],
         ["cost"],
-        { view: "table", limit: 6, period: "this_month" },
+        {
+          view: "table",
+          limit: 6,
+          period: "this_month",
+          periodTimeZone: "UTC",
+        },
       ),
     });
-  if (models.audience)
+  if (models.audience && overviewAudience.length)
     overview.push({
       key: "widget:audience",
       widget: measure(
         models.audience,
-        t.activeUsers,
+        overviewAudience.includes("dau") ? t.activeUsers : t.usage,
         ["project"],
-        ["dau", "mau"],
+        overviewAudience,
         {
           view: "table",
           limit: 6,
-          order: { measureId: "dau", direction: "desc" },
+          period: "today",
+          periodWindow: "previous",
+          periodTimeZone: "UTC",
+          order: { measureId: overviewAudience[0]!, direction: "desc" },
         },
       ),
     });
@@ -1277,16 +1309,36 @@ export function buildDeveloperDashboard(
       ),
     });
   let overviewPlaced: Placed[];
-  const [first, ...others] = overview;
-  if (first?.key === "widget:state" && others.length) {
-    // What is not up on the left, the numbers beside it: one above the
-    // other, or two rows of two.
-    const h = others.length > 2 ? 4 : 8 / others.length;
-    overviewPlaced = [
+  const others = overview;
+  if (models.state) {
+    // On the left the summary ("All 23 up", "2 of 23 down", owner
+    // decision #876) over the list of every item, problems first; the
+    // numbers beside them: one above the other, or two rows of two.
+    const left: Placed[] = [
       {
-        key: first.key,
-        widget: { ...first.widget, x: 0, y: 0, w: 4, h: 8 } as Widget,
+        key: "widget:state-summary",
+        widget: {
+          ...state("item_full", 1, "single"),
+          x: 0,
+          y: 0,
+          w: others.length ? 4 : 12,
+          h: 2,
+        } as Widget,
       },
+      {
+        key: "widget:state",
+        widget: {
+          ...state("item_full", 8),
+          x: 0,
+          y: 2,
+          w: others.length ? 4 : 12,
+          h: 6,
+        } as Widget,
+      },
+    ];
+    const h = others.length > 2 ? 4 : others.length ? 8 / others.length : 8;
+    overviewPlaced = [
+      ...left,
       ...(others.length > 2
         ? [
             ...row(others.slice(0, 2), 0, h, 4, 8),
@@ -1303,6 +1355,7 @@ export function buildDeveloperDashboard(
 
   // ── Project slides ────────────────────────────────────────────────────
   const shown = developerProjectSlides(portfolio).shown;
+  const projectAudience = audienceOf(["dau", "visitors", "clicks"]);
   const projectSlide = (project: DeveloperProjectIdentity) => {
     const slideKey = projectSlideKey(project.productId);
     const key = (kind: string) => `widget:${slideKey}:${kind}`;
@@ -1353,13 +1406,13 @@ export function buildDeveloperDashboard(
         case "audience":
           return {
             key: key(kind),
-            widget: measure(
-              models.audience!,
-              t.audience,
-              [],
-              ["visitors", "clicks", "dau"],
-              { view: "table", limit: 1, period: "last_30_days" },
-            ),
+            widget: measure(models.audience!, t.audience, [], projectAudience, {
+              view: "table",
+              limit: 1,
+              period: "today",
+              periodWindow: "previous",
+              periodTimeZone: "UTC",
+            }),
           };
         case "deploys":
           return {
@@ -1388,6 +1441,7 @@ export function buildDeveloperDashboard(
                 view: "table",
                 limit: 3,
                 period: "this_month",
+                periodTimeZone: "UTC",
               },
             ),
           };

@@ -178,6 +178,9 @@ export const dashboardsDe: Catalog<typeof dashboardsEn> = {
       "google-play": "Google Play",
     },
     install: "Dashboard erstellen",
+    chosen:
+      "{count, plural, one {# Quelle} other {# Quellen}} gewählt, höchstens {max}.",
+    tooMany: "Wähle höchstens {max} Quellen: Ein Dashboard liest bis zu {max}.",
     installing: "Dashboard wird erstellt…",
     omitted: "Das Dashboard ist voll: {names} erscheinen nur in der Übersicht.",
     open: "Dashboard öffnen",

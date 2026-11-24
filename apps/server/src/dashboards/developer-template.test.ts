@@ -90,7 +90,7 @@ const dashboardOf = (records: StoreTemplateRecord[]) => {
  * remember the version they were made from, and updates compare with it.
  */
 const VERSION_HASHES: Record<number, string> = {
-  1: "96fafddb6bb12a7efe7e35f0849d934a2618f84ce1b2a1d9d25a98d9932a3762",
+  1: "3ef98dff7fb433cb90efb796c9a34fa8f4c79b412a4dfcbdae77600660f117f8",
 };
 
 describe("Developer Portfolio template", () => {
@@ -204,18 +204,77 @@ describe("Developer Portfolio template", () => {
     const titles = (record: typeof en) =>
       record.request.slides![0]!.widgets.map((widget) => widget.title);
     expect(titles(en)).toEqual([
+      "All services",
       "What is not up",
       "Deploys today",
       "Spend this month",
-      "Active users",
+      "Active users yesterday",
       "Downloads (30 days)",
     ]);
     expect(titles(de)).toEqual([
+      "Alle Dienste",
       "Was nicht läuft",
       "Deploys heute",
       "Kosten diesen Monat",
-      "Aktive Nutzer",
+      "Aktive Nutzer gestern",
       "Downloads (30 Tage)",
+    ]);
+  });
+
+  type Widget = NonNullable<
+    ReturnType<typeof dashboardOf>["request"]["slides"]
+  >[number]["widgets"][number];
+  const overviewOf = (connections: DeveloperSource[]) =>
+    dashboardOf(buildAll(inputs(connections, [project("Alpha")]))).request
+      .slides![0]!.widgets as Widget[];
+  const byTitle = (widgets: Widget[], title: string) =>
+    widgets.find((widget) => widget.title === title) as Extract<
+      Widget,
+      { type: "measure" }
+    >;
+
+  it("shows the state summary beside the list of everything (owner decision A)", () => {
+    const states = overviewOf(ALL).filter((widget) => widget.type === "state");
+    expect(
+      states.map((widget) =>
+        widget.type === "state"
+          ? [widget.options?.layout, widget.binding.nameDimensionId]
+          : null,
+      ),
+    ).toEqual([
+      ["single", "item_full"],
+      ["list", "item_full"],
+    ]);
+  });
+
+  it("reads deploys, spend and usage in UTC days, usage of yesterday", () => {
+    const widgets = overviewOf(ALL);
+    expect(byTitle(widgets, "Deploys today").options).toMatchObject({
+      period: "today",
+      periodTimeZone: "UTC",
+    });
+    expect(byTitle(widgets, "Spend this month").options).toMatchObject({
+      period: "this_month",
+      periodTimeZone: "UTC",
+    });
+    expect(byTitle(widgets, "Active users yesterday").options).toMatchObject({
+      period: "today",
+      periodWindow: "previous",
+      periodTimeZone: "UTC",
+    });
+  });
+
+  it("shows the usage the installed sources fill", () => {
+    const measures = (connections: DeveloperSource[], title: string) =>
+      byTitle(overviewOf(connections), title)?.binding.measureIds;
+    // Search Console only: its clicks, not users nobody reads.
+    expect(measures([ALL[5]!], "Usage yesterday")).toEqual(["clicks"]);
+    // An unlinked Vercel project: its visitors.
+    expect(measures([ALL[1]!], "Usage yesterday")).toEqual(["visitors"]);
+    expect(measures([ALL[4]!, ALL[5]!], "Active users yesterday")).toEqual([
+      "dau",
+      "mau",
+      "clicks",
     ]);
   });
 });

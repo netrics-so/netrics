@@ -67,6 +67,39 @@ describe("Developer Portfolio form (#876)", () => {
     expect(html).toContain('value="Developer-Portfolio"');
   });
 
+  it("names the limit of 80 sources and blocks a larger choice", () => {
+    const many = (count: number): DeveloperTemplateOptions => ({
+      connections: Array.from({ length: count }, (_, index) => ({
+        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+        name: `Check ${index}`,
+        connectorId: "http-check" as const,
+        setupPending: false,
+        projectId: null,
+        resources: [],
+      })),
+      projects: [],
+    });
+    const fits = renderI18n(
+      <DeveloperTemplateForm
+        workspaceId={W}
+        projectId={null}
+        options={many(80)}
+      />,
+    );
+    expect(fits).toContain("80 sources chosen, at most 80.");
+    expect(fits).not.toMatch(/<button[^>]*disabled=""[^>]*>Create dashboard/);
+    const over = renderI18n(
+      <DeveloperTemplateForm
+        workspaceId={W}
+        projectId={null}
+        options={many(81)}
+      />,
+      "de",
+    );
+    expect(over).toContain("Wähle höchstens 80 Quellen");
+    expect(over).toMatch(/<button[^>]*disabled=""[^>]*>Dashboard erstellen/);
+  });
+
   it("asks for a source when there is none, and says when there are no projects", () => {
     expect(
       renderI18n(

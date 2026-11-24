@@ -14,6 +14,7 @@ import {
 } from "@netrics/database";
 import type { DatasetRecord } from "@netrics/connector-sdk";
 import type { DeveloperTemplateResult } from "@netrics/contracts";
+import type { DataExpression } from "@netrics/domain";
 
 import { createDefaultRegistry } from "../connectors.js";
 import { createDataService } from "../data/service.js";
@@ -25,7 +26,11 @@ import {
   type TestDatabase,
 } from "../test-db.js";
 import { queryDashboardData } from "./data.js";
-import { createDeveloperTemplateService } from "./developer-template-service.js";
+import { mappedProductApps } from "./freshness.js";
+import {
+  createDeveloperTemplateService,
+  projectProduct,
+} from "./developer-template-service.js";
 import { presentDashboard } from "./service.js";
 
 /**
@@ -272,7 +277,10 @@ describe("Developer Portfolio installs", { timeout: TIMEOUT_MS }, () => {
       "Public API",
     ]);
     expect(dashboard!.slides[1]!.scope).toEqual({
-      project: { kind: "values", values: [target.projects.api] },
+      project: {
+        kind: "values",
+        values: [projectProduct(target.projects.api)],
+      },
     });
     const [links] = await owner<{ rows: unknown[] }[]>`
       select coalesce(json_agg(r.values order by r.values->>'app_key'), '[]') as rows
@@ -283,7 +291,7 @@ describe("Developer Portfolio installs", { timeout: TIMEOUT_MS }, () => {
     expect(links!.rows).toEqual([
       {
         app_key: `${target.connections.railway}:rw-project`,
-        product_id: target.projects.api,
+        product_id: projectProduct(target.projects.api),
       },
     ]);
   });
@@ -385,11 +393,13 @@ describe("Developer Portfolio data", { timeout: TIMEOUT_MS }, () => {
         ["d1", "SUCCESS", false, "2026-11-23T10:00:00.000Z"],
         ["d2", "FAILED", true, "2026-11-24T09:00:00.000Z"],
         ["d3", "SUCCESS", false, "2026-11-24T10:00:00.000Z"],
-      ].map(([id, status, failed, created]) => ({
+        // Another service of the same name (a worker called "api").
+        ["d4", "SUCCESS", false, "2026-11-24T11:00:00.000Z", "s2"],
+      ].map(([id, status, failed, created, service = "s1"]) => ({
         values: {
           deployment_id: id,
           project_id: "rw-1",
-          service_id: "s1",
+          service_id: service,
           service_name: "api",
           environment_id: "e1",
           environment_name: "production",
@@ -496,10 +506,15 @@ describe("Developer Portfolio data", { timeout: TIMEOUT_MS }, () => {
         },
       })),
     );
-    await ingest(target.id, c["hetzner-cloud"], "hetzner-cloud", "servers", [
-      {
+    await ingest(
+      target.id,
+      c["hetzner-cloud"],
+      "hetzner-cloud",
+      "servers",
+      // Two servers of one name: two items, never one.
+      ["42", "43"].map((server) => ({
         values: {
-          server_id: "42",
+          server_id: server,
           name: "db-1",
           status: "running",
           state: "up",
@@ -519,8 +534,8 @@ describe("Developer Portfolio data", { timeout: TIMEOUT_MS }, () => {
           included_traffic_bytes: null,
           checked_at: NOW,
         },
-      },
-    ]);
+      })),
+    );
     await ingest(
       target.id,
       c["hetzner-cloud"],
@@ -566,6 +581,11 @@ describe("Developer Portfolio data", { timeout: TIMEOUT_MS }, () => {
     await observe(target.id, c.posthog, "posthog", "posthog.dau", [
       { resource: "ph-1", day: "2026-11-22", value: 50 },
       { resource: "ph-1", day: "2026-11-23", value: 70 },
+      // Today's partial day is not yet "active users".
+      { resource: "ph-1", day: "2026-11-24", value: 99 },
+      // A second PostHog project of the same workspace project.
+      { resource: "ph-3", day: "2026-11-22", value: 1 },
+      { resource: "ph-3", day: "2026-11-23", value: 6 },
       { resource: "ph-2", day: "2026-11-23", value: 5 },
     ]);
     await observe(target.id, c.posthog, "posthog", "posthog.mau", [
@@ -584,6 +604,8 @@ describe("Developer Portfolio data", { timeout: TIMEOUT_MS }, () => {
       links: [
         { connectionId: c.vercel, resourceId: "prj_web", projectId: web },
         { connectionId: c["hetzner-cloud"], resourceId: "42", projectId: web },
+        { connectionId: c["hetzner-cloud"], resourceId: "43", projectId: web },
+        { connectionId: c.posthog, resourceId: "ph-3", projectId: web },
         { connectionId: c["http-check"], resourceId: "chk1", projectId: web },
         { connectionId: c.posthog, resourceId: "ph-1", projectId: web },
         {
@@ -598,15 +620,40 @@ describe("Developer Portfolio data", { timeout: TIMEOUT_MS }, () => {
         },
       ],
     });
+    // Far east of UTC: the workspace's "today" is already 2026-11-25 at
+    // NOW, while the template's rows are dated in UTC.
+    await owner`update workspaces set time_zone = 'Pacific/Kiritimati'
+      where id = ${target.id}`;
   }, TIMEOUT_MS);
 
-  const query = (modelId: string, measureIds: string[], groupBy: string[]) =>
+  const day = (value: string): DataExpression => ({
+    kind: "literal",
+    type: "date",
+    value,
+  });
+  const dayField: DataExpression = { kind: "field", fieldId: "day" };
+  /** Yesterday (UTC 2026-11-23), as the widgets' previous window of "today" reads it. */
+  const today: DataExpression = {
+    kind: "call",
+    fn: "and",
+    args: [
+      { kind: "call", fn: "gte", args: [dayField, day("2026-11-23")] },
+      { kind: "call", fn: "lte", args: [dayField, day("2026-11-23")] },
+    ],
+  };
+  const query = (
+    modelId: string,
+    measureIds: string[],
+    groupBy: string[],
+    filter?: DataExpression,
+  ) =>
     createDataService(db, () => new Date(NOW)).query(
       actor(target.id),
       modelId,
       {
         measureIds,
         groupBy,
+        ...(filter ? { filter } : {}),
       },
     );
   const byProject = (
@@ -637,32 +684,37 @@ describe("Developer Portfolio data", { timeout: TIMEOUT_MS }, () => {
             row.dimensions.provider === provider,
         )?.measures.cost?.value,
       );
-    expect(cost(target.projects.api, "railway")).toBe(12.5);
+    expect(cost(projectProduct(target.projects.api), "railway")).toBe(12.5);
     // Vercel's effective cost, not the billed one.
-    expect(cost(target.projects.web, "vercel")).toBe(5);
+    expect(cost(projectProduct(target.projects.web), "vercel")).toBe(5);
     // Hetzner's net monthly price; an unpriced item adds nothing.
-    expect(cost(target.projects.web, "hetzner")).toBe(5.4);
-    // A team charge without a project is its own entry.
-    expect(cost(`${target.connections.vercel}:`, "vercel")).toBe(20);
+    expect(cost(projectProduct(target.projects.web), "hetzner")).toBe(5.4);
+    // A team charge without a project is its team's (linkable by its ID).
+    expect(cost(`${target.connections.vercel}:team`, "vercel")).toBe(20);
   });
 
-  it("sums users per project from each project's newest day", async () => {
+  it("sums users per project from yesterday's complete UTC day", async () => {
     const users = await query(
       result.models.audience!,
       ["dau", "mau", "visitors"],
       ["project"],
+      today,
     );
+    // Two PostHog projects of one workspace project: 70 + 6 on the same
+    // day, not today's partial 99 nor anybody's "newest" day.
     expect(byProject(users.rows, "dau")).toMatchObject({
-      [target.projects.web]: 70,
-      [target.projects.api]: 5,
+      [projectProduct(target.projects.web)]: 76,
+      [projectProduct(target.projects.api)]: 5,
     });
     expect(byProject(users.rows, "mau")).toMatchObject({
-      [target.projects.web]: 900,
-      [target.projects.api]: 40,
+      [projectProduct(target.projects.web)]: 900,
+      [projectProduct(target.projects.api)]: 40,
     });
-    expect(byProject(users.rows, "visitors")[target.projects.web]).toBe(25);
-    const total = await query(result.models.audience!, ["dau"], []);
-    expect(Number(total.rows[0]!.measures.dau!.value)).toBe(75);
+    expect(
+      byProject(users.rows, "visitors")[projectProduct(target.projects.web)],
+    ).toBe(15);
+    const total = await query(result.models.audience!, ["dau"], [], today);
+    expect(Number(total.rows[0]!.measures.dau!.value)).toBe(81);
   });
 
   it("counts deploys per day and keeps Vercel previews out", async () => {
@@ -676,9 +728,47 @@ describe("Developer Portfolio data", { timeout: TIMEOUT_MS }, () => {
         (row) =>
           row.dimensions.provider === provider && row.dimensions.day === day,
       )?.measures;
-    expect(Number(on("railway", "2026-11-24")!.deploys!.value)).toBe(2);
+    expect(Number(on("railway", "2026-11-24")!.deploys!.value)).toBe(3);
     expect(Number(on("railway", "2026-11-24")!.failed_deploys!.value)).toBe(1);
     expect(Number(on("vercel", "2026-11-24")!.deploys!.value)).toBe(1);
+  });
+
+  it("keeps two services of one name apart in the latest deploys", async () => {
+    const latest = await query(
+      result.models.deploys!,
+      ["last_deploy"],
+      ["service"],
+    );
+    const railway = latest.rows.filter((row) =>
+      String(row.dimensions.service).startsWith(target.connections.railway),
+    );
+    expect(
+      railway.map((row) => [
+        row.dimensions.service,
+        row.dimensionLabels?.service,
+      ]),
+    ).toEqual([
+      [`${target.connections.railway}:s1`, "api"],
+      [`${target.connections.railway}:s2`, "api"],
+    ]);
+  });
+
+  it("resolves a project's slide freshness through the links table", async () => {
+    const apps = await withWorkspace(db, { workspaceId: target.id }, (tx) =>
+      mappedProductApps(tx, target.id, new Set([result.linksDatasetId]), {
+        now: new Date(NOW),
+      }),
+    );
+    expect(apps.get(projectProduct(target.projects.web))?.sort()).toEqual(
+      [
+        `${target.connections.vercel}:prj_web`,
+        `${target.connections["hetzner-cloud"]}:42`,
+        `${target.connections["hetzner-cloud"]}:43`,
+        `${target.connections["http-check"]}:chk1`,
+        `${target.connections.posthog}:ph-1`,
+        `${target.connections.posthog}:ph-3`,
+      ].sort(),
+    );
   });
 
   it("states every service, server and check with its project", async () => {
@@ -691,17 +781,23 @@ describe("Developer Portfolio data", { timeout: TIMEOUT_MS }, () => {
       states.rows
         .map((row) => [
           row.dimensions.project,
-          row.dimensions.item,
+          row.dimensionLabels?.item ?? row.dimensions.item,
           row.dimensions.state,
           row.dimensions.rolled_back,
         ])
         .sort((a, b) => String(a[1]).localeCompare(String(b[1]))),
     ).toEqual(
       [
-        [target.projects.api, "api · production", "failed", false],
-        [target.projects.web, "db-1", "up", false],
-        [target.projects.web, "Shop home", "down", false],
-        [target.projects.web, "web", "up", true],
+        [
+          projectProduct(target.projects.api),
+          "api · production",
+          "failed",
+          false,
+        ],
+        [projectProduct(target.projects.web), "db-1", "up", false],
+        [projectProduct(target.projects.web), "db-1", "up", false],
+        [projectProduct(target.projects.web), "Shop home", "down", false],
+        [projectProduct(target.projects.web), "web", "up", true],
       ].sort((a, b) => String(a[1]).localeCompare(String(b[1]))),
     );
   });
@@ -766,7 +862,10 @@ describe("Developer Portfolio data", { timeout: TIMEOUT_MS }, () => {
         );
       });
     const filtered = await read("Overview", {
-      project: { kind: "values", values: [target.projects.web] },
+      project: {
+        kind: "values",
+        values: [projectProduct(target.projects.web)],
+      },
     });
     const scoped = await read("Web shop", {});
     const costCells = (data: Awaited<ReturnType<typeof read>>) =>
@@ -784,17 +883,50 @@ describe("Developer Portfolio data", { timeout: TIMEOUT_MS }, () => {
       ["vercel", 5],
     ]);
     expect(costCells(scoped)).toEqual(costCells(filtered));
+    // The lists (every item); the overview's summary beside its list
+    // (owner decision A) shows the most urgent one and the counts.
     const stateNames = (data: Awaited<ReturnType<typeof read>>) =>
-      data.states.flatMap((state) =>
-        (state.items ?? []).map((item) => item.name),
-      );
+      data.states
+        .filter((state) => state.items.length === state.total)
+        .flatMap((state) => state.items.map((item) => item.name));
+    const summary = filtered.states.find(
+      (state) => state.items.length === 1 && state.total === 4,
+    );
+    expect(summary?.items[0]?.name).toBe("Web shop · Shop home");
     // The overview names each item with its project; the slide by itself.
     expect(stateNames(filtered).sort()).toEqual([
       "Web shop · Shop home",
       "Web shop · db-1",
+      "Web shop · db-1",
       "Web shop · web",
     ]);
-    expect(stateNames(scoped).sort()).toEqual(["Shop home", "db-1", "web"]);
+    expect(stateNames(scoped).sort()).toEqual([
+      "Shop home",
+      "db-1",
+      "db-1",
+      "web",
+    ]);
+    // Deploys "today" and active users read UTC days (#876): the
+    // workspace's zone is already on 2026-11-25.
+    const overview = await read("Overview", {});
+    const cells = (modelId: string, measure: string, dimension: string) =>
+      overview.widgets
+        .filter((widget) => widget.metadata?.modelId === modelId)
+        .flatMap((widget) =>
+          widget.result!.rows.map((row) => [
+            row.dimensionLabels?.[dimension] ?? row.dimensions[dimension],
+            Number(row.measures[measure]!.value),
+          ]),
+        )
+        .sort();
+    expect(cells(result.models.deploys!, "deploys", "provider")).toEqual([
+      ["Railway", 3],
+      ["Vercel", 1],
+    ]);
+    expect(cells(result.models.audience!, "dau", "project")).toEqual([
+      ["Public API", 5],
+      ["Web shop", 76],
+    ]);
     const shown = await withWorkspace(db, { workspaceId: target.id }, (tx) =>
       presentDashboard(tx, target.id, dashboard, "en", {}),
     );

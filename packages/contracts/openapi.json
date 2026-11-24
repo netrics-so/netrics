@@ -15329,6 +15329,18 @@
                                 "this_year",
                                 "last_12_months"
                               ]
+                            },
+                            "periodTimeZone": {
+                              "type": "string",
+                              "enum": [
+                                "UTC"
+                              ]
+                            },
+                            "periodWindow": {
+                              "type": "string",
+                              "enum": [
+                                "previous"
+                              ]
                             }
                           }
                         },
@@ -20743,6 +20755,18 @@
                                           "this_year",
                                           "last_12_months"
                                         ]
+                                      },
+                                      "periodTimeZone": {
+                                        "type": "string",
+                                        "enum": [
+                                          "UTC"
+                                        ]
+                                      },
+                                      "periodWindow": {
+                                        "type": "string",
+                                        "enum": [
+                                          "previous"
+                                        ]
                                       }
                                     }
                                   }
@@ -23831,6 +23855,18 @@
                                                 "last_90_days",
                                                 "this_year",
                                                 "last_12_months"
+                                              ]
+                                            },
+                                            "periodTimeZone": {
+                                              "type": "string",
+                                              "enum": [
+                                                "UTC"
+                                              ]
+                                            },
+                                            "periodWindow": {
+                                              "type": "string",
+                                              "enum": [
+                                                "previous"
                                               ]
                                             }
                                           },
@@ -27268,6 +27304,18 @@
                                                 "this_year",
                                                 "last_12_months"
                                               ]
+                                            },
+                                            "periodTimeZone": {
+                                              "type": "string",
+                                              "enum": [
+                                                "UTC"
+                                              ]
+                                            },
+                                            "periodWindow": {
+                                              "type": "string",
+                                              "enum": [
+                                                "previous"
+                                              ]
                                             }
                                           },
                                           "required": [
@@ -30628,6 +30676,18 @@
                                           "this_year",
                                           "last_12_months"
                                         ]
+                                      },
+                                      "periodTimeZone": {
+                                        "type": "string",
+                                        "enum": [
+                                          "UTC"
+                                        ]
+                                      },
+                                      "periodWindow": {
+                                        "type": "string",
+                                        "enum": [
+                                          "previous"
+                                        ]
                                       }
                                     }
                                   }
@@ -33726,6 +33786,18 @@
                                                 "last_90_days",
                                                 "this_year",
                                                 "last_12_months"
+                                              ]
+                                            },
+                                            "periodTimeZone": {
+                                              "type": "string",
+                                              "enum": [
+                                                "UTC"
+                                              ]
+                                            },
+                                            "periodWindow": {
+                                              "type": "string",
+                                              "enum": [
+                                                "previous"
                                               ]
                                             }
                                           },
@@ -37318,6 +37390,18 @@
                                                 "last_90_days",
                                                 "this_year",
                                                 "last_12_months"
+                                              ]
+                                            },
+                                            "periodTimeZone": {
+                                              "type": "string",
+                                              "enum": [
+                                                "UTC"
+                                              ]
+                                            },
+                                            "periodWindow": {
+                                              "type": "string",
+                                              "enum": [
+                                                "previous"
                                               ]
                                             }
                                           },
@@ -91012,6 +91096,18 @@
                                                 "this_year",
                                                 "last_12_months"
                                               ]
+                                            },
+                                            "periodTimeZone": {
+                                              "type": "string",
+                                              "enum": [
+                                                "UTC"
+                                              ]
+                                            },
+                                            "periodWindow": {
+                                              "type": "string",
+                                              "enum": [
+                                                "previous"
+                                              ]
                                             }
                                           },
                                           "required": [
@@ -96609,6 +96705,18 @@
                                                 "last_90_days",
                                                 "this_year",
                                                 "last_12_months"
+                                              ]
+                                            },
+                                            "periodTimeZone": {
+                                              "type": "string",
+                                              "enum": [
+                                                "UTC"
+                                              ]
+                                            },
+                                            "periodWindow": {
+                                              "type": "string",
+                                              "enum": [
+                                                "previous"
                                               ]
                                             }
                                           },
@@ -113723,6 +113831,18 @@
                                                 "last_90_days",
                                                 "this_year",
                                                 "last_12_months"
+                                              ]
+                                            },
+                                            "periodTimeZone": {
+                                              "type": "string",
+                                              "enum": [
+                                                "UTC"
+                                              ]
+                                            },
+                                            "periodWindow": {
+                                              "type": "string",
+                                              "enum": [
+                                                "previous"
                                               ]
                                             }
                                           },

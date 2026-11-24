@@ -376,6 +376,17 @@ export interface TemplateFamily {
     install: InstallRow,
     inputs: StoreTemplateInputs,
   ): Promise<StoreTemplateInputs["apps"]>;
+  /**
+   * Applying an update: writes the table rows its slide items were read
+   * with but the install's tables lack (rows readItems adds).
+   */
+  writeItems?(
+    tx: Transaction,
+    data: ReturnType<typeof createDataService>,
+    actor: Actor,
+    install: InstallRow,
+    inputs: StoreTemplateInputs,
+  ): Promise<void>;
 }
 
 export function createStoreTemplateUpdateService(deps: {
@@ -1893,6 +1904,9 @@ export function createStoreTemplateUpdateService(deps: {
         ),
         plan.inputs.locale,
       );
+    // Another template's rows its reviewed slide items were read with.
+    if (!scope && family?.writeItems)
+      await family.writeItems(tx, data, actor, plan.install, plan.inputs);
     await tx
       .update(schema.dataTemplateInstalls)
       .set({
@@ -2039,6 +2053,9 @@ export function createStoreTemplateUpdateService(deps: {
       )[0];
     const found = await read();
     if (!found) reject("store_template_update_not_found", 404);
+    // An update of another template's install (#876): not this route's.
+    if (!(await installRow(tx, workspaceId, found.requestId)))
+      reject("store_template_update_not_found", 404);
     await lockInstall(tx, workspaceId, found.requestId);
     // Read again under the lock: a concurrent copy or swap went first.
     const row = (await read())!;
@@ -2612,7 +2629,9 @@ export function createStoreTemplateUpdateService(deps: {
                 eq(schema.dataTemplateUpdates.id, updateId),
               ),
             );
-          if (!update) reject("store_template_update_not_found", 404);
+          // Another template's install (#876) is not this route's.
+          if (!update || !(await installRow(tx, actor.workspaceId, requestId)))
+            reject("store_template_update_not_found", 404);
           if (update.closedAt !== null) return;
           await tx
             .update(schema.dataTemplateUpdates)

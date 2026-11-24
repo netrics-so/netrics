@@ -2,7 +2,10 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useId, useState } from "react";
-import type { DeveloperTemplateOptions } from "@netrics/contracts";
+import {
+  DEVELOPER_TEMPLATE_CONNECTIONS_MAX,
+  type DeveloperTemplateOptions,
+} from "@netrics/contracts";
 import { apiErrorMessage, installDeveloperTemplate } from "@/lib/api";
 import { useLocale, useT } from "@/lib/i18n/client";
 
@@ -39,6 +42,8 @@ export function DeveloperTemplateForm({
       dashboardId: string;
       names: string[];
     } | null>(null);
+  // One install reads at most this many connections (the server's bound).
+  const tooMany = selected.length > DEVELOPER_TEMPLATE_CONNECTIONS_MAX;
   const projectName = new Map(
     options.projects.map((project) => [project.id, project.name]),
   );
@@ -163,10 +168,21 @@ export function DeveloperTemplateForm({
           {error}
         </p>
       ) : null}
+      <p
+        className={tooMany ? "error" : "muted"}
+        role={tooMany ? "alert" : undefined}
+      >
+        {tooMany
+          ? t("tooMany", { max: DEVELOPER_TEMPLATE_CONNECTIONS_MAX })
+          : t("chosen", {
+              count: selected.length,
+              max: DEVELOPER_TEMPLATE_CONNECTIONS_MAX,
+            })}
+      </p>
       <div className="actions">
         <button
           className="primary"
-          disabled={pending || !selected.length || !name.trim()}
+          disabled={pending || !selected.length || tooMany || !name.trim()}
           onClick={() => void install()}
         >
           {pending ? t("installing") : t("install")}

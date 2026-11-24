@@ -72,7 +72,7 @@ async function seed(workspaceId: string) {
  * starts it from the dashboards page with a Railway and a PostHog source
  * in a project, and gets the overview (what is not up, deploys today,
  * spend this month, active users) and the project's slide. The overview's
- * active users are the project's newest day from PostHog.
+ * active users are yesterday's complete UTC day from PostHog.
  */
 test("the Developer portfolio installs with an overview and a slide per project", async ({
   page,
@@ -102,14 +102,21 @@ test("the Developer portfolio installs with an overview and a slide per project"
   const slide = page.locator(".slide-frame");
   for (const title of locale === "de"
     ? [
+        "Alle Dienste",
         "Was nicht läuft",
         "Deploys heute",
         "Kosten diesen Monat",
-        "Aktive Nutzer",
+        "Aktive Nutzer gestern",
       ]
-    : ["What is not up", "Deploys today", "Spend this month", "Active users"])
+    : [
+        "All services",
+        "What is not up",
+        "Deploys today",
+        "Spend this month",
+        "Active users yesterday",
+      ])
     await expect(slide.getByText(title, { exact: true })).toBeVisible();
-  // The project's newest day (70), not a sum of days, and its month (900).
+  // Yesterday's complete UTC day (70), not a sum of days, and its month.
   await expect(slide.getByText("70", { exact: true })).toBeVisible();
   await expect(slide.getByText("900", { exact: true })).toBeVisible();
 

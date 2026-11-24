@@ -310,13 +310,176 @@ const NO_DATA = new Set([
   "data_source_not_found",
 ]);
 
+/** A workspace project's value in the tables, filters and slide scopes. */
+export const projectProduct = (projectId: string) => "product:" + projectId;
+
+type TableRow = Record<string, unknown>;
+
+/**
+ * The rows the projects and links tables lack (owner decision C, #876):
+ * every workspace project (not archived) the projects table does not
+ * name, and every resource of the install's connections that is in a
+ * project, which no link names yet (the connection's project). Applied by
+ * an install, and by a template update, which offers them for review like
+ * changed apps; never written behind the customer's back.
+ */
+export async function pendingDeveloperRows(
+  tx: Transaction,
+  workspaceId: string,
+  connectionIds: readonly string[],
+  tables: { projects: TableRow[]; links: TableRow[] },
+  policy: DataPolicy,
+): Promise<{ projects: TableRow[]; links: TableRow[] }> {
+  const projects = await tx
+    .select({ id: schema.projects.id, name: schema.projects.name })
+    .from(schema.projects)
+    .where(
+      and(
+        eq(schema.projects.workspaceId, workspaceId),
+        isNull(schema.projects.archivedAt),
+      ),
+    )
+    .orderBy(asc(schema.projects.name), asc(schema.projects.id));
+  const named = new Set(tables.projects.map((row) => row.product_id));
+  const linked = new Set(tables.links.map((row) => row.app_key));
+  const added = {
+    projects: projects
+      .filter((project) => !named.has(projectProduct(project.id)))
+      .map((project) => ({
+        product_id: projectProduct(project.id),
+        product_name: project.name,
+      })),
+    links: [] as TableRow[],
+  };
+  if (!connectionIds.length) return added;
+  const active = new Set(projects.map((project) => project.id));
+  const assigned = (
+    await tx
+      .select({
+        id: schema.connections.id,
+        projectId: schema.connections.projectId,
+      })
+      .from(schema.connections)
+      .where(
+        and(
+          eq(schema.connections.workspaceId, workspaceId),
+          notDraftConnection(),
+          inArray(schema.connections.id, [...connectionIds]),
+        ),
+      )
+  ).filter(
+    (row): row is { id: string; projectId: string } =>
+      row.projectId !== null && active.has(row.projectId),
+  );
+  if (!assigned.length) return added;
+  const resources = await tx.execute<{
+    connection_id: string;
+    resource_id: string;
+  }>(sql`select distinct r.connection_id, r.resource_id
+    from connection_resources r
+    join connections c
+      on c.workspace_id = r.workspace_id and c.id = r.connection_id
+    where r.workspace_id = ${workspaceId}
+      and r.connection_id in (${sql.join(
+        assigned.map((row) => sql`${row.id}`),
+        sql`, `,
+      )})
+      and ${RESOURCE_KIND}
+    order by r.connection_id, r.resource_id
+    ${policy.queryRows === null ? sql`` : sql`limit ${policy.queryRows + 1}`}`);
+  if (exceedsDataPolicy(resources.length, policy.queryRows))
+    reject("data_source_row_limit", 413);
+  const projectOf = new Map(assigned.map((row) => [row.id, row.projectId]));
+  for (const resource of resources) {
+    const key = resource.connection_id + ":" + resource.resource_id;
+    if (linked.has(key)) continue;
+    linked.add(key);
+    added.links.push({
+      app_key: key,
+      product_id: projectProduct(projectOf.get(resource.connection_id)!),
+    });
+  }
+  return added;
+}
+
+/** Reads a manual table whole (the data service pages it). */
+async function readTable(
+  data: ReturnType<typeof createDataService>,
+  actor: { workspaceId: string; callerId: string },
+  datasetId: string,
+) {
+  const first = await data.readManual(actor, datasetId, {
+    offset: 0,
+    limit: 1000,
+  });
+  const records = [...first.records];
+  while (records.length < first.total) {
+    const page = await data.readManual(actor, datasetId, {
+      generationId: first.generationId ?? undefined,
+      offset: records.length,
+      limit: 1000,
+    });
+    if (!page.records.length) break;
+    records.push(...page.records);
+  }
+  return { ...first, records };
+}
+
+/**
+ * Applying a reviewed update (decision C): the rows pendingDeveloperRows
+ * finds are appended to the projects and links tables, so the new slides'
+ * data relates to their projects. The customer's rows stay as they are.
+ */
+export async function writePendingDeveloperRows(
+  tx: Transaction,
+  data: ReturnType<typeof createDataService>,
+  actor: { workspaceId: string; callerId: string },
+  input: {
+    result: { projectsDatasetId: string; linksDatasetId: string };
+    connectionIds: readonly string[];
+  },
+  policy: DataPolicy,
+) {
+  const projects = await readTable(data, actor, input.result.projectsDatasetId);
+  const links = await readTable(data, actor, input.result.linksDatasetId);
+  const added = await pendingDeveloperRows(
+    tx,
+    actor.workspaceId,
+    input.connectionIds,
+    {
+      projects: projects.records.map((record) => record.values),
+      links: links.records.map((record) => record.values),
+    },
+    policy,
+  );
+  for (const [table, rows] of [
+    [projects, added.projects],
+    [links, added.links],
+  ] as const)
+    if (rows.length)
+      await data.saveManual(
+        actor,
+        {
+          definition: table.definition,
+          records: [
+            ...table.records.map((record) => ({ values: record.values })),
+            ...rows.map((values) => ({ values })),
+          ],
+          generationId: table.generationId,
+        },
+        table === projects
+          ? input.result.projectsDatasetId
+          : input.result.linksDatasetId,
+      );
+}
+
 /**
  * The projects an install's slides are built from, read in tx from its
- * projects and links tables (or as the caller just wrote them): each
- * project of the projects table with the widgets its linked resources of
- * the install's connections fill, by name; a project nothing
- * links has no slide. The data policy's statement timeout the read sets is
- * restored after it.
+ * projects and links tables (or as the caller just wrote them) with the
+ * rows they lack (pendingDeveloperRows): each project with the widgets its
+ * linked resources of the install's connections fill, by name; a project
+ * nothing links has no slide. The data policy's statement timeout the
+ * read sets is restored after it.
  */
 export async function readDeveloperProjects(
   tx: Transaction,
@@ -361,6 +524,17 @@ export async function readDeveloperProjects(
     await tx.execute(
       sql`select set_config('statement_timeout', ${String(timeout!.value)}, true)`,
     );
+    const pending = await pendingDeveloperRows(
+      tx,
+      workspaceId,
+      input.connections.map((connection) => connection.id),
+      tables,
+      policy,
+    );
+    tables = {
+      projects: [...tables.projects, ...pending.projects],
+      links: [...tables.links, ...pending.links],
+    };
   }
   return developerProjectIdentities(tables, input.connections);
 }
@@ -591,102 +765,56 @@ export function createDeveloperTemplateService(deps: {
                   input.connections,
                   { register: true },
                 );
-                // The workspace's projects (not archived) and the links:
-                // explicit ones, then every resource of a connection
-                // assigned to a project.
-                const projects = await tx
-                  .select({
-                    id: schema.projects.id,
-                    name: schema.projects.name,
-                  })
-                  .from(schema.projects)
-                  .where(
-                    and(
-                      eq(schema.projects.workspaceId, actor.workspaceId),
-                      isNull(schema.projects.archivedAt),
-                    ),
-                  )
-                  .orderBy(asc(schema.projects.name), asc(schema.projects.id));
                 const projectIds = new Set(
-                  projects.map((project) => project.id),
+                  (
+                    await tx
+                      .select({ id: schema.projects.id })
+                      .from(schema.projects)
+                      .where(
+                        and(
+                          eq(schema.projects.workspaceId, actor.workspaceId),
+                          isNull(schema.projects.archivedAt),
+                        ),
+                      )
+                  ).map((project) => project.id),
                 );
                 if (input.projectId && !projectIds.has(input.projectId))
                   reject("project_not_found", 404);
                 for (const link of input.links)
                   if (!projectIds.has(link.projectId))
                     reject("developer_link_invalid");
-                const links = new Map(
-                  input.links.map((link) => [
-                    link.connectionId + ":" + link.resourceId,
-                    link.projectId,
-                  ]),
+                // The explicit links, then what pendingDeveloperRows adds:
+                // the workspace's projects and every resource of a
+                // connection in a project (the connection's project).
+                const { policy } = await resolveDataPolicy(
+                  tx,
+                  actor.workspaceId,
+                  defaults,
                 );
-                const assigned = (
-                  await tx
-                    .select({
-                      id: schema.connections.id,
-                      projectId: schema.connections.projectId,
-                    })
-                    .from(schema.connections)
-                    .where(
-                      and(
-                        eq(schema.connections.workspaceId, actor.workspaceId),
-                        inArray(schema.connections.id, input.connections),
-                      ),
-                    )
-                ).filter(
-                  (row): row is { id: string; projectId: string } =>
-                    row.projectId !== null && projectIds.has(row.projectId),
+                const explicit = input.links.map((link) => ({
+                  app_key: link.connectionId + ":" + link.resourceId,
+                  product_id: projectProduct(link.projectId),
+                }));
+                const pending = await pendingDeveloperRows(
+                  tx,
+                  actor.workspaceId,
+                  input.connections,
+                  { projects: [], links: explicit },
+                  policy,
                 );
-                if (assigned.length) {
-                  const { policy } = await resolveDataPolicy(
-                    tx,
-                    actor.workspaceId,
-                    defaults,
-                  );
-                  const resources = await tx.execute<{
-                    connection_id: string;
-                    resource_id: string;
-                  }>(sql`select distinct r.connection_id, r.resource_id
-                    from connection_resources r
-                    join connections c
-                      on c.workspace_id = r.workspace_id and c.id = r.connection_id
-                    where r.workspace_id = ${actor.workspaceId}
-                      and r.connection_id in (${sql.join(
-                        assigned.map((row) => sql`${row.id}`),
-                        sql`, `,
-                      )})
-                      and ${RESOURCE_KIND}
-                    order by r.connection_id, r.resource_id
-                    ${policy.queryRows === null ? sql`` : sql`limit ${policy.queryRows + 1}`}`);
-                  if (exceedsDataPolicy(resources.length, policy.queryRows))
-                    reject("data_source_row_limit", 413);
-                  const projectOf = new Map(
-                    assigned.map((row) => [row.id, row.projectId]),
-                  );
-                  for (const resource of resources) {
-                    const key =
-                      resource.connection_id + ":" + resource.resource_id;
-                    if (!links.has(key))
-                      links.set(key, projectOf.get(resource.connection_id)!);
-                  }
-                }
                 // One batch service for the whole install (#668).
                 const data = createDataService(tx, now, defaults, undefined, {
                     batch: true,
                   }),
                   t = developerTemplateCopy(actor.locale);
-                const projectRows = projects.map((project) => ({
-                  values: {
-                    product_id: project.id,
-                    product_name: project.name,
-                  },
+                const projectRows = pending.projects.map((values) => ({
+                  values,
                 }));
-                const linkRows = [...links]
-                  .sort(([a], [b]) => a.localeCompare(b))
-                  .map(([key, projectId]) => ({
-                    values: { app_key: key, product_id: projectId },
-                  }));
+                const linkRows = [...explicit, ...pending.links]
+                  .sort((a, b) =>
+                    String(a.app_key).localeCompare(String(b.app_key)),
+                  )
+                  .map((values) => ({ values }));
                 const projectsTable = await data.saveManual(actor, {
                   definition: sourceDatasetSchema.parse({
                     key: "developer_projects_" + input.requestId,

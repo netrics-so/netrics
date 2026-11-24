@@ -3,6 +3,7 @@ import { SUPPORTED_LOCALES } from "@netrics/domain";
 import { DEVELOPER_TEMPLATE_CONNECTORS } from "@netrics/contracts";
 
 import {
+  audienceMetricsOf,
   buildDeveloperAppend,
   buildDeveloperDashboard,
   buildDeveloperModel,
@@ -168,7 +169,11 @@ export function developerPortfolio(
   if (storeInputs(inputs).connections.length)
     for (const metric of DEVELOPER_STORE_METRICS)
       models[metric] = idOf(ids, `model:${metric}`);
-  return { models, projects: inputs.apps ?? [] };
+  return {
+    models,
+    projects: inputs.apps ?? [],
+    audience: audienceMetricsOf(familySources(inputs, "audience")),
+  };
 }
 
 const defineDeveloperTemplate = (version: 1): StoreTemplateDefinition => ({

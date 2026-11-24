@@ -13,6 +13,7 @@ import {
 } from "./developer-template.js";
 import {
   readDeveloperProjects,
+  writePendingDeveloperRows,
   withDeveloperSourceDatasets,
 } from "./developer-template-service.js";
 import type { StoreTemplateDefinition } from "./store-template.js";
@@ -64,6 +65,17 @@ export function developerTemplateFamily(deps: {
         now(),
         policy,
       ) as unknown as ReturnType<TemplateFamily["readItems"]>,
+    writeItems: (tx, data, actor, install, inputs) =>
+      writePendingDeveloperRows(
+        tx,
+        data,
+        actor,
+        {
+          result: developerTemplateResultSchema.parse(install.result),
+          connectionIds: inputs.connections.map((connection) => connection.id),
+        },
+        policy,
+      ),
   };
 }
 

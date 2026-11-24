@@ -673,15 +673,24 @@ export async function queryDashboardMeasure(
       );
       // The widget's own period (#784): the workspace's days, as
       // connection widgets read theirs.
-      const binding = input.options.period
+      const windows = input.options.period
+        ? compareMeasureWindows(
+            input.options.period,
+            now,
+            // A template widget over UTC-dated rows reads UTC days (#876).
+            input.options.periodTimeZone ??
+              (await findWorkspace(savepoint, workspaceId))?.timeZone ??
+              "UTC",
+          )
+        : null;
+      const binding = windows
         ? measurePeriodBinding(
             input.binding,
             release.definition.dimensions,
-            compareMeasureWindows(
-              input.options.period,
-              now,
-              (await findWorkspace(savepoint, workspaceId))?.timeZone ?? "UTC",
-            ).current,
+            // "previous": the period just before (#876: yesterday).
+            input.options.periodWindow === "previous"
+              ? windows.previous
+              : windows.current,
           )
         : input.binding;
       const query = dashboardModelQuery(
