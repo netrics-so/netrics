@@ -36,6 +36,7 @@ import {
   METRICS,
   METRICS_RETENTION_DAYS,
   METRICS_STREAM,
+  PAGE_DEADLINE_MS,
   PER_PAGE,
   SERVERS_STREAM,
   syncPage,
@@ -370,17 +371,14 @@ export function createHetznerCloudConnector(
   function client(
     context: ConnectionContext,
     runtime: Parameters<Connector["check"]>[1],
-    maxWaitMs?: number,
+    call: Pick<ClientOptions, "maxWaitMs" | "deadline"> = {},
   ): { get: HetznerGet; token: string } {
     const token = tokenOf(context);
     if (!token) {
       throw new Error("Hetzner Cloud connection has no API token");
     }
     return {
-      get: createHetznerClient(runtime, token, {
-        ...options,
-        ...(maxWaitMs !== undefined ? { maxWaitMs } : {}),
-      }),
+      get: createHetznerClient(runtime, token, { ...options, ...call }),
       token,
     };
   }
@@ -397,7 +395,9 @@ export function createHetznerCloudConnector(
       }
       try {
         // Waits for the rate limit must fit the host's check deadline.
-        const { get } = client(context, runtime, CHECK_MAX_WAIT_MS);
+        const { get } = client(context, runtime, {
+          maxWaitMs: CHECK_MAX_WAIT_MS,
+        });
         // The cheapest reads of what a sync needs: one server, the prices.
         parse(
           serversPageSchema,
@@ -478,7 +478,12 @@ export function createHetznerCloudConnector(
     },
 
     async sync(context, request: SyncRequest, runtime): Promise<SyncResult> {
-      const { get, token } = client(context, runtime);
+      // Every request and wait of the page ends by its deadline, well
+      // before the host's, so a stalled request still returns the
+      // checkpoint (#901 item 1).
+      const { get, token } = client(context, runtime, {
+        deadline: now() + PAGE_DEADLINE_MS,
+      });
       try {
         return await syncPage(get, context, token, request, {
           now,

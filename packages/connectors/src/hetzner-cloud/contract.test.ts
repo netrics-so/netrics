@@ -1100,6 +1100,419 @@ describe("review round 1 (#890)", () => {
   });
 });
 
+describe("follow-ups of the final review (#893)", () => {
+  /** Removes every unattached item and server 50 from the fixture data. */
+  function shrink(data: ReturnType<typeof fixtureData>) {
+    data.volumes = data.volumes.filter((volume) => volume.id !== 4712);
+    data.primary_ips = data.primary_ips.filter((ip) => ip.id !== 5003);
+    data.images = data.images.filter((image) => image.id !== 8002);
+    data.servers = data.servers.filter((server) => server.id !== 50);
+  }
+
+  it("zeroes a resource that left before a history reload", async () => {
+    const { runtime, data } = fake();
+    const first = await syncAll(runtime);
+    expect(costOf(first.observations).unattached).toBe(105);
+    shrink(data);
+    // A fresh backfill gets no cursor; the host hands it the stored one
+    // only as the baseline of what was reported.
+    const reload = await syncAll(runtime, {
+      ...WINDOW,
+      previousCursor: first.last.nextCursor!,
+    });
+    const cost = costOf(reload.observations);
+    expect(cost.unattached).toBe(0);
+    expect(cost["50"]).toBe(0);
+    expect(cost["42"]).toBe(947);
+    // The reload's own cursor keeps the baseline for the run after it.
+    data.servers = data.servers.filter((server) => server.id !== 44);
+    const next = await syncAll(
+      runtime,
+      { mode: "incremental", from: reload.last.nextFrom!, to: NOW },
+      context(),
+      clock,
+      reload.last.nextCursor,
+    );
+    expect(costOf(next.observations)["44"]).toBe(0);
+    expect(costOf(next.observations)).not.toHaveProperty("50");
+  });
+
+  it("takes the baseline from an unfinished run's checkpoint too", async () => {
+    const { runtime, data } = fake();
+    const first = await syncAll(runtime);
+    // A second run stopped part-way; its checkpoint is what is stored.
+    const partial = await connector().sync(
+      context(),
+      { mode: "incremental", from: first.last.nextFrom!, to: NOW },
+      runtime,
+    );
+    expect(partial.done).toBe(false);
+    shrink(data);
+    const reload = await syncAll(runtime, {
+      ...WINDOW,
+      previousCursor: partial.nextCursor!,
+    });
+    expect(costOf(reload.observations).unattached).toBe(0);
+    expect(costOf(reload.observations)["50"]).toBe(0);
+  });
+
+  it("ignores a baseline of another token", async () => {
+    const { runtime, data } = fake();
+    const first = await syncAll(runtime);
+    shrink(data);
+    const other = fake({ token: "other-token", data });
+    const reload = await syncAll(
+      other.runtime,
+      { ...WINDOW, previousCursor: first.last.nextCursor! },
+      context({ credentials: { token: "other-token" } }),
+    );
+    expect(costOf(reload.observations)).not.toHaveProperty("unattached");
+    expect(costOf(reload.observations)).not.toHaveProperty("50");
+  });
+
+  it("does not complete a snapshot when a delete and a create between pages keep the total", async () => {
+    const data = { ...fixtureData(), servers: manyServers(30) };
+    let changed = false;
+    const { runtime } = fake({
+      data,
+      maxPerPage: 10,
+      beforeAnswer: (request, current) => {
+        // After the first page: one server goes, another comes. The total
+        // stays 30 and no ID repeats, but page 2 now starts one later.
+        if (
+          !changed &&
+          request.path === "/servers" &&
+          request.params.page === "2"
+        ) {
+          changed = true;
+          current.servers.splice(0, 1);
+          current.servers.push({ ...current.servers[0]!, id: 5_000 });
+        }
+      },
+    });
+    const { last } = await syncAll(runtime);
+    expect(last.receivedDatasets).toEqual([]);
+    const streams = last.freshness?.map((entry) => entry.stream) ?? [];
+    expect(streams).not.toContain(SERVERS_STREAM);
+    expect(streams).not.toContain(COST_STREAM);
+    expect(last.nextFrom).toBe(WINDOW.from);
+  });
+
+  it("verifies the pages of a listing before it completes a snapshot", async () => {
+    const data = { ...fixtureData(), servers: manyServers(30) };
+    const { runtime, requests } = fake({ data, maxPerPage: 10 });
+    const { last } = await syncAll(runtime);
+    expect(last.receivedDatasets).toEqual(["servers", "cost_items"]);
+    // Pages 1–3, then 1 and 2 again to check their boundaries.
+    expect(
+      requests
+        .filter((request) => request.path === "/servers")
+        .map((request) => request.params.page),
+    ).toEqual(["1", "2", "3", "1", "2"]);
+  });
+
+  it("starts the snapshots over when the run's chain may have expired", async () => {
+    const { runtime } = fake();
+    const first = await connector().sync(context(), WINDOW, runtime);
+    expect(first.done).toBe(false);
+    const oldKeys = new Set(
+      (first.datasetPages ?? []).map((page) => page.refreshKey),
+    );
+    expect(oldKeys.size).toBe(2);
+    // The host stopped the run (a long outage, a paused connection) and
+    // resumes it well past a dataset's shortest retention.
+    const later = () => clock() + 13 * HOUR_MS;
+    const resumed = await syncAll(
+      runtime,
+      WINDOW,
+      context(),
+      later,
+      first.nextCursor,
+    );
+    expect(resumed.last.receivedDatasets).toEqual(["servers", "cost_items"]);
+    for (const key of ["servers", "cost_items"]) {
+      const pages = resumed.datasetPages.filter(
+        (page) => page.datasetKey === key,
+      );
+      expect(pages[0]!.previousPageKey).toBeNull();
+      expect(pages.some((page) => oldKeys.has(page.refreshKey))).toBe(false);
+      expect(rowsOf(pages, key).length).toBeGreaterThan(0);
+    }
+  });
+
+  it("re-reads a server's refused hours once its metrics are allowed again", async () => {
+    const forbidden = new Set([44]);
+    const { runtime } = fake({ forbiddenMetrics: forbidden });
+    const first = await syncAll(runtime);
+    forbidden.clear();
+    const later = () => clock() + 2 * HOUR_MS;
+    const second = await syncAll(
+      runtime,
+      {
+        mode: "incremental",
+        from: first.last.nextFrom!,
+        to: new Date(later()).toISOString(),
+      },
+      context(),
+      later,
+      first.last.nextCursor,
+    );
+    const hours = (resource: string) =>
+      second.observations.filter(
+        (o) =>
+          o.metricKey === METRICS.cpu && o.dimensions.resource === resource,
+      );
+    // Server 44: the 48 refused hours of the first run and the 2 new ones.
+    expect(hours("44")).toHaveLength(50);
+    expect(hours("44")[0]!.sourceTimestamp).toBe(WINDOW.from);
+    // The other servers only read the new hours.
+    expect(hours("42")).toHaveLength(2);
+    expect(
+      second.last.freshness?.some(
+        (entry) => entry.stream === METRICS_STREAM && entry.resource === "44",
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps a refused server's position across runs while it stays refused", async () => {
+    const forbidden = new Set([44]);
+    const { runtime } = fake({ forbiddenMetrics: forbidden });
+    const first = await syncAll(runtime);
+    const later = () => clock() + 2 * HOUR_MS;
+    const second = await syncAll(
+      runtime,
+      {
+        mode: "incremental",
+        from: first.last.nextFrom!,
+        to: new Date(later()).toISOString(),
+      },
+      context(),
+      later,
+      first.last.nextCursor,
+    );
+    forbidden.clear();
+    const third = await syncAll(
+      runtime,
+      {
+        mode: "incremental",
+        from: second.last.nextFrom!,
+        to: new Date(later()).toISOString(),
+      },
+      context(),
+      later,
+      second.last.nextCursor,
+    );
+    const hours = third.observations.filter(
+      (o) => o.metricKey === METRICS.cpu && o.dimensions.resource === "44",
+    );
+    expect(hours).toHaveLength(50);
+  });
+});
+
+describe("review of #904", () => {
+  const RUN = "hetzner-cloud.v1:";
+  const DONE = "hetzner-cloud.done1:";
+  type State = Record<string, unknown> & {
+    listing?: Record<string, unknown>;
+  };
+  const decode = (cursor: string, prefix = RUN) =>
+    JSON.parse(
+      Buffer.from(cursor.slice(prefix.length), "base64url").toString("utf8"),
+    ) as State;
+  const encode = (state: State) =>
+    RUN + Buffer.from(JSON.stringify(state)).toString("base64url");
+
+  it("restarts a checkpoint of the previous version taken inside a listing", async () => {
+    const data = {
+      ...fixtureData(),
+      servers: [...fixtureData().servers, ...manyServers(600)],
+    };
+    const { runtime } = fake({ data });
+    const first = await syncAll(runtime);
+    // The next run's first page stops inside the server listing; the
+    // version before #893 kept no page bounds.
+    const page = await connector().sync(
+      context(),
+      {
+        mode: "incremental",
+        from: first.last.nextFrom!,
+        to: NOW,
+        cursor: first.last.nextCursor!,
+      },
+      runtime,
+    );
+    const state = decode(page.nextCursor!);
+    expect(state.listing).toMatchObject({ kind: "servers" });
+    expect(state.listing!.page).toBeGreaterThan(1);
+    delete state.listing!.bounds;
+    // Meanwhile everything unattached and server 50 went.
+    data.volumes = data.volumes.filter((volume) => volume.id !== 4712);
+    data.primary_ips = data.primary_ips.filter((ip) => ip.id !== 5003);
+    data.images = data.images.filter((image) => image.id !== 8002);
+    data.servers = data.servers.filter((server) => server.id !== 50);
+    const oldKeys = new Set(
+      (page.datasetPages ?? []).map((dataset) => dataset.refreshKey),
+    );
+    const resumed = await syncAll(
+      runtime,
+      { mode: "incremental", from: first.last.nextFrom!, to: NOW },
+      context(),
+      clock,
+      encode(state),
+    );
+    expect(resumed.last.receivedDatasets).toEqual(["servers", "cost_items"]);
+    expect(
+      resumed.datasetPages.some((dataset) => oldKeys.has(dataset.refreshKey)),
+    ).toBe(false);
+    // The carried baseline stays.
+    expect(costOf(resumed.observations).unattached).toBe(0);
+    expect(costOf(resumed.observations)["50"]).toBe(0);
+  });
+
+  it("keeps the first hour still missing when a carried server is refused again", async () => {
+    const forbidden = new Set([44]);
+    let recovered = false;
+    const { runtime } = fake({
+      forbiddenMetrics: forbidden,
+      beforeAnswer: (request) => {
+        // In the second run access returns for the first chunk only.
+        if (recovered && request.path === "/servers/44/metrics") {
+          if (request.params.start === WINDOW.from) forbidden.delete(44);
+          else forbidden.add(44);
+        }
+      },
+    });
+    const first = await syncAll(runtime);
+    recovered = true;
+    expect(
+      first.observations.some(
+        (o) => o.metricKey === METRICS.cpu && o.dimensions.resource === "44",
+      ),
+    ).toBe(false);
+    // 25 days later the carried window needs two chunks.
+    const later = () => clock() + 25 * DAY_MS;
+    const second = await syncAll(
+      runtime,
+      {
+        mode: "incremental",
+        from: first.last.nextFrom!,
+        to: new Date(later()).toISOString(),
+      },
+      context(),
+      later,
+      first.last.nextCursor,
+    );
+    const firstChunkEnd = Date.parse(WINDOW.from) + 480 * HOUR_MS;
+    expect(
+      second.observations.filter(
+        (o) => o.metricKey === METRICS.cpu && o.dimensions.resource === "44",
+      ),
+    ).toHaveLength(480);
+    const done = decode(second.last.nextCursor!, DONE);
+    expect(done.retry).toEqual({ "44": firstChunkEnd });
+  });
+
+  it("honours a pending rate limit before it restarts an aged run", async () => {
+    const { runtime, requests } = fake();
+    const page = await connector().sync(context(), WINDOW, runtime);
+    const state = decode(page.nextCursor!);
+    const until = clock() + 14 * HOUR_MS;
+    state.limitedUntil = until;
+    const sent = requests.length;
+    const error = await connector(() => clock() + 13 * HOUR_MS)
+      .sync(context(), { ...WINDOW, cursor: encode(state) }, runtime)
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(RateLimitedError);
+    expect(Date.parse((error as RateLimitedError).retryAt)).toBe(until);
+    expect(requests).toHaveLength(sent);
+  });
+});
+
+describe("pages end before the host's deadline (#893, #901 item 1)", () => {
+  /**
+   * A clock the fake advances: `stepMs` per answer, every wait, and a
+   * stalled request's whole time limit.
+   */
+  function timed(options: {
+    stepMs?: number;
+    stallAt?: number;
+    limitedAt?: number[];
+  }) {
+    const api = fake();
+    let t = clock();
+    let count = 0;
+    const runtime: ConnectorRuntime = {
+      ...api.runtime,
+      fetch: async (url, init) => {
+        count += 1;
+        if (count === options.stallAt) {
+          // Hetzner never answers: the request ends at its time limit.
+          t += init?.timeoutMs ?? 60_000;
+          throw Object.assign(new Error("egress timeout"), {
+            name: "EgressTimeoutError",
+          });
+        }
+        t += options.stepMs ?? 1_000;
+        if (options.limitedAt?.includes(count)) {
+          // 257 requests an hour: one more in 14 s.
+          return {
+            status: 429,
+            headers: {
+              "ratelimit-limit": "257",
+              "ratelimit-remaining": "0",
+            },
+            text: () => "",
+            json: () => ({ error: { code: "rate_limit_exceeded" } }),
+            bytes: () => new Uint8Array(),
+          };
+        }
+        return api.runtime.fetch(url, init);
+      },
+    };
+    const started = t;
+    const hetzner = createHetznerCloudConnector({
+      now: () => t,
+      sleep: async (ms) => {
+        t += ms;
+      },
+    });
+    return { runtime, hetzner, elapsed: () => t - started };
+  }
+
+  it("a request that stalls late in a page ends in time to return the checkpoint", async () => {
+    const { runtime, hetzner, elapsed } = timed({ stallAt: 10 });
+    const page = await hetzner.sync(context(), WINDOW, runtime);
+    expect(page.done).toBe(false);
+    expectHostAccepts(page);
+    expect(elapsed()).toBeLessThanOrEqual(45_000);
+  });
+
+  it("a rate-limit wait that would pass the deadline ends the page with its reset", async () => {
+    // Nine answers take 19.8 s; the tenth step meets two 429s that ask
+    // for 14 s each.
+    const { runtime, hetzner, elapsed } = timed({
+      stepMs: 2_200,
+      limitedAt: [10, 11, 12],
+    });
+    const page = await hetzner.sync(context(), WINDOW, runtime);
+    expect(page.done).toBe(false);
+    expectHostAccepts(page);
+    expect(elapsed()).toBeLessThanOrEqual(45_000);
+    const error = await hetzner
+      .sync(context(), { ...WINDOW, cursor: page.nextCursor! }, runtime)
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(RateLimitedError);
+  });
+
+  it("bounds every request below the host's limit", async () => {
+    const { runtime, requests } = fake();
+    await connector().sync(context(), WINDOW, runtime);
+    for (const request of requests) {
+      expect(request.init?.timeoutMs).toBeLessThanOrEqual(20_000);
+    }
+  });
+});
+
 describe("client", () => {
   it("sends GET with the token and reads the documented headers", async () => {
     const { runtime, requests } = fake();

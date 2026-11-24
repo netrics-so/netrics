@@ -504,6 +504,12 @@ async function runSync(
   const fresh = mode === "backfill" && state?.backfillJobId !== job.id;
   const startCursor = fresh ? null : (state?.cursor ?? null);
   /**
+   * What a fresh backfill does not resume (#893): handed to its first page
+   * as `previousCursor`, so the connector keeps what it carries from run to
+   * run (the resources it reported, for example).
+   */
+  const previousCursor = fresh ? (state?.cursor ?? null) : null;
+  /**
    * The datasets this backfill job reads (#617): taken when it starts, from
    * the connector this worker runs; a resumed attempt keeps only those its
    * own connector still declares at the same version (a deploy may have
@@ -1407,6 +1413,9 @@ async function runSync(
           from: iso(window.from),
           to: iso(window.to),
           ...(cursor ? { cursor } : {}),
+          // A fresh backfill does not resume the stored cursor, but its
+          // first page gets it as the connector's baseline (#893).
+          ...(!cursor && previousCursor ? { previousCursor } : {}),
           ...(selectedResources ? { resources: selectedResources } : {}),
         };
         const skipsOfCall: Skips = new Map();
