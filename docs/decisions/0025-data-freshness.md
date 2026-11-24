@@ -226,6 +226,11 @@ value wins. Rules:
 - A **partial** run (a done result that omits a stream or resource)
   leaves the omitted rows unchanged; their `checked_at` stays older, which
   is what screens show.
+- A **continuous** stream's connection entry covers every resource: the
+  stream's per-resource rows the same result does not report are deleted
+  (#894), so an older resource row never hides the newer connection
+  check. Periodic streams keep them (a resource row may carry a later
+  `data_through`).
 - **`data_through` never moves back.** A reported date earlier than the
   stored one leaves `data_through`, `time_zone` and the expected times as
   stored and only updates `checked_at` (a provider withdrawing a day, or a

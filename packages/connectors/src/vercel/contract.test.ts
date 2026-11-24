@@ -1599,6 +1599,32 @@ describe("vercel follow-ups (#894)", () => {
     expect(sum(costOf(three.observations, "prj_alpha"))).toBe(31 * 25);
   });
 
+  it("1 (review): a series of a team not read this run is not zeroed, and is kept", async () => {
+    const other: FakeProject = {
+      id: "prj_delta",
+      name: "delta-site",
+      accountId: "team_other",
+      analytics: false,
+    };
+    const one = await syncAll(
+      fake({ projects: [...FAKE_PROJECTS, other] }).runtime,
+      RECENT,
+    );
+    expect(sum(costOf(one.observations, "prj_delta"))).toBe(31 * 25);
+    // team_other's projects are no longer listed: its charges are not read.
+    const two = await syncAll(fake().runtime, {
+      ...RECENT,
+      cursor: one.pages.at(-1)!.nextCursor,
+    });
+    expect(costOf(two.observations, "prj_delta")).toEqual([]);
+    expect(costOf(two.observations, "team_other")).toEqual([]);
+    const kept = decode(two.pages.at(-1)!.nextCursor!).cost as {
+      series: string[][];
+    };
+    expect(kept.series).toContainEqual(["prj_delta", "team_other", "USD"]);
+    expect(kept.series).toContainEqual(["prj_alpha", "team_fixture", "USD"]);
+  });
+
   it("2: a refused day publishes no cost at all, and the snapshot stays", async () => {
     const { pages, observations } = await syncAll(
       fake({
@@ -1642,6 +1668,50 @@ describe("vercel follow-ups (#894)", () => {
     const alpha = costOf(rest.observations, "prj_alpha");
     expect(alpha).toHaveLength(31);
     expect(sum(alpha)).toBe(31 * 25);
+  });
+
+  it("2 (review): a run whose billing was staged before #894 reads it again in a new refresh", async () => {
+    const api = fake();
+    let cursor: string | undefined;
+    const before: SyncResult[] = [];
+    for (;;) {
+      const page = await connector().sync(
+        context(),
+        { ...RECENT, ...(cursor ? { cursor } : {}) },
+        api.runtime,
+      );
+      before.push(page);
+      cursor = page.nextCursor;
+      const state = decode(cursor!);
+      if (state.billingDone) {
+        // The checkpoint as a run begun before #894 left it.
+        delete state.costs;
+        delete state.costSeries;
+        cursor = encode(state);
+        break;
+      }
+    }
+    const staged = before
+      .flatMap((page) => page.datasetPages ?? [])
+      .filter((page) => page.datasetKey === "billing_charges");
+    expect(staged.length).toBeGreaterThan(0);
+    const rest = await syncAll(api.runtime, { ...RECENT, cursor });
+    const alpha = costOf(rest.observations, "prj_alpha");
+    expect(alpha).toHaveLength(31);
+    expect(sum(alpha)).toBe(31 * 25);
+    const billing = rest.datasetPages.filter(
+      (page) => page.datasetKey === "billing_charges",
+    );
+    // One new refresh, chained from its start and completed, with every row.
+    const refreshes = new Set(billing.map((page) => page.refreshKey));
+    expect(refreshes.size).toBe(1);
+    expect(refreshes.has(staged[0]!.refreshKey)).toBe(false);
+    expect(billing[0]!.previousPageKey).toBeNull();
+    expect(billing.at(-1)!.complete).toBe(true);
+    expect(rows(billing, "billing_charges")).toHaveLength(
+      rows(staged, "billing_charges").length,
+    );
+    expect(rest.pages.at(-1)!.receivedDatasets).toContain("billing_charges");
   });
 
   it("3: a rate limit that ended a page holds for the next page's first request", async () => {
@@ -1705,6 +1775,27 @@ describe("vercel follow-ups (#894)", () => {
     expect(alpha.every((o) => Number.isInteger(o.value))).toBe(true);
     // 31 × 0.4 cents = 12.4 cents: 12, not 31 × round(0.4) = 0.
     expect(sum(alpha)).toBe(12);
+  });
+
+  it("5 (review): cost is summed exactly before rounding: $1.20 + $0.055 is 126 cents", async () => {
+    const day = "2024-12-01";
+    const { observations } = await syncAll(
+      createFakeVercel({ today: day, usageCost: 1.2, extraCost: 0.055 })
+        .runtime,
+      {
+        mode: "incremental",
+        from: `${day}T00:00:00.000Z`,
+        to: `${day}T13:00:00.000Z`,
+      },
+      context(),
+      () => Date.parse(`${day}T13:00:00.000Z`),
+    );
+    expect(costOf(observations, "prj_alpha")).toEqual([
+      expect.objectContaining({
+        sourceTimestamp: `${day}T00:00:00.000Z`,
+        value: 126,
+      }),
+    ]);
   });
 
   it("6: deployments are reported per project by every run or by none", async () => {

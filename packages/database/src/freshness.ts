@@ -80,8 +80,10 @@ export async function recordConnectionFreshness(
 
 /**
  * Deletes the connection's per-resource freshness rows of resources it no
- * longer has (#874 review: a check removed from an HTTP check connection).
- * The connection's own rows (resource '') stay.
+ * longer has (#874 review: a check removed from an HTTP check connection),
+ * of every stream or of one (`stream`: rows a continuous stream's
+ * connection entry superseded, #894). The connection's own rows
+ * (resource '') stay.
  */
 export async function retireConnectionFreshness(
   tx: Transaction,
@@ -89,6 +91,7 @@ export async function retireConnectionFreshness(
     workspaceId: string;
     connectionId: string;
     keepResources: readonly string[];
+    stream?: string;
   },
 ): Promise<void> {
   const table = schema.connectionFreshness;
@@ -98,6 +101,7 @@ export async function retireConnectionFreshness(
       and(
         eq(table.workspaceId, input.workspaceId),
         eq(table.connectionId, input.connectionId),
+        input.stream === undefined ? sql`true` : eq(table.stream, input.stream),
         sql`${table.resource} <> ''`,
         input.keepResources.length > 0
           ? sql`not (${table.resource} = any(${sql.param([...input.keepResources])}::text[]))`

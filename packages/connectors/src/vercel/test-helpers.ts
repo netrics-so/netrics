@@ -114,6 +114,8 @@ export interface FakeVercelOptions {
   unbilled?: string[];
   /** The effective cost of each project's daily usage charge (default 0.25). */
   usageCost?: number;
+  /** A second daily charge per project (another SKU) of this effective cost. */
+  extraCost?: number;
   /** Projects listed with Web Analytics whose analytics answer 404. */
   analyticsGone?: string[];
   /** Answers per path that fail once, after `after` successful requests. */
@@ -395,6 +397,15 @@ export function createFakeVercel(options: FakeVercelOptions = {}): FakeVercel {
             SubAccountName: "Fake Team",
             Tags: { ProjectId: project.id, ProjectName: project.name },
           });
+          if (options.extraCost !== undefined) {
+            lines.push({
+              ...lines.at(-1)!,
+              BilledCost: options.extraCost,
+              EffectiveCost: options.extraCost,
+              ServiceName: "Bandwidth",
+              SkuId: "bandwidth",
+            });
+          }
         }
         if (new Date(day).getUTCDate() === 1) {
           lines.push({

@@ -153,8 +153,9 @@ selection, charges of other projects are left out; team-wide charges stay.
   discounts, in minor units (cents) with its currency, per project; charges
   of no single project under the team's ID as `resource`, and every value
   with its `team`. Summed over a calendar month it is the month's spend,
-  rounded to the cent: each day is the difference of the rounded totals
-  from the 1st, so the days add up to the month's rounded total even when
+  rounded to the cent: the charges are summed exactly (to a millionth of a
+  dollar), and each day is the difference of the rounded totals from the
+  1st, so the days add up to the month's rounded total even when
   every day's cost is a fraction of a cent. The billed cost stays in the
   dataset.
 - The cost is published only after every team's charges of every day of
@@ -163,7 +164,8 @@ selection, charges of other projects are left out; team-wide charges stay.
   day of the month so far gets a value, zero included, for each project
   and team charged this month: a project the export no longer charges on
   a day (a revised export) drops to zero instead of keeping its old
-  value.
+  value. A team whose charges were not read (its projects are no longer
+  listed) keeps its stored cost.
 
 ## History and refresh
 
@@ -208,8 +210,9 @@ until the day ends.
   listed projects' deployment and Web Analytics entries together would
   exceed the 2,000 entries a sync may report, deployments are checked for
   the connection only, by every sync of that connection, so Web Analytics
-  keeps its per-project entries and no per-project entry is left behind
-  with an older check.
+  keeps its per-project entries. netrics then removes the per-project
+  deployment checks stored before, so none shows an older check than the
+  connection's.
 - Charges are checked for the connection when every team's charges were
   read.
 
