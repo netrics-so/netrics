@@ -55,6 +55,11 @@ export interface FakeRailwayOptions {
   usageDenied?: string[];
   /** Workspaces whose estimated usage the token may not read. */
   estimateDenied?: string[];
+  /**
+   * Projects deleted before the run: never listed, but their usage counts
+   * when a usage query asks for deleted projects (`includeDeleted: true`).
+   */
+  deleted?: FakeProject[];
   /** Projects deleted since the listing (mutable between sync pages). */
   gone?: Set<string>;
   /** Answers queued ahead of the normal ones (429s, 5xx, …). */
@@ -378,6 +383,7 @@ export function createFakeRailway(
   function answer(
     operation: string,
     variables: Record<string, unknown>,
+    document: string,
   ): unknown {
     const visibleWorkspaces =
       options.tokenKind === "workspace" ? workspaces.slice(0, 1) : workspaces;
@@ -587,9 +593,13 @@ export function createFakeRailway(
         const measurements = variables.measurements as Array<
           keyof typeof MEASUREMENT_RATE
         >;
-        const own = projects.filter(
-          (project) => project.workspaceId === workspaceId,
-        );
+        const includeDeleted =
+          operation === "netricsUsage" &&
+          /includeDeleted:\s*true/.test(document);
+        const own = [
+          ...projects,
+          ...(includeDeleted ? (options.deleted ?? []) : []),
+        ].filter((project) => project.workspaceId === workspaceId);
         if (operation === "netricsUsage") {
           const minutes =
             (Date.parse(variables.endDate as string) -
@@ -657,7 +667,11 @@ export function createFakeRailway(
       if (init.headers?.authorization !== `Bearer ${token}`) {
         return response(200, notAuthorized(operation), windowHeaders());
       }
-      return response(200, answer(operation, variables), windowHeaders());
+      return response(
+        200,
+        answer(operation, variables, body.query),
+        windowHeaders(),
+      );
     },
   };
   return { runtime, requests };

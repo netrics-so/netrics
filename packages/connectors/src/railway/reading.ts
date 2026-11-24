@@ -11,6 +11,7 @@ import {
   PROJECT_SERVICES_QUERY,
   WORKSPACE_QUERY,
   meSchema,
+  nextAfter,
   projectEnvironmentsSchema,
   projectServicesSchema,
   projectsSchema,
@@ -115,9 +116,9 @@ export async function projectsPage(
       environmentsFirst: nested === "full" ? ENVIRONMENTS_PER_REQUEST : 1,
     }),
   );
-  const { hasNextPage, endCursor } = answer.projects.pageInfo;
+  // A sync reads no nested page: only the discovery checks theirs.
   const more = (info: { hasNextPage: boolean; endCursor?: string | null }) =>
-    info.hasNextPage && info.endCursor ? info.endCursor : null;
+    nested === "full" ? nextAfter(info) : null;
   return {
     projects: answer.projects.edges.map(({ node }) => ({
       id: node.id,
@@ -130,7 +131,7 @@ export async function projectsPage(
         environments: more(node.environments.pageInfo),
       },
     })),
-    next: hasNextPage && endCursor ? endCursor : null,
+    next: nextAfter(answer.projects.pageInfo),
   };
 }
 
@@ -149,10 +150,7 @@ async function completeProject(
       }),
     ).project.services;
     project.services.push(...answer.edges.map((edge) => edge.node));
-    after =
-      answer.pageInfo.hasNextPage && answer.pageInfo.endCursor
-        ? answer.pageInfo.endCursor
-        : null;
+    after = nextAfter(answer.pageInfo);
   }
   for (let after = more.environments; after !== null;) {
     const answer = projectEnvironmentsSchema.parse(
@@ -163,10 +161,7 @@ async function completeProject(
       }),
     ).project.environments;
     project.environments.push(...answer.edges.map((edge) => edge.node));
-    after =
-      answer.pageInfo.hasNextPage && answer.pageInfo.endCursor
-        ? answer.pageInfo.endCursor
-        : null;
+    after = nextAfter(answer.pageInfo);
   }
 }
 

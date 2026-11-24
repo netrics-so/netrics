@@ -232,7 +232,9 @@ export const railwayManifest: ConnectorManifest = {
       better: "lower",
     },
   ],
-  minRefreshIntervalSeconds: 300,
+  // Every 15 minutes (#883): Free plans allow 100 requests an hour, and a
+  // token's plan cannot be detected.
+  minRefreshIntervalSeconds: 15 * 60,
   supportsBackfill: true,
   backfillDays: BACKFILL_DAYS,
   outboundDomains: [RAILWAY_HOST],
@@ -275,6 +277,8 @@ export const railwayManifest: ConnectorManifest = {
 export interface RailwayConnectorOptions extends ClientOptions {
   /** The clock of the sync windows and snapshots; replaced in tests. */
   now?: () => number;
+  /** Rows per dataset page; replaced in tests to reach the page limits. */
+  pageRows?: number;
 }
 
 /**
@@ -404,7 +408,10 @@ export function createRailwayConnector(
     async sync(context, request: SyncRequest, runtime): Promise<SyncResult> {
       const query = client(context, runtime);
       try {
-        return await syncPage(query, context, request, { now });
+        return await syncPage(query, context, request, {
+          now,
+          ...(options.pageRows ? { pageRows: options.pageRows } : {}),
+        });
       } catch (error) {
         rethrow(error, context);
       }

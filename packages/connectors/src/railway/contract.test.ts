@@ -1218,3 +1218,346 @@ describe("review round 2", () => {
     expect(rowsOf(run.datasetPages, "service_states")).toEqual([]);
   });
 });
+
+// ─── Review round 3 (#883) ──────────────────────────────────────────────────
+
+/** A JSON answer, as the runtime hands it to the client. */
+function jsonAnswer(
+  status: number,
+  body: unknown,
+  headers: Record<string, string> = {},
+) {
+  const text = JSON.stringify(body);
+  return {
+    status,
+    headers: { "content-type": "application/json", ...headers },
+    text: () => text,
+    json: () => JSON.parse(text) as unknown,
+    bytes: () => new TextEncoder().encode(text),
+  };
+}
+
+function operationOf(init: { body?: string } | undefined): string {
+  const body = JSON.parse(init?.body ?? "{}") as { query?: string };
+  return /query\s+(\w+)/.exec(body.query ?? "")?.[1] ?? "";
+}
+
+/**
+ * Runs one sync the way the host does: a failed page is retried from the
+ * stored checkpoint, after a rate limit's reset (the clock moves there).
+ */
+async function runWithRetries(runtime: ConnectorRuntime) {
+  let nowMs = Date.parse(NOW);
+  const pages: SyncResult[] = [];
+  const errors: unknown[] = [];
+  let cursor: string | undefined;
+  for (let guard = 0; guard < 200; guard += 1) {
+    const page = await connector(() => nowMs)
+      .sync(context(), { ...WINDOW, ...(cursor ? { cursor } : {}) }, runtime)
+      .catch((error: unknown) => {
+        errors.push(error);
+        return null;
+      });
+    if (page === null) {
+      const error = errors.at(-1);
+      if (!(error instanceof RateLimitedError)) throw error;
+      nowMs = Math.max(nowMs, Date.parse(error.retryAt));
+      continue;
+    }
+    expectHostAccepts(page);
+    pages.push(page);
+    if (page.done) break;
+    cursor = page.nextCursor;
+  }
+  return {
+    pages,
+    errors,
+    observations: pages.flatMap((page) => page.observations),
+    last: pages.at(-1)!,
+  };
+}
+
+describe("review round 3", () => {
+  it("refreshes every 15 minutes at most, by default", () => {
+    expect(railwayManifest.minRefreshIntervalSeconds).toBe(15 * 60);
+  });
+
+  it("returns a page's progress when a later request times out, so only that request repeats", async () => {
+    const whole = await runPages(fake(), WINDOW, context());
+    const wholeRequests = whole.requestsPerPage.reduce((a, b) => a + b, 0);
+    const railway = fake();
+    let calls = 0;
+    const failing: ConnectorRuntime = {
+      ...railway.runtime,
+      fetch: async (url, init) => {
+        calls += 1;
+        if (calls === 5) throw new Error("The operation timed out");
+        return railway.runtime.fetch(url, init);
+      },
+    };
+    const first = await connector().sync(context(), WINDOW, failing);
+    expect(first.done).toBe(false);
+    expectHostAccepts(first);
+    const rest = await runPages(
+      { ...railway, runtime: failing },
+      WINDOW,
+      context(),
+      { cursor: first.nextCursor! },
+    );
+    // Every request ran once, the one that timed out twice.
+    expect(calls).toBe(wholeRequests + 1);
+    expect(latest([...first.observations, ...rest.observations])).toEqual(
+      latest(whole.observations),
+    );
+    expect(
+      rowsOf(
+        [...(first.datasetPages ?? []), ...rest.datasetPages],
+        "deployments",
+      ),
+    ).toEqual(rowsOf(whole.datasetPages, "deployments"));
+    expect(rest.last.receivedDatasets).toEqual(whole.last.receivedDatasets);
+  });
+
+  it("returns a page's progress on a rate limit and defers the rest to the reset", async () => {
+    const whole = await runPages(fake(), WINDOW, context());
+    const wholeRequests = whole.requestsPerPage.reduce((a, b) => a + b, 0);
+    const railway = fake();
+    let calls = 0;
+    const limited: ConnectorRuntime = {
+      ...railway.runtime,
+      fetch: async (url, init) => {
+        calls += 1;
+        if (calls === 5) {
+          return jsonAnswer(429, {}, { "retry-after": "1800" });
+        }
+        return railway.runtime.fetch(url, init);
+      },
+    };
+    const run = await runWithRetries(limited);
+    expect(run.pages[0]!.done).toBe(false);
+    expect(run.errors).toHaveLength(1);
+    expect(run.errors[0]).toBeInstanceOf(RateLimitedError);
+    expect((run.errors[0] as RateLimitedError).retryAt).toBe(
+      new Date(Date.parse(NOW) + 1_800_000).toISOString(),
+    );
+    // The deferred page sent nothing; the limited request ran once more.
+    expect(calls).toBe(wholeRequests + 1);
+    expect(latest(run.observations)).toEqual(latest(whole.observations));
+    expect(run.last.receivedDatasets).toEqual(whole.last.receivedDatasets);
+  });
+
+  it("hands on a rate limit of the probe after a refused deployments read", async () => {
+    const railway = fake();
+    let refused = false;
+    const runtime: ConnectorRuntime = {
+      ...railway.runtime,
+      fetch: async (url, init) => {
+        const operation = operationOf(init);
+        if (operation === "netricsDeployments") {
+          refused = true;
+          return jsonAnswer(200, notAuthorized("deployments"));
+        }
+        if (operation === "netricsProjectState" && refused) {
+          return jsonAnswer(429, {}, { "retry-after": "1800" });
+        }
+        return railway.runtime.fetch(url, init);
+      },
+    };
+    const errors: unknown[] = [];
+    let cursor: string | undefined;
+    for (let guard = 0; guard < 20 && errors.length === 0; guard += 1) {
+      await connector()
+        .sync(context(), { ...WINDOW, ...(cursor ? { cursor } : {}) }, runtime)
+        .then((page) => {
+          expectHostAccepts(page);
+          expect(page.done).toBe(false);
+          cursor = page.nextCursor;
+        })
+        .catch((error: unknown) => errors.push(error));
+    }
+    expect(errors[0]).toBeInstanceOf(RateLimitedError);
+  });
+
+  it("dates Railway's estimate by when it was read, apart from an earlier day's usage", async () => {
+    let nowMs = Date.parse("2024-01-10T23:59:00.000Z");
+    const railway = fake();
+    const pages: SyncResult[] = [];
+    let cursor: string | undefined;
+    for (let guard = 0; guard < 50; guard += 1) {
+      const page = await connector(() => nowMs).sync(
+        context(),
+        {
+          mode: "incremental",
+          from: "2024-01-08T00:00:00.000Z",
+          to: "2024-01-10T23:59:00.000Z",
+          ...(cursor ? { cursor } : {}),
+        },
+        railway.runtime,
+      );
+      expectHostAccepts(page);
+      pages.push(page);
+      if (page.done) break;
+      cursor = page.nextCursor;
+      // The run continues after midnight, maybe in another billing period.
+      nowMs = Date.parse("2024-01-11T00:30:00.000Z");
+    }
+    const estimates = pages
+      .flatMap((page) => page.observations)
+      .filter((item) => item.metricKey === METRICS.estimatedCost);
+    expect(estimates.length).toBeGreaterThan(0);
+    for (const estimate of estimates) {
+      expect(estimate.sourceTimestamp).toBe("2024-01-11T00:00:00.000Z");
+    }
+    // The usage snapshot holds the 10th's usage: no estimate of the 11th.
+    const usage = rowsOf(
+      pages.flatMap((page) => page.datasetPages ?? []),
+      "project_usage",
+    );
+    expect(usage).toHaveLength(3);
+    expect(usage.every((row) => row.estimated_cost_usd === null)).toBe(true);
+  });
+
+  it("counts the cost of deleted projects without listing them as live", async () => {
+    const site = fakeProjects()[1]!;
+    const deleted: FakeProject = {
+      ...site,
+      id: "prj-deleted",
+      name: "deleted",
+      services: [],
+      environments: [],
+      instances: [],
+      deployments: [],
+    };
+    const railway = fake({ deleted: [deleted] });
+    const run = await runPages(railway, WINDOW, context());
+    for (const request of railway.requests.filter(
+      (entry) => entry.operation === "netricsUsage",
+    )) {
+      const body = JSON.parse(request.init?.body ?? "{}") as { query: string };
+      expect(body.query).toContain("includeDeleted: true");
+    }
+    const costOf = (projectId: string) =>
+      run.observations
+        .filter(
+          (item) =>
+            item.metricKey === METRICS.cost &&
+            item.dimensions.resource === projectId,
+        )
+        .map((item) => [item.sourceTimestamp, item.value]);
+    expect(costOf("prj-deleted").length).toBeGreaterThan(0);
+    expect(costOf("prj-deleted")).toEqual(costOf("prj-site"));
+    // Not a live project: no usage row, no state, no estimate.
+    for (const key of ["project_usage", "service_states"]) {
+      expect(
+        rowsOf(run.datasetPages, key).some(
+          (row) => row.project_id === "prj-deleted",
+        ),
+      ).toBe(false);
+    }
+    expect(run.last.receivedDatasets).toContain("project_usage");
+    expect(
+      run.observations.some(
+        (item) =>
+          item.metricKey === METRICS.estimatedCost &&
+          item.dimensions.resource === "prj-deleted",
+      ),
+    ).toBe(false);
+  });
+
+  /** The paged connection of each answer, as a path into its `data`. */
+  const cursorless: Array<[string, string[]]> = [
+    ["netricsProjects", ["projects"]],
+    ["netricsProjectState", ["project", "environments"]],
+    ["netricsDeployments", ["deployments"]],
+  ];
+  for (const [operation, path] of cursorless) {
+    const pageInfoOf = (data: Record<string, unknown>) =>
+      (
+        path.reduce(
+          (node, key) => (node as Record<string, unknown>)[key],
+          data as unknown,
+        ) as { pageInfo: object }
+      ).pageInfo;
+    for (const endCursor of [null, ""]) {
+      it(`never completes a snapshot from a ${operation} page with more to come and no cursor (${JSON.stringify(endCursor)})`, async () => {
+        const railway = fake();
+        const runtime: ConnectorRuntime = {
+          ...railway.runtime,
+          fetch: async (url, init) => {
+            const answer = await railway.runtime.fetch(url, init);
+            if (operationOf(init) !== operation) return answer;
+            const body = answer.json() as { data: Record<string, unknown> };
+            Object.assign(pageInfoOf(body.data), {
+              hasNextPage: true,
+              endCursor,
+            });
+            return jsonAnswer(answer.status, body);
+          },
+        };
+        const pages: SyncResult[] = [];
+        const error = await runPages({ ...railway, runtime }, WINDOW, context())
+          .then((run) => {
+            pages.push(...run.pages);
+            return null;
+          })
+          .catch((caught: unknown) => caught);
+        expect(pages.some((page) => page.done)).toBe(false);
+        expect(error).toBeInstanceOf(RailwayApiError);
+        expect((error as Error).message).toBe(
+          "Railway API answered 200: a page says more follow but names no cursor",
+        );
+      });
+    }
+  }
+
+  it("drains a usage snapshot of more than twenty pages over several results", async () => {
+    const projects: FakeProject[] = Array.from({ length: 45 }, (_, index) => ({
+      id: `prj-${String(index).padStart(3, "0")}`,
+      name: `project-${index}`,
+      workspaceId: "ws-fixture",
+      services: [],
+      environments: [],
+      instances: [],
+      deployments: [],
+      rates: { cpu: 0.01, memory: 0, egress: 0, disk: 0 },
+    }));
+    const railway = fake({ projects });
+    const pages: SyncResult[] = [];
+    let cursor: string | undefined;
+    for (let guard = 0; guard < 100; guard += 1) {
+      const page = await createRailwayConnector({
+        now: clock,
+        sleep: noSleep,
+        pageRows: 1,
+      }).sync(
+        context(),
+        {
+          mode: "incremental",
+          from: "2024-01-10T00:00:00.000Z",
+          to: NOW,
+          ...(cursor ? { cursor } : {}),
+        },
+        railway.runtime,
+      );
+      expectHostAccepts(page);
+      expect(page.nextCursor).not.toBe(cursor);
+      pages.push(page);
+      if (page.done) break;
+      cursor = page.nextCursor;
+    }
+    const last = pages.at(-1)!;
+    expect(last.done).toBe(true);
+    const usagePages = pages
+      .flatMap((page) => page.datasetPages ?? [])
+      .filter((page) => page.datasetKey === "project_usage");
+    expect(usagePages.length).toBeGreaterThan(20);
+    expect(
+      usagePages.flatMap((page) =>
+        page.records.map((record) => record.values.project_id),
+      ),
+    ).toEqual(projects.map((project) => project.id));
+    expect(usagePages.filter((page) => page.complete)).toHaveLength(1);
+    expect(usagePages.at(-1)!.complete).toBe(true);
+    expect(last.receivedDatasets).toContain("project_usage");
+  });
+});

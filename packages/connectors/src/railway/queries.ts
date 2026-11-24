@@ -5,6 +5,8 @@
 
 import { z } from "zod";
 
+import { RailwayApiError } from "./api.js";
+
 /** Every status of Railway's `DeploymentStatus` enum (checked 2026-11). */
 export const DEPLOYMENT_STATUSES = [
   "BUILDING",
@@ -141,9 +143,12 @@ export const DEPLOYMENTS_QUERY = `query netricsDeployments($projectId: String!, 
   }
 }`;
 
-/** Measured usage of a workspace between two instants, per project. */
+/**
+ * Measured usage of a workspace between two instants, per project, deleted
+ * projects included: Railway bills their usage too (#883).
+ */
 export const USAGE_QUERY = `query netricsUsage($workspaceId: String!, $measurements: [MetricMeasurement!]!, $startDate: DateTime!, $endDate: DateTime!) {
-  usage(workspaceId: $workspaceId, measurements: $measurements, startDate: $startDate, endDate: $endDate, groupBy: [PROJECT_ID]) {
+  usage(workspaceId: $workspaceId, measurements: $measurements, startDate: $startDate, endDate: $endDate, groupBy: [PROJECT_ID], includeDeleted: true) {
     measurement
     value
     tags { projectId }
@@ -182,6 +187,26 @@ const pageInfo = z.object({
   hasNextPage: z.boolean(),
   endCursor: z.string().nullish(),
 });
+
+/**
+ * Where a connection continues: null on its last page. A page that says
+ * more follow without a cursor is an invalid answer (#883): reading on
+ * from the start would loop, and stopping would pass an incomplete read
+ * off as complete (ADR 0026 §7).
+ */
+export function nextAfter(info: {
+  hasNextPage: boolean;
+  endCursor?: string | null | undefined;
+}): string | null {
+  if (!info.hasNextPage) return null;
+  if (!info.endCursor) {
+    throw new RailwayApiError(200, "other", PAGE_WITHOUT_CURSOR);
+  }
+  return info.endCursor;
+}
+export const PAGE_WITHOUT_CURSOR =
+  "a page says more follow but names no cursor";
+
 const connection = <T extends z.ZodType>(node: T) =>
   z.object({ pageInfo, edges: z.array(z.object({ node })) });
 
