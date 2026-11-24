@@ -78,7 +78,11 @@ false` filter; environments and service instances are read page by page)
   minutes), the estimated cost so far and Railway's estimate for the billing
   period, in USD. It is replaced only when today's usage of every workspace
   was read; otherwise the stored snapshot stays. The estimate column is
-  empty when Railway refused the estimate.
+  empty when Railway refused the estimate, or when the sync read it on a
+  later UTC day than the usage (it may belong to another billing period).
+  It lists the projects Railway lists: deleted projects are not part of
+  it, though their cost counts (see below). A snapshot larger than one
+  result holds is sent over several results.
 
 Deployment rows of PR environments carry their environment ID; their name
 is empty, as the state reads lasting environments only. Discovery names
@@ -106,8 +110,11 @@ A sync is a run of steps that each send one request: the workspaces, a page
 of projects, a page of a project's environments or of an environment's
 service instances, a page of its deployments, one day's usage of one
 workspace, one workspace's estimate. A sync page runs at most ten requests
-and checkpoints the next step in its cursor, so a failure or a rate limit
-repeats one step, not a page of them. The cursor belongs to the connection,
+and checkpoints the next step in its cursor. A request that fails (a
+timeout, an outage, a rate limit) ends the page early with the steps done
+before it, so only the failing step repeats. After a rate limit the
+cursor keeps the reset, and the next page waits for it without sending a
+request. The cursor belongs to the connection,
 its workspace ID and its token (a salted, shortened hash of it, never the
 token): after a change of either, the next sync starts a new run. A run
 uses the time it started on every page, so a run that crosses midnight UTC
@@ -116,7 +123,9 @@ the last page only completes the run's refreshes (ADR 0026), and only
 those that were read whole.
 
 Discovery reads every service and environment of each project, following
-Railway's page cursors.
+Railway's page cursors. A page that says more follow but names no cursor
+is an invalid answer: the sync fails rather than calling what it read
+complete, and the stored snapshots stay.
 
 ## How cost is estimated
 
@@ -145,7 +154,15 @@ else, without cost.
 
 Usage is read for the days of the sync window in this and the previous
 calendar month: one request per day and workspace, plus one for the day
-before the first.
+before the first. It includes deleted projects (`includeDeleted: true`):
+Railway bills their usage
+([Project usage](https://docs.railway.com/projects/project-usage#usage-by-project)),
+so `railway.cost` counts it under the deleted project's ID, while the
+`project_usage` snapshot and the service states hold live projects only.
+
+Railway's estimate (`railway.estimated_cost`) is dated by the UTC day it
+was read, which in a sync that continues past midnight can be a day after
+its usage.
 
 ## Railway's API, as checked on 2026-11-23
 
@@ -175,10 +192,13 @@ before the first.
   later is stored as Railway names it.
 - The schema is the contract: additive changes never break an existing
   query. The connector's queries were validated against the live schema on
-  2026-11-23 (Railway validates a query before it checks the token).
+  2026-11-23 (Railway validates a query before it checks the token), the
+  usage query's `includeDeleted` argument on 2026-11-24.
 
 A sync with N projects (each with up to ten lasting environments) sends
 about 2 + 2N requests, plus per workspace one usage request per day read
 and one for the day before (an incremental sync reads three days) and one
-estimate: about 7 + 2N for one workspace. A five-minute interval needs the
-Hobby plan or larger for more than a few projects.
+estimate: about 7 + 2N for one workspace. A connection syncs every 15
+minutes, at most four syncs an hour: the Free plan's 100 requests an hour
+cover about nine projects, and a token's plan is not visible to netrics.
+Larger workspaces need the Hobby plan or larger.

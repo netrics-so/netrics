@@ -12,7 +12,10 @@
 //
 // A sync page runs at most MAX_REQUESTS_PER_PAGE steps and checkpoints the
 // position after the last one in its cursor, so a retry continues at the
-// step that failed, never earlier. The cursor is bound to the connection
+// step that failed, never earlier. A step that fails after others of the
+// same page succeeded ends the page early with their progress; a rate
+// limit is kept in the cursor, and the next page waits for its reset
+// without a request (#883). The cursor is bound to the connection
 // and the workspace scope: a cursor of another scope restarts the run.
 // Snapshots are completed only by the last page of a run, and only when
 // every part of them was read.
@@ -21,6 +24,7 @@ import { createHash } from "node:crypto";
 
 import {
   DATASET_LIMITS,
+  RateLimitedError,
   type ConnectionContext,
   type DatasetPage,
   type DatasetRecord,
@@ -60,6 +64,7 @@ import {
   deploymentsSchema,
   environmentInstancesSchema,
   estimatedUsageSchema,
+  nextAfter,
   projectStateSchema,
   usageSchema,
   type RailwayServiceInstance,
@@ -197,9 +202,19 @@ interface RunState {
    */
   finishing?: boolean;
   usageStaged?: boolean;
+  /**
+   * Rows of the usage snapshot already sent while it is sent over several
+   * pages (more than DATASET_LIMITS.datasets chunks, #883).
+   */
+  usageOffset?: number;
+  /** A rate limit hit after progress: the reset (ms) the next page waits for. */
+  retryAt?: number;
 }
 
 const CURSOR_PREFIX = "railway.v3:";
+
+export const RATE_LIMIT_DEFERRED_MESSAGE =
+  "Railway's API rate limit is used up. netrics continues after the reset.";
 
 /**
  * A checkpoint belongs to the workspace ID and the token it was read
@@ -258,7 +273,10 @@ function refreshKey(
 // ─── Pages ──────────────────────────────────────────────────────────────────
 
 /** Records split into pages within the row and byte bounds. */
-function chunks(records: DatasetRecord[]): DatasetRecord[][] {
+function chunks(
+  records: DatasetRecord[],
+  pageRows = PAGE_ROWS,
+): DatasetRecord[][] {
   const result: DatasetRecord[][] = [];
   let current: DatasetRecord[] = [];
   let bytes = 0;
@@ -266,7 +284,7 @@ function chunks(records: DatasetRecord[]): DatasetRecord[][] {
     const size = Buffer.byteLength(JSON.stringify(record));
     if (
       current.length > 0 &&
-      (current.length >= PAGE_ROWS || bytes + size > PAGE_BYTES)
+      (current.length >= pageRows || bytes + size > PAGE_BYTES)
     ) {
       result.push(current);
       current = [];
@@ -304,6 +322,8 @@ function datasetPage(
 
 export interface RailwaySyncOptions {
   now: () => number;
+  /** Rows per dataset page; smaller in tests, to reach the page limits. */
+  pageRows?: number;
 }
 
 /** What one page collects before it is returned. */
@@ -331,6 +351,7 @@ export async function syncPage(
   options: RailwaySyncOptions,
 ): Promise<SyncResult> {
   const { now } = options;
+  const pageRows = options.pageRows ?? PAGE_ROWS;
   const scope = scopeOf(context);
   let budget = MAX_REQUESTS_PER_PAGE;
   const ask: RailwayQuery = (document, variables) => {
@@ -339,6 +360,18 @@ export async function syncPage(
   };
 
   let state = decodeState(request.cursor, context.connectionId, scope);
+  // A page that ended on a rate limit: nothing is sent before the reset.
+  if (state?.retryAt !== undefined) {
+    if (now() < state.retryAt) {
+      throw new RateLimitedError(
+        RATE_LIMIT_DEFERRED_MESSAGE,
+        new Date(state.retryAt),
+      );
+    }
+    delete state.retryAt;
+  }
+  // Whether this page has anything to checkpoint yet.
+  let progressed = false;
   if (!state) {
     const workspaces = await listWorkspaces(ask, workspaceIdOf(context));
     const startMs = startOfUtcDay(Date.parse(request.from));
@@ -364,6 +397,7 @@ export async function syncPage(
       last: {},
       pages: 0,
     };
+    progressed = true;
   }
   const run = state;
   const out: PageOutput = { observations: [], states: [], deployments: [] };
@@ -456,11 +490,9 @@ export async function syncPage(
         answer.edges.map((edge) => edge.node),
         progress,
       );
-      if (answer.pageInfo.hasNextPage && answer.pageInfo.endCursor) {
-        pendingEnv.after = answer.pageInfo.endCursor;
-      } else {
-        progress.instances.shift();
-      }
+      const next = nextAfter(answer.pageInfo);
+      if (next !== null) pendingEnv.after = next;
+      else progress.instances.shift();
       return;
     }
     const answer = projectStateSchema.parse(
@@ -472,6 +504,7 @@ export async function syncPage(
         ephemeral: false,
       }),
     ).project;
+    const envNext = nextAfter(answer.environments.pageInfo);
     for (const { node: environment } of answer.environments.edges) {
       // Railway filters PR environments out; a stray one is not a state.
       if (environment.isEphemeral) continue;
@@ -484,16 +517,16 @@ export async function syncPage(
         instances.edges.map((edge) => edge.node),
         progress,
       );
-      if (instances.pageInfo.hasNextPage && instances.pageInfo.endCursor) {
+      const after = nextAfter(instances.pageInfo);
+      if (after !== null) {
         progress.instances.push({
           env: environment.id,
           name: environment.name,
-          after: instances.pageInfo.endCursor,
+          after,
         });
       }
     }
-    const { hasNextPage, endCursor } = answer.environments.pageInfo;
-    progress.envNext = hasNextPage && endCursor ? endCursor : null;
+    progress.envNext = envNext;
   }
 
   async function deploymentsStep(projectId: string, progress: ProjectProgress) {
@@ -508,7 +541,9 @@ export async function syncPage(
       ).deployments;
     } catch (error) {
       // Railway answers "Not Authorized" for a project that is gone: ask
-      // the project itself, and skip it only if it is gone.
+      // the project itself, and skip it only if it is gone. A probe that
+      // fails otherwise (a rate limit, an outage) says nothing about the
+      // token: its own error goes up, a rate limit as one (#883).
       if (error instanceof RailwayApiError && error.kind === "auth") {
         try {
           await ask(PROJECT_STATE_QUERY, {
@@ -519,11 +554,14 @@ export async function syncPage(
             ephemeral: false,
           });
         } catch (probe) {
-          if (isMissing(probe)) throw probe;
+          if (!(probe instanceof RailwayApiError && probe.kind === "auth")) {
+            throw probe;
+          }
         }
       }
       throw error;
     }
+    const next = nextAfter(answer.pageInfo);
     const services = new Map(Object.entries(progress.services));
     const environments = new Map(Object.entries(progress.environments));
     const days = new Map<number, DayCounts>();
@@ -544,8 +582,7 @@ export async function syncPage(
       counts[key] = [all + 1, failed + (isFailed(node.status) ? 1 : 0)];
       days.set(day, counts);
     }
-    const { hasNextPage, endCursor } = answer.pageInfo;
-    const finished = older || !hasNextPage || !endCursor;
+    const finished = older || next === null;
 
     // Newest first: every day but the oldest read is complete. The oldest
     // is counted on with the next page unless the project is done.
@@ -580,8 +617,8 @@ export async function syncPage(
         );
       }
     }
-    if (finished) nextProject();
-    else progress.after = endCursor;
+    if (finished || next === null) nextProject();
+    else progress.after = next;
   }
 
   async function projectStep() {
@@ -654,9 +691,18 @@ export async function syncPage(
     }
   }
 
+  /**
+   * The listed projects, then those only the usage names: projects deleted
+   * before the listing, whose usage Railway still bills (#883). Their cost
+   * is history; they are no part of the live snapshots.
+   */
+  function costProjects(listed: string[], usage: Map<string, Usage>) {
+    return [...new Set([...listed, ...usage.keys()])];
+  }
+
   async function costStep(cost: NonNullable<RunState["cost"]>) {
     const workspaceId = run.workspaces[cost.ws]!;
-    const projects = projectsOf(workspaceId);
+    const listed = projectsOf(workspaceId);
     const monthStart = cost.day === startOfUtcMonth(cost.day);
     try {
       if (!monthStart && cost.prev === undefined) {
@@ -664,7 +710,10 @@ export async function syncPage(
         // of the first day's difference.
         const before = await monthToDate(workspaceId, cost.day);
         cost.prev = Object.fromEntries(
-          projects.map((id) => [id, cents(usageCostUsd(before.get(id) ?? {}))]),
+          costProjects(listed, before).map((id) => [
+            id,
+            cents(usageCostUsd(before.get(id) ?? {})),
+          ]),
         );
         return;
       }
@@ -674,7 +723,7 @@ export async function syncPage(
       );
       const base = monthStart ? {} : (cost.prev ?? {});
       const current: Record<string, number> = {};
-      for (const projectId of projects) {
+      for (const projectId of costProjects(listed, usage)) {
         current[projectId] = cents(usageCostUsd(usage.get(projectId) ?? {}));
         out.observations.push({
           metricKey: METRICS.cost,
@@ -684,7 +733,7 @@ export async function syncPage(
         });
       }
       if (cost.day === today) {
-        for (const projectId of projects) {
+        for (const projectId of listed) {
           run.today[projectId] = usage.get(projectId) ?? {};
         }
         run.todayRead.push(workspaceId);
@@ -722,6 +771,11 @@ export async function syncPage(
           measurements: [...COST_MEASUREMENTS],
         }),
       );
+      // A forecast of the moment it was read: dated by that day, not the
+      // run's. Read on a later day than the run's usage, it may belong to
+      // another billing period, and the usage snapshot goes without it
+      // (#883).
+      const readDay = startOfUtcDay(now());
       const byProject = new Map<string, Usage>();
       for (const row of answer.estimatedUsage) {
         addUsage(byProject, row.projectId, row.measurement, row.estimatedValue);
@@ -729,10 +783,10 @@ export async function syncPage(
       for (const projectId of projectsOf(workspaceId)) {
         const usage = byProject.get(projectId);
         if (!usage) continue;
-        run.estimates[projectId] = usage;
+        if (readDay === today) run.estimates[projectId] = usage;
         out.observations.push({
           metricKey: METRICS.estimatedCost,
-          sourceTimestamp: iso(today),
+          sourceTimestamp: iso(readDay),
           value: cents(usageCostUsd(usage)),
           dimensions: { resource: projectId },
         });
@@ -802,13 +856,39 @@ export async function syncPage(
   // two (see deploymentsStep): a step starts only while two are left.
   let step = nextStep();
   while (step && budget >= 2) {
-    await step();
+    const checkpoint = JSON.stringify(run);
+    const marks = [
+      out.states.length,
+      out.deployments.length,
+      out.observations.length,
+    ] as const;
+    try {
+      await step();
+    } catch (error) {
+      // Nothing done yet: the host retries this page's checkpoint.
+      if (!progressed) throw error;
+      // Otherwise the steps done so far go out, and the next page starts
+      // at the one that failed (#883).
+      const saved = JSON.parse(checkpoint) as RunState;
+      for (const key of Object.keys(run)) {
+        delete (run as unknown as Record<string, unknown>)[key];
+      }
+      Object.assign(run, saved);
+      out.states.length = marks[0];
+      out.deployments.length = marks[1];
+      out.observations.length = marks[2];
+      if (error instanceof RateLimitedError) {
+        run.retryAt = Date.parse(error.retryAt);
+      }
+      break;
+    }
+    progressed = true;
     step = nextStep();
   }
 
   const datasetPages: DatasetPage[] = [];
   const flush = (key: string, records: DatasetRecord[]) => {
-    for (const chunk of chunks(records)) {
+    for (const chunk of chunks(records, pageRows)) {
       datasetPages.push(datasetPage(run, key, chunk, false));
     }
   };
@@ -827,15 +907,26 @@ export async function syncPage(
   if (!step && !run.finishing) {
     // The usage snapshot is replaced only when today's usage of every
     // workspace was read (ADR 0026): otherwise the stored one stays. Its
-    // rows wait for the next page when this one has no room for them.
-    const usage = usageComplete ? chunks(usageRecords()) : [];
-    if (datasetPages.length + usage.length <= DATASET_LIMITS.datasets) {
-      for (const chunk of usage) {
+    // rows fill the room this page has left, the rest follows on the next
+    // pages from the stored offset (#883).
+    if (usageComplete) {
+      const records = usageRecords();
+      let offset = run.usageOffset ?? 0;
+      for (const chunk of chunks(records.slice(offset), pageRows)) {
+        if (datasetPages.length >= DATASET_LIMITS.datasets) break;
         datasetPages.push(
           datasetPage(run, projectUsageDataset.key, chunk, false),
         );
+        offset += chunk.length;
       }
-      run.usageStaged = usageComplete;
+      if (offset >= records.length) {
+        delete run.usageOffset;
+        run.usageStaged = true;
+        run.finishing = true;
+      } else {
+        run.usageOffset = offset;
+      }
+    } else {
       run.finishing = true;
     }
   }
