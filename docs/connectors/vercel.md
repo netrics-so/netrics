@@ -91,7 +91,9 @@ scope), so this connector uses tokens.
 - `rolled_back` is true when production points at an older build than the
   newest promoted `READY` production build (read from the newest 20 READY
   ones); `state` stays `up`, so a status widget can show "up · rolled
-  back".
+  back". A build that is staged or still in a rolling release
+  (`readySubstate` `STAGED` or `ROLLING`) is not promoted, so production
+  serving the build before it is not a rollback.
 - The first sync reads deployments up to 90 days back. Every sync then
   reads each project's deployments of the last two days again: a
   deployment that finished building shows its new state, and one the
@@ -150,8 +152,18 @@ selection, charges of other projects are left out; team-wide charges stay.
 - Metric **Cost** (`vercel.cost`): the effective cost per day (UTC), net of
   discounts, in minor units (cents) with its currency, per project; charges
   of no single project under the team's ID as `resource`, and every value
-  with its `team`. Summed over a calendar month it is the month's spend.
-  The billed cost stays in the dataset.
+  with its `team`. Summed over a calendar month it is the month's spend,
+  rounded to the cent: each day is the difference of the rounded totals
+  from the 1st, so the days add up to the month's rounded total even when
+  every day's cost is a fraction of a cent. The billed cost stays in the
+  dataset.
+- The cost is published only after every team's charges of every day of
+  the month so far were read. When charges are not read (a refusal, an
+  oversized day), the cost stays as last stored, like the dataset. Every
+  day of the month so far gets a value, zero included, for each project
+  and team charged this month: a project the export no longer charges on
+  a day (a revised export) drops to zero instead of keeping its old
+  value.
 
 ## History and refresh
 
@@ -172,7 +184,14 @@ selection, charges of other projects are left out; team-wide charges stay.
   out, a later one pauses the connection until then. Its syncs, the first
   backfill included, continue right after the reset where they stopped,
   and the connection shows "Vercel limit reached, continuing at …" rather
-  than an outage. The dashboard shows the last values meanwhile.
+  than an outage. The dashboard shows the last values meanwhile. A limit
+  reached after other steps keeps what they read, and the next step waits
+  for the same reset.
+- Every request is limited to 20 seconds, and the steps of one call to
+  the connector stop requesting and waiting 45 seconds after it started,
+  within the host's 60: a request Vercel never answers ends in time for
+  the sync to record its position, and the next call repeats only that
+  step.
 
 ## When numbers arrive
 
@@ -185,10 +204,12 @@ until the day ends.
 - Visitors and page views are checked per project. A project without Web
   Analytics is never reported as checked: its widgets show no data rather
   than a fresh zero.
-- Deployments are checked per project and for the connection. With very
-  many projects (over the 2,000 entries a sync may report) only the
-  connection entry is kept for deployments, so Web Analytics keeps its
-  per-project entries.
+- Deployments are checked per project and for the connection. When the
+  listed projects' deployment and Web Analytics entries together would
+  exceed the 2,000 entries a sync may report, deployments are checked for
+  the connection only, by every sync of that connection, so Web Analytics
+  keeps its per-project entries and no per-project entry is left behind
+  with an older check.
 - Charges are checked for the connection when every team's charges were
   read.
 

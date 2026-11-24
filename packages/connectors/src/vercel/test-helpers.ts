@@ -108,6 +108,14 @@ export interface FakeVercelOptions {
   created?: Record<string, number>;
   /** Thrown by the runtime's fetch for the billing export (a size cap). */
   billingThrows?: () => Error;
+  /** A later READY substate of a deployment, by id (ROLLING, STAGED). */
+  substates?: Record<string, string>;
+  /** Projects the billing export no longer charges (#894). */
+  unbilled?: string[];
+  /** The effective cost of each project's daily usage charge (default 0.25). */
+  usageCost?: number;
+  /** Projects listed with Web Analytics whose analytics answer 404. */
+  analyticsGone?: string[];
   /** Answers per path that fail once, after `after` successful requests. */
   failAfter?: {
     after: number;
@@ -255,9 +263,11 @@ export function createFakeVercel(options: FakeVercelOptions = {}): FakeVercel {
           const state = options.states?.[deployment.uid];
           const slug = options.environments?.[deployment.uid];
           const created = options.created?.[deployment.uid];
+          const substate = options.substates?.[deployment.uid];
           return {
             ...deployment,
             ...(state ? { readyState: state } : {}),
+            ...(substate ? { readySubstate: substate } : {}),
             ...(created !== undefined ? { created } : {}),
             ...(slug
               ? { target: null, customEnvironment: { id: `env_${slug}`, slug } }
@@ -365,11 +375,13 @@ export function createFakeVercel(options: FakeVercelOptions = {}): FakeVercel {
         const start = new Date(day).toISOString();
         const end = new Date(day + DAY_MS).toISOString();
         for (const project of projects.filter(
-          (candidate) => candidate.accountId === team,
+          (candidate) =>
+            candidate.accountId === team &&
+            !options.unbilled?.includes(candidate.id),
         )) {
           lines.push({
             BilledCost: 0.5,
-            EffectiveCost: 0.25,
+            EffectiveCost: options.usageCost ?? 0.25,
             BillingCurrency: "USD",
             ChargeCategory: "Usage",
             ChargePeriodStart: start,
@@ -451,7 +463,7 @@ export function createFakeVercel(options: FakeVercelOptions = {}): FakeVercel {
         error: { code: "not_found", message: "Project not found." },
       });
     }
-    if (!project.analytics) {
+    if (!project.analytics || options.analyticsGone?.includes(project.id)) {
       return response(404, {
         error: { code: "not_found", message: "Web Analytics not found." },
       });
