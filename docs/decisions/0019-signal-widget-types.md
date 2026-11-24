@@ -817,17 +817,33 @@ A preparation step could map values too (a calculated column), and still
 can, but the widget needs the fixed set whatever the preparation did, and
 a mapping per widget keeps one dataset usable by widgets that read it
 differently. The Studio lists the source values no built-in word knows,
-over every matching item (`sourceValues`, at most 30), and offers a state
-for each. No new concept, so no new ADR.
+over every matching item (`sourceValues`, at most 30, only values an
+override can key in full, at most 60 characters; longer ones stay
+unknown), and offers a state for each. No new concept, so no new ADR.
 
 **Order.** Not healthy first: down, failed, unknown, building, sleeping,
 up after a rollback, up; then by name (case-insensitive, then exact;
-nameless last), `sortServiceStateItems`. The urgency is applied before any
-read limit: the server first reads the distinct state values, then the
-items whose value is not up (or null), then the up items, at most 500
-items in all (`STATE_QUERY_MAX`), so an outage never falls past the limit
-behind healthy items. It sends the first `limit`, with `total` counting
-every match and `counts` the items per state (`serviceStateCounts`).
+nameless last), `sortServiceStateItems`.
+
+**Ranked and counted inside the query** (final review): no cap ever applies
+before ranking. The state query adds internal measures to the model
+(`stateModelWithRank`): per tier of `SERVICE_STATE_TIERS` (down, failed,
+unknown, building, sleeping, up after a rollback, up) a count of the
+state dataset's rows in it, an aggregate filter that compares the value,
+lower-cased and trimmed, with every spelling of the built-in words and the
+widget's overrides (`serviceStateSpellings`: as written with underscores,
+spaces or dashes; null and unlisted values are unknown; a rollback only on
+up, when its field is in the state's dataset); and a formula measure, the
+rank, the first tier with rows. The item query orders its groups by the
+rank (the semantic layer's existing `orderBy` on a measure, ties in name
+order) before its limit, so the list's first `limit` items, or the single
+item, are the most urgent of every match, and each item's state is read
+from its rank, never re-derived. A second read groups nothing and returns
+the tier counts over every match (`counts`, in rows: one row per item in
+a snapshot dataset); a third lists the distinct values in the unknown tier
+for the Studio. `total` is the item query's group count. The semantic
+layer needed no new capability: aggregate filters, formulas and
+`orderBy` express it.
 
 **Options.** `layout`: `list` (default) or `single`; `item`: the single
 form's item by name (null: a summary of every item, owner decision
@@ -844,8 +860,12 @@ mapping. Devices: the widget member `state` with `label` (title, else
 "Status"), `options` without `states` (the mapping stays on the server)
 and `data: { status, items: [{ name, state, rolledBack, changedAt }],
 total, counts, freshness? }`. Freshness comes from the model's sources
-(ADR 0025). `status` is `stale` when the rows are a last valid snapshot or
-a source is overdue (ADR 0025 section 8): screens then show "Last known
+(ADR 0025). `status` is `stale` when the rows are a last valid snapshot,
+a source is overdue (ADR 0025 section 8), or a connection the model reads
+fails, lost its grant or last synced more than three poll intervals ago
+(`stateSourcesStale` over `sourceItemStatus`, so a continuous source that
+stopped syncing never keeps an old state current); a wall screen whose
+refresh fails keeps its last states marked stale. Screens then show "Last known
 state, may be out of date" ("Letzter bekannter Status, evtl. veraltet"),
 so an old "Up" never reads as current. Clients that do not ask with
 `?features=state` get a text widget in its place ("Update netrics TV to
@@ -879,15 +899,18 @@ resource, cell and change; the vectors and the Swift port carry it. In the
 scroll view the widget takes one column and grows with its rows (web and
 netrics TV), nothing cut.
 
-**Limits.** Up to three small grouped model reads per widget (values,
-urgent items, the rest); it counts once toward the 48 data widgets.
+**Limits.** Three small model reads per widget (ranked items, tier counts,
+unknown values); it counts once toward the 48 data widgets.
 
 **Studio.** "Service status" in the add menu; any published model with two
 text (or text and yes/no) fields can back it. Field names only rank the
 defaults: the state is a field named like a state, else a yes/no field,
 else another text field; the name its first text field no shared filter
 maps; a changed-at or rolled-back field when one is named like it. One
-field never takes two roles. The inspector picks model,
+field never takes two roles: picking the other role's field swaps the
+two at once. The single form offers only item names the server did not
+cut. netrics TV's scroll card follows the canvas: the summary, the hidden
+tone of "+N more" and the stale warning. The inspector picks model,
 name, state, changed-at, rolled-back, list or one item, the item (with the
 preview's names offered, committed on leaving the field), the row limit, "Show when it changed", the
 mapping of unknown source values and the filters it ignores. Store

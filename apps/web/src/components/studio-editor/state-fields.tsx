@@ -21,7 +21,9 @@ import type { StudioAction } from "@/lib/studio-document";
 import {
   stateBindingFor,
   stateFieldChoices,
+  stateItemNames,
   stateModels,
+  withStateField,
 } from "@/lib/studio-state";
 
 import { FilterExclusions } from "./shared-filters";
@@ -158,11 +160,21 @@ export function StateFields({
     const item = commitStateItem(itemDraft);
     if (item !== widget.options.item) options({ item });
   };
-  const names = [
-    ...new Set(
-      (preview?.items ?? []).flatMap((item) => (item.name ? [item.name] : [])),
-    ),
-  ];
+  const names = stateItemNames(preview?.items ?? []);
+  /** Sets name or state; the other role's field swaps them at once. */
+  const setRole = (
+    role: "nameDimensionId" | "stateDimensionId",
+    value: string | undefined,
+  ) => {
+    if (!value) return;
+    dispatch({
+      type: "updateWidget",
+      widgetId: widget.id,
+      patch: {
+        binding: withStateField(widget.binding, role, value, model),
+      },
+    });
+  };
   return (
     <fieldset className="state-fields">
       <legend>{t("legend")}</legend>
@@ -207,30 +219,13 @@ export function StateFields({
         "name",
         widget.binding.nameDimensionId,
         choices.names,
-        (value) => value && update({ nameDimensionId: value }),
+        (value) => setRole("nameDimensionId", value),
       )}
       {dimensionSelect(
         "state",
         widget.binding.stateDimensionId,
         choices.states,
-        (value) => {
-          if (!value) return;
-          // A rolled-back flag is never the state as well.
-          const { rolledBackDimensionId: flag, ...rest } = widget.binding;
-          dispatch({
-            type: "updateWidget",
-            widgetId: widget.id,
-            patch: {
-              binding: {
-                ...rest,
-                stateDimensionId: value,
-                ...(flag && flag !== value
-                  ? { rolledBackDimensionId: flag }
-                  : {}),
-              },
-            },
-          });
-        },
+        (value) => setRole("stateDimensionId", value),
       )}
       {dimensionSelect(
         "changed",

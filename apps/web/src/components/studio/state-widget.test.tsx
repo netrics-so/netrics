@@ -9,6 +9,7 @@ import {
 
 import { renderI18n } from "@/lib/i18n/test-render";
 
+import { failedStates } from "./dashboard-data-provider";
 import { DeviceWidgetView } from "./device-widget";
 import {
   StateWidgetView,
@@ -236,6 +237,40 @@ describe("review fixes (#875)", () => {
     expect(render({ status: "stale" }, "de")).toContain(
       "Letzter bekannter Status, evtl. veraltet",
     );
+  });
+});
+
+describe("a failed refresh (final review)", () => {
+  it("keeps a wall screen's last states, marked stale", () => {
+    const widget = {
+      id: "00000000-0000-4000-8000-000000000001",
+      binding: {
+        modelId: "00000000-0000-4000-8000-000000000002",
+        nameDimensionId: "n",
+        stateDimensionId: "s",
+        exclusions: [],
+      },
+    };
+    const last = {
+      widgetId: widget.id,
+      status: "ok" as const,
+      items: ITEMS.map((item) => ({ ...item, value: null })),
+      total: 5,
+      counts: serviceStateCounts(ITEMS),
+      sourceValues: [],
+      error: null,
+      exclusions: [],
+    };
+    const kept = failedStates([widget], new Map([[widget.id, last]]), true);
+    expect(kept.get(widget.id)).toMatchObject({
+      status: "stale",
+      items: ITEMS,
+    });
+    const editor = failedStates([widget], new Map([[widget.id, last]]), false);
+    expect(editor.get(widget.id)).toMatchObject({
+      status: "no_data",
+      error: "data_storage_failed",
+    });
   });
 });
 

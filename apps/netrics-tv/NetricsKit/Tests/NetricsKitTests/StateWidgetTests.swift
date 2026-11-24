@@ -249,4 +249,33 @@ private func stateWidget(_ payload: DeviceDashboardV2) throws -> (StateWidgetOpt
         #expect(StateBoard.hiddenTone(counts, shown: [up]) == .down)
         #expect(StateBoard.hiddenTone(counts, shown: [StateWidgetItem(name: "db", state: .down)]) == .up)
     }
+
+    @Test func readsADateOnlyChangeAsMidnightUTC() {
+        let now = ISODate.parse("2026-11-21T10:00:00.000Z")!
+        #expect(StateBoard.age("2026-11-21", now: now, language: .en) == "10 h")
+        #expect(StateBoard.changed("2026-11-20", now: now, language: .en) != nil)
+        #expect(StateBoard.changed("not a date", now: now, language: .en) == nil)
+    }
+
+    @Test func scrollCardSummarisesTonesAndWarnsLikeTheCanvas() {
+        var counts = ServiceStateCounts()
+        counts.up = 3
+        counts.down = 1
+        let shown = [StateWidgetItem(name: "web", state: .up), StateWidgetItem(name: "api", state: .up)]
+        let data = StateWidgetData(status: .stale, items: shown, total: 4, counts: counts)
+        // The single form without an item: the summary, never the first item.
+        let single = StateBoard.scrollPlan(StateWidgetOptions(layout: .single), data, language: .en)
+        #expect(single.summary == "1 of 4 down")
+        #expect(single.items.isEmpty)
+        #expect(single.stale)
+        // A chosen item: that item.
+        let chosen = StateBoard.scrollPlan(StateWidgetOptions(layout: .single, item: "web"), data, language: .en)
+        #expect(chosen.summary == nil)
+        #expect(chosen.items.map(\.name) == ["web"])
+        // A list: "+2 more" in the tone of the hidden outage.
+        let list = StateBoard.scrollPlan(StateWidgetOptions(), data, language: .en)
+        #expect(list.items.count == 2)
+        #expect(list.more == 2)
+        #expect(list.moreTone == .down)
+    }
 }

@@ -61,7 +61,11 @@ export function failedStates(
       return [
         widget.id,
         last && !last.error
-          ? last
+          ? // Kept, but never as current (final review of #875).
+            {
+              ...last,
+              status: last.items.length ? ("stale" as const) : last.status,
+            }
           : {
               widgetId: widget.id,
               status: "no_data",

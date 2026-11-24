@@ -104,6 +104,54 @@ export function normalizeServiceState(
   return Object.hasOwn(BUILT_IN, key) ? BUILT_IN[key]! : "unknown";
 }
 
+/**
+ * Every spelling a query compares a lower-cased, trimmed source value with
+ * (#875 final review: ranking inside the query), with its state: the
+ * built-in words and the widget's overrides (which win), each as written
+ * with underscores, spaces and dashes ("in_progress", "in progress",
+ * "in-progress"), and "true"/"false" for a yes/no field. Unlisted values,
+ * and null, are unknown. `normalizeServiceState` reads the same words.
+ */
+export function serviceStateSpellings(
+  overrides: Readonly<Record<string, ServiceState>> = {},
+): Map<string, ServiceState> {
+  const keys = new Map<string, ServiceState>([
+    ...Object.entries(BUILT_IN),
+    ["true", "up"],
+    ["false", "down"],
+  ]);
+  for (const [raw, state] of Object.entries(overrides)) {
+    const key = serviceStateKey(raw);
+    if (key !== "") keys.set(key, state);
+  }
+  const spellings = new Map<string, ServiceState>();
+  for (const [key, state] of keys)
+    for (const spelling of [
+      key,
+      key.replace(/_/g, " "),
+      key.replace(/_/g, "-"),
+    ])
+      spellings.set(spelling, state);
+  return spellings;
+}
+
+/**
+ * The rank tiers a query sorts by, most urgent first (`serviceStateRank`):
+ * a rollback is a tier of its own between sleeping and a plain up.
+ */
+export const SERVICE_STATE_TIERS: ReadonlyArray<{
+  state: ServiceState;
+  rolledBack: boolean;
+}> = [
+  { state: "down", rolledBack: false },
+  { state: "failed", rolledBack: false },
+  { state: "unknown", rolledBack: false },
+  { state: "building", rolledBack: false },
+  { state: "sleeping", rolledBack: false },
+  { state: "up", rolledBack: true },
+  { state: "up", rolledBack: false },
+];
+
 /** True when the built-in words alone map the value (no override needed). */
 export function isKnownServiceStateValue(value: unknown): boolean {
   if (typeof value === "boolean") return true;

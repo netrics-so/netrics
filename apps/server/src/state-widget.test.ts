@@ -6,7 +6,11 @@ import {
   deviceDashboardV3ResponseSchema,
 } from "@netrics/contracts";
 
-import { stateItemsOf, stateWidgetStatus } from "./dashboards/state.js";
+import {
+  stateItemsOf,
+  stateSourcesStale,
+  stateWidgetStatus,
+} from "./dashboards/state.js";
 import { createItemsFixture, type ItemsFixture } from "./test-items.js";
 
 // The state widget (#875, ADR 0019 section 15): saved like a latest-items
@@ -421,7 +425,11 @@ describe("the state widget (#875)", () => {
     expect(response.json().error).toBe("state_dimensions_not_distinct");
   });
 
-  it("ranks by urgency before the read limit: a down item past 500 is first (review)", async () => {
+  /** A published model over `rows` (host, state, rolled_back); its id. */
+  async function fleetModel(
+    key: string,
+    rows: Array<{ host: string; state: string; rolled?: boolean }>,
+  ): Promise<string> {
     const field = (id: string, type: string) => ({
       id,
       name: id,
@@ -429,20 +437,10 @@ describe("the state widget (#875)", () => {
       nullable: id !== "id",
       classification: "internal",
     });
-    const fleet = [
-      ...Array.from({ length: 600 }, (_, index) => ({
-        values: {
-          id: `a${index}`,
-          host: `a${String(index).padStart(3, "0")}`,
-          state: "running",
-        },
-      })),
-      { values: { id: "z", host: "zzz", state: "stopped" } },
-    ];
     const manual = await f.call("POST", "/data/manual", {
       definition: {
-        key: "fleet",
-        name: "Fleet",
+        key,
+        name: key,
         version: 1,
         mode: "snapshot",
         grain: "one host",
@@ -451,19 +449,27 @@ describe("the state widget (#875)", () => {
           field("id", "string"),
           field("host", "string"),
           field("state", "string"),
+          field("rolled_back", "boolean"),
         ],
       },
-      records: fleet,
+      records: rows.map((row, index) => ({
+        values: {
+          id: `r${index}`,
+          host: row.host,
+          state: row.state,
+          rolled_back: row.rolled ?? false,
+        },
+      })),
     });
     expect(manual.statusCode, manual.body).toBe(200);
     const datasetId = manual.json().datasetId as string;
     const model = await f.call("POST", "/data/models", {
-      name: "Fleet",
+      name: key,
       definition: {
         version: 1,
         datasets: [datasetId],
         relationships: [],
-        dimensions: ["host", "state"].map((id) => ({
+        dimensions: ["host", "state", "rolled_back"].map((id) => ({
           id,
           name: id,
           datasetId,
@@ -486,16 +492,29 @@ describe("the state widget (#875)", () => {
       (await f.call("POST", `/data/models/${id}/publish`, { version }))
         .statusCode,
     ).toBe(200);
-    const dashboard = await saved([
-      stateWidget({
-        binding: {
-          modelId: id,
-          nameDimensionId: "host",
-          stateDimensionId: "state",
-        },
-        options: { limit: 3 },
-      }),
+    return id as string;
+  }
+  const fleetWidget = (id: string, options: Record<string, unknown>) =>
+    stateWidget({
+      binding: {
+        modelId: id,
+        nameDimensionId: "host",
+        stateDimensionId: "state",
+        rolledBackDimensionId: "rolled_back",
+      },
+      options,
+    });
+  const pad = (index: number) => String(index).padStart(3, "0");
+
+  it("ranks by urgency before the read limit: a down item past 500 is first (review)", async () => {
+    const id = await fleetModel("fleet", [
+      ...Array.from({ length: 600 }, (_, index) => ({
+        host: `a${pad(index)}`,
+        state: "running",
+      })),
+      { host: "zzz", state: "stopped" },
     ]);
+    const dashboard = await saved([fleetWidget(id, { limit: 3 })]);
     const [list] = (await data(dashboard.id)).states;
     expect(list!.items.map((item) => `${item.name}:${item.state}`)).toEqual([
       "zzz:down",
@@ -504,6 +523,89 @@ describe("the state widget (#875)", () => {
     ]);
     expect(list!.total).toBe(601);
     expect(list!.counts).toMatchObject({ up: 600, down: 1 });
+  });
+
+  it("ranks over every match: 500 distinct unknown values never hide a later down (final review)", async () => {
+    const id = await fleetModel("unknowns", [
+      ...Array.from({ length: 500 }, (_, index) => ({
+        host: `a${pad(index)}`,
+        state: `weird-${pad(index)}`,
+      })),
+      { host: "zzz", state: "stopped" },
+    ]);
+    const dashboard = await saved([fleetWidget(id, { limit: 2 })]);
+    const [list] = (await data(dashboard.id)).states;
+    expect(list!.items.map((item) => `${item.name}:${item.state}`)).toEqual([
+      "zzz:down",
+      "a000:unknown",
+    ]);
+    expect(list!.total).toBe(501);
+    expect(list!.counts).toMatchObject({ unknown: 500, down: 1, up: 0 });
+    // Unmappable discovery still offers values (at most 30).
+    expect(list!.sourceValues).toHaveLength(30);
+  });
+
+  it("ranks a rollback past 500 ups before them and counts it (final review)", async () => {
+    const id = await fleetModel("rollbacks", [
+      ...Array.from({ length: 500 }, (_, index) => ({
+        host: `a${pad(index)}`,
+        state: "up",
+      })),
+      { host: "zzz", state: "up", rolled: true },
+    ]);
+    const dashboard = await saved([
+      fleetWidget(id, { limit: 2 }),
+      { ...fleetWidget(id, { layout: "single" }), x: 6 },
+    ]);
+    const [list, single] = (await data(dashboard.id)).states;
+    expect(
+      list!.items.map(
+        (item) => `${item.name}:${item.state}:${item.rolledBack}`,
+      ),
+    ).toEqual(["zzz:up:true", "a000:up:false"]);
+    expect(single!.counts).toMatchObject({ up: 501, rolledBack: 1 });
+    expect(single!.total).toBe(501);
+  });
+
+  it("omits source values too long to map (final review)", async () => {
+    const long = "x".repeat(70);
+    const id = await fleetModel("long", [
+      { host: "a", state: long },
+      { host: "b", state: "maintenance" },
+    ]);
+    const dashboard = await saved([fleetWidget(id, {})]);
+    const [list] = (await data(dashboard.id)).states;
+    expect(list!.sourceValues).toEqual(["maintenance"]);
+    // Both still count as unknown.
+    expect(list!.counts.unknown).toBe(2);
+  });
+});
+
+describe("stateSourcesStale (final review: a source that stopped syncing)", () => {
+  const now = Date.parse("2026-11-24T12:00:00Z");
+  const source = (patch: Record<string, unknown> = {}) => ({
+    health: "ok" as const,
+    lastSuccessAt: "2026-11-24T11:55:00Z",
+    pollIntervalSeconds: 300,
+    setupPending: false,
+    ...patch,
+  });
+  it("is stale when a source fails, lost its grant or synced too long ago", () => {
+    expect(stateSourcesStale([source()], now)).toBe(false);
+    expect(stateSourcesStale([], now)).toBe(false);
+    expect(stateSourcesStale([source({ health: "outage" })], now)).toBe(true);
+    expect(stateSourcesStale([source({ health: "auth_failed" })], now)).toBe(
+      true,
+    );
+    expect(
+      stateSourcesStale([source({ health: "needs_reauthorization" })], now),
+    ).toBe(true);
+    expect(
+      stateSourcesStale(
+        [source({ lastSuccessAt: "2026-11-24T10:00:00Z" })],
+        now,
+      ),
+    ).toBe(true);
   });
 });
 
@@ -525,16 +627,39 @@ describe("stateWidgetStatus (review: stale and overdue)", () => {
 });
 
 describe("stateItemsOf (#875)", () => {
+  it("takes the state from the query's rank, a rollback included", () => {
+    const rows = [5, 2, 99].map((rank) => ({
+      dimensions: { n: "a", s: "x" },
+      measures: { __state_rank: { value: rank } },
+    }));
+    expect(
+      stateItemsOf(rows, {
+        modelId: "m",
+        nameDimensionId: "n",
+        stateDimensionId: "s",
+        exclusions: [],
+      }).map((item) => [item.state, item.rolledBack]),
+    ).toEqual([
+      ["up", true],
+      ["unknown", false],
+      ["unknown", false],
+    ]);
+  });
+
   it("cuts long names and keeps the source value", () => {
     const [item] = stateItemsOf(
-      [{ dimensions: { n: "x".repeat(300), s: "Running" } }],
+      [
+        {
+          dimensions: { n: "x".repeat(300), s: "Running" },
+          measures: { __state_rank: { value: 6 } },
+        },
+      ],
       {
         modelId: "m",
         nameDimensionId: "n",
         stateDimensionId: "s",
         exclusions: [],
       },
-      { states: {} },
     );
     expect(item!.name).toHaveLength(200);
     expect(item!.name!.endsWith("…")).toBe(true);

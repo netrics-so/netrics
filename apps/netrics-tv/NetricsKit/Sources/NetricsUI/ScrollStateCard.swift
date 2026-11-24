@@ -19,29 +19,49 @@ struct ScrollStateCard: View {
 
     var body: some View {
         let language = env.language
-        let items = options.single ? Array(data.items.prefix(1)) : data.items
-        let more = options.single ? 0 : max(0, data.total - items.count)
+        // The canvas's rules (final review): the summary without a chosen
+        // item, the hidden outage's tone on "+N more", the stale warning.
+        let plan = StateBoard.scrollPlan(options, data, language: language)
         let footer = StateBoard.footer(
             data, now: now, language: language, width: .infinity, size: Size.small,
             timeZone: TimeZone(identifier: env.timeZone) ?? .current)
         VStack(alignment: .leading, spacing: CGFloat(ScrollGeometry.cardGap)) {
             ScrollLabel(label: label, env: env)
-            if items.isEmpty {
+            if let summary = plan.summary {
+                let color = StateWidgetView.color(plan.summaryState.tone(rolledBack: plan.summaryRolledBack), env)
+                HStack(alignment: .firstTextBaseline, spacing: env.pt(16)) {
+                    Image(systemName: plan.summaryState.symbol)
+                        .font(.system(size: env.pt(Size.resource * 0.85), weight: .semibold))
+                        .foregroundStyle(color)
+                        .accessibilityHidden(true)
+                    Text(summary)
+                        .font(env.font(Size.resource, .semibold))
+                        .foregroundStyle(color)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.top, env.pt(12))
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(summary)
+            } else if plan.items.isEmpty {
                 ScrollMutedLine(text: KitStrings.text(.stateEmpty, language), env: env)
             } else {
                 VStack(alignment: .leading, spacing: env.pt(12)) {
-                    ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                    ForEach(Array(plan.items.enumerated()), id: \.offset) { _, item in
                         row(item)
                     }
-                    if more > 0 {
-                        Text(KitStrings.text(.statusMore, language, more))
+                    if plan.more > 0 {
+                        Text(KitStrings.text(.statusMore, language, plan.more))
                             .font(env.font(Size.small))
-                            .foregroundStyle(env.colors.muted)
+                            .foregroundStyle(StateWidgetView.color(plan.moreTone, env))
                     }
                 }
                 .padding(.top, env.pt(12))
             }
-            if let footer {
+            if plan.stale {
+                ScrollBottomLine(
+                    notice: KitStrings.text(.stateStale, language), stale: true,
+                    footer: footer?.warning == false ? footer?.text : nil, env: env)
+            } else if let footer {
                 ScrollBottomLine(
                     notice: footer.warning ? footer.text : nil, stale: false,
                     footer: footer.warning ? nil : footer.text, env: env)

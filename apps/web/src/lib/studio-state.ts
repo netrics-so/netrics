@@ -101,26 +101,77 @@ export function stateBindingFor(
 }
 
 /**
- * The fields each role of a binding may take, none taken by another role
- * (review): the name's choices without the state, the state's without the
- * name, the rolled-back flag's without the state.
+ * The fields each role of a binding may take: every text field for the
+ * name and every text or yes/no field for the state, the other role's
+ * included (picking it swaps the two, `withStateField`), and the yes/no
+ * fields but the state for the rollback flag.
  */
 export function stateFieldChoices(
   model: CatalogModel,
   binding: Pick<StateWidgetBinding, "nameDimensionId" | "stateDimensionId">,
 ) {
   return {
-    names: stateNameDimensions(model).filter(
-      (dimension) => dimension.id !== binding.stateDimensionId,
-    ),
-    states: stateValueDimensions(model).filter(
-      (dimension) => dimension.id !== binding.nameDimensionId,
-    ),
+    names: stateNameDimensions(model),
+    states: stateValueDimensions(model),
     changed: stateChangedDimensions(model),
     flags: stateFlagDimensions(model).filter(
       (dimension) => dimension.id !== binding.stateDimensionId,
     ),
   };
+}
+
+/**
+ * The binding with `role` set to `value`, at once (final review of #875):
+ * picking the field the other role holds swaps name and state, so one
+ * field never takes two roles and two text fields can trade places. A
+ * yes/no state is never a name: then the name falls to another text field
+ * of `model`. A rollback flag that became the state is dropped.
+ */
+export function withStateField<B extends StateWidgetBinding>(
+  binding: B,
+  role: "nameDimensionId" | "stateDimensionId",
+  value: string,
+  model?: CatalogModel,
+): B {
+  if (binding[role] === value) return binding;
+  const other =
+    role === "nameDimensionId" ? "stateDimensionId" : "nameDimensionId";
+  let next = { ...binding, [role]: value };
+  if (binding[other] === value) {
+    const freed = binding[role];
+    const freedType = model?.dimensions.find((d) => d.id === freed)?.type;
+    next = {
+      ...next,
+      [other]:
+        other === "nameDimensionId" && freedType && freedType !== "string"
+          ? (stateNameDimensions(model!).find((d) => d.id !== value)?.id ??
+            freed)
+          : freed,
+    };
+  }
+  if (next.rolledBackDimensionId === next.stateDimensionId) {
+    const { rolledBackDimensionId: _flag, ...rest } = next;
+    return rest as B;
+  }
+  return next;
+}
+
+/**
+ * The names the single form offers (final review of #875): each once, and
+ * none the server cut to 200 characters (it would never match).
+ */
+export function stateItemNames(
+  items: ReadonlyArray<{ name: string | null }>,
+): string[] {
+  return [
+    ...new Set(
+      items.flatMap((item) =>
+        item.name && !(item.name.length >= 200 && item.name.endsWith("…"))
+          ? [item.name]
+          : [],
+      ),
+    ),
+  ];
 }
 
 /** Published models a state widget can show. */

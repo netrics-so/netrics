@@ -12,7 +12,9 @@ import { newWidget } from "./studio-new-widget";
 import {
   stateBindingFor,
   stateFieldChoices,
+  stateItemNames,
   stateModels,
+  withStateField,
 } from "./studio-state";
 
 // The state widget's Studio defaults (#875): which fields a new widget
@@ -166,15 +168,39 @@ describe("review fixes (#875)", () => {
     ).toBeNull();
   });
 
-  it("never offers one field for two roles", () => {
-    const choices = stateFieldChoices(railway, {
-      nameDimensionId: "service_name",
-      stateDimensionId: "state",
-    });
-    expect(choices.names.map((d) => d.id)).not.toContain("state");
-    expect(choices.states.map((d) => d.id)).not.toContain("service_name");
-    expect(choices.names.map((d) => d.id)).toContain("service_name");
-    expect(choices.states.map((d) => d.id)).toContain("state");
+  it("never offers one field for two roles, and swaps name and state at once (final review)", () => {
+    const hostsBinding = {
+      modelId: "hosts",
+      nameDimensionId: "host",
+      stateDimensionId: "condition",
+      exclusions: [],
+    };
+    // With two text fields, either can be picked for either role…
+    const choices = stateFieldChoices(hosts, hostsBinding);
+    expect(choices.names.map((d) => d.id)).toEqual(["host", "condition"]);
+    expect(choices.states.map((d) => d.id)).toEqual(["host", "condition"]);
+    // …and picking the other role's field swaps them, never one in two roles.
+    expect(
+      withStateField(hostsBinding, "stateDimensionId", "host"),
+    ).toMatchObject({ nameDimensionId: "condition", stateDimensionId: "host" });
+    expect(
+      withStateField(hostsBinding, "nameDimensionId", "condition"),
+    ).toMatchObject({ nameDimensionId: "condition", stateDimensionId: "host" });
+    expect(withStateField(hostsBinding, "nameDimensionId", "host")).toEqual(
+      hostsBinding,
+    );
+  });
+
+  it("offers only item names that match whole, never a cut one (final review)", () => {
+    const long = "y".repeat(199) + "…";
+    expect(
+      stateItemNames([
+        { name: "web" },
+        { name: long },
+        { name: null },
+        { name: "web" },
+      ]),
+    ).toEqual(["web"]);
   });
 
   it("keeps inner spaces of an item name, trimming only on commit", () => {

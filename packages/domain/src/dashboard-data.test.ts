@@ -26,7 +26,8 @@ import {
   itemsModelQuery,
   ITEMS_COUNT_MEASURE_ID,
   stateModelQuery,
-  STATE_COUNT_MEASURE_ID,
+  STATE_RANK_MEASURE_ID,
+  STATE_TIER_MEASURE_IDS,
   STATE_QUERY_MAX,
   type StateWidgetBinding,
   type DashboardDataFilter,
@@ -1327,14 +1328,14 @@ describe("stateModelQuery (#875)", () => {
       stateBinding,
     );
     expect(query).toMatchObject({
-      measureIds: [STATE_COUNT_MEASURE_ID],
+      measureIds: [STATE_RANK_MEASURE_ID],
       groupBy: ["service", "state", "changed", "rolled"],
       limit: STATE_QUERY_MAX,
+      orderBy: { measureId: STATE_RANK_MEASURE_ID, direction: "asc" },
     });
     expect(counted.measures.at(-1)).toMatchObject({
-      id: STATE_COUNT_MEASURE_ID,
-      datasetId: "services",
-      aggregate: { op: "count" },
+      id: STATE_RANK_MEASURE_ID,
+      kind: "formula",
     });
     expect(model.measures).toEqual([]);
     expect(run()).toHaveLength(3);
@@ -1391,20 +1392,46 @@ describe("stateModelQuery (#875)", () => {
         built.query,
       );
     };
-    const values = read({ statesOnly: true });
-    expect(values.rows.map((row) => row.dimensions.state).sort()).toEqual([
-      "failed",
-      "up",
+    const rows = read({});
+    // Ranked inside the query: failed, then up after a rollback, then up.
+    expect(rows.rows.map((row) => row.dimensions.service)).toEqual([
+      "api",
+      "site",
+      "web",
     ]);
     expect(
-      read({ stateValues: ["failed"] }).rows.map(
-        (row) => row.dimensions.service,
-      ),
-    ).toEqual(["api"]);
-    expect(read({ stateValues: [] }).rows).toEqual([]);
-    const limited = read({ stateValues: ["up"], limit: 1 });
-    expect(limited.rows).toHaveLength(1);
-    expect(limited.totalRows).toBe(2);
+      rows.rows.map((row) => row.measures[STATE_RANK_MEASURE_ID]!.value),
+    ).toEqual([1, 5, 6]);
+    const first = read({ limit: 1 });
+    expect(first.rows.map((row) => row.dimensions.service)).toEqual(["api"]);
+    expect(first.totalRows).toBe(3);
+    const [counts] = read({ kind: "counts" }).rows;
+    expect(
+      STATE_TIER_MEASURE_IDS.map((id) => counts!.measures[id]!.value),
+    ).toEqual([0, 1, 0, 0, 0, 1, 1]);
+    expect(read({ kind: "unknownValues" }).rows).toEqual([]);
+  });
+
+  it("applies the widget's overrides inside the query (final review)", () => {
+    const built = stateModelQuery(
+      model,
+      [],
+      {},
+      stateBinding,
+      null,
+      {},
+      {},
+      {},
+      { FAILED: "sleeping" },
+    );
+    const result = querySemanticModel(
+      built.model,
+      new Map([["services", services]]),
+      built.query,
+    );
+    expect(
+      result.rows.map((row) => row.measures[STATE_RANK_MEASURE_ID]!.value),
+    ).toEqual([4, 5, 6]);
   });
 
   it("refuses a state dimension the model does not have", () => {

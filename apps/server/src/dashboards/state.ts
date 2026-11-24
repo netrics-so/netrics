@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type {
   StateWidgetData,
   StateWidgetItem,
@@ -6,18 +6,19 @@ import type {
 } from "@netrics/contracts";
 import {
   isKnownServiceStateValue,
-  normalizeServiceState,
   querySemanticModel,
   serviceStateCounts,
   serviceStateKey,
-  sortServiceStateItems,
+  sourceItemStatus,
   stateModelQuery,
-  stateModelWithCount,
+  stateModelWithRank,
   DEFAULT_DATA_POLICY,
   SERVICE_STATE_OVERRIDES_MAX,
+  SERVICE_STATE_TIERS,
   SERVICE_STATE_VALUE_MAX,
-  STATE_QUERY_MAX,
-  type ServiceState,
+  STATE_RANK_MEASURE_ID,
+  STATE_TIER_MEASURE_IDS,
+  type SourceStateInput,
   type StateQueryRead,
   type DashboardDataFilter,
   type DashboardFilterValue,
@@ -27,7 +28,9 @@ import {
   type StateWidgetBinding,
 } from "@netrics/domain";
 import {
+  notDraftConnection,
   resolveDataPolicy,
+  schema,
   type Transaction,
   rethrowWorkspaceGone,
 } from "@netrics/database";
@@ -43,7 +46,11 @@ import {
   type FreshnessReader,
   type WidgetFreshnessResult,
 } from "./freshness.js";
-import { modelSourceDatasets } from "./model-sources.js";
+import {
+  modelSourceConnections,
+  modelSourceDatasets,
+  type ModelSourceDatasets,
+} from "./model-sources.js";
 
 /** Item names are cut to this many characters, with "…". */
 export const STATE_NAME_MAX = 200;
@@ -135,46 +142,68 @@ export function stateWidgetStatus(input: {
 }
 
 /**
- * How the items are read (review of #875): the distinct state values split
- * into those that are not up (read first; null is unknown) and those that
- * are, and the values no built-in word knows, for the Studio's mapping.
+ * Whether a model's sources leave its states out of date (#875 final
+ * review, ADR 0025 section 8): a connection that fails, lost its grant or
+ * last synced more than three poll intervals ago (`sourceItemStatus`)
+ * still serves its last generation as if current; the widget then warns.
  */
-export function stateReadPlan(
-  values: readonly unknown[],
-  overrides: Readonly<Record<string, ServiceState>>,
-): {
-  urgent: unknown[];
-  urgentNull: boolean;
-  healthy: unknown[];
-  sourceValues: string[];
-} {
-  const urgent: unknown[] = [];
-  const healthy: unknown[] = [];
-  const sourceValues: string[] = [];
-  const keys = new Set<string>();
-  let urgentNull = false;
-  for (const value of values) {
-    if (value === null || value === undefined) {
-      urgentNull = true;
-      continue;
-    }
-    (normalizeServiceState(value, overrides) === "up" ? healthy : urgent).push(
-      value,
+export function stateSourcesStale(
+  sources: readonly SourceStateInput[],
+  now: number,
+): boolean {
+  return sources.some((source) => {
+    const status = sourceItemStatus(source, now);
+    return (
+      status === "auth_failed" || status === "outage" || status === "stale"
     );
-    if (
-      !isKnownServiceStateValue(value) &&
-      (typeof value === "string" || typeof value === "number") &&
-      sourceValues.length < SERVICE_STATE_OVERRIDES_MAX
-    ) {
-      const text = cut(value, SERVICE_STATE_VALUE_MAX)!;
-      const key = serviceStateKey(text);
-      if (key !== "" && !keys.has(key)) {
-        keys.add(key);
-        sourceValues.push(text);
-      }
-    }
-  }
-  return { urgent, urgentNull, healthy, sourceValues };
+  });
+}
+
+/** The sync state of the connections a model reads (source health). */
+async function stateSourceStates(
+  tx: Transaction,
+  workspaceId: string,
+  sources: ModelSourceDatasets,
+): Promise<SourceStateInput[]> {
+  const connections = (await modelSourceConnections(tx, workspaceId, sources))
+    .all;
+  if (!connections.length) return [];
+  const rows = await tx
+    .select({
+      setupPending: schema.connections.setupPending,
+      authState: schema.connectionState.authState,
+      failures: schema.connectionState.consecutiveFailures,
+      lastSuccess: schema.connectionState.lastSuccessAt,
+      interval: schema.connectionState.pollIntervalSeconds,
+    })
+    .from(schema.connections)
+    .leftJoin(
+      schema.connectionState,
+      and(
+        eq(schema.connectionState.workspaceId, workspaceId),
+        eq(schema.connectionState.connectionId, schema.connections.id),
+      ),
+    )
+    .where(
+      and(
+        eq(schema.connections.workspaceId, workspaceId),
+        notDraftConnection(),
+        inArray(schema.connections.id, connections),
+      ),
+    );
+  return rows.map((row) => ({
+    health:
+      row.authState && row.authState !== "ok"
+        ? (row.authState as SourceStateInput["health"])
+        : (row.failures ?? 0) > 0
+          ? "outage"
+          : row.lastSuccess
+            ? "ok"
+            : "pending",
+    lastSuccessAt: row.lastSuccess?.toISOString() ?? null,
+    pollIntervalSeconds: row.interval ?? 300,
+    setupPending: row.setupPending,
+  }));
 }
 
 /** A value as text of at most `max` characters, cut with "…". */
@@ -186,46 +215,72 @@ function cut(value: unknown, max: number): string | null {
 }
 
 /**
- * The rows of a state query as widget items: each state normalized with
- * the widget's overrides, "rolled back" only on up, ordered not healthy
- * first (`sortServiceStateItems`). Pure, for the server and its tests.
+ * The source values the Studio may map (#875): distinct, at most
+ * `SERVICE_STATE_OVERRIDES_MAX`, and only those an override can key (at
+ * most `SERVICE_STATE_VALUE_MAX` characters), as stored, so discovery,
+ * storage and normalization use the same full key; longer ones stay
+ * unknown.
+ */
+export function stateSourceValues(values: readonly unknown[]): string[] {
+  const keys = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    if (typeof value !== "string" && typeof value !== "number") continue;
+    const text = String(value);
+    if ([...text].length > SERVICE_STATE_VALUE_MAX) continue;
+    if (isKnownServiceStateValue(text)) continue;
+    const key = serviceStateKey(text);
+    if (key === "" || keys.has(key)) continue;
+    keys.add(key);
+    result.push(text);
+    if (result.length >= SERVICE_STATE_OVERRIDES_MAX) break;
+  }
+  return result;
+}
+
+/**
+ * The rows of a ranked state query as widget items, in the query's order:
+ * each state from the rank the query computed (`SERVICE_STATE_TIERS`), so
+ * order, state and counts always agree. Pure, for the server and its tests.
  */
 export function stateItemsOf(
   rows: ReadonlyArray<{
     dimensions: Record<string, unknown>;
     dimensionLabels?: Record<string, string>;
+    measures: Record<string, { value: unknown } | undefined>;
   }>,
   binding: StateWidgetBinding,
-  options: Pick<StateWidgetOptions, "states">,
 ): StateWidgetItem[] {
-  const items = rows.map((row): StateWidgetItem => {
-    const raw = row.dimensions[binding.stateDimensionId];
-    const state = normalizeServiceState(raw, options.states);
-    const rolled = binding.rolledBackDimensionId
-      ? row.dimensions[binding.rolledBackDimensionId] === true
-      : false;
+  return rows.map((row): StateWidgetItem => {
+    const rank = Number(row.measures[STATE_RANK_MEASURE_ID]?.value);
+    const tier =
+      SERVICE_STATE_TIERS[rank] ??
+      SERVICE_STATE_TIERS.find((entry) => entry.state === "unknown")!;
     return {
       name: cut(
         row.dimensionLabels?.[binding.nameDimensionId] ??
           row.dimensions[binding.nameDimensionId],
         STATE_NAME_MAX,
       ),
-      state,
-      rolledBack: state === "up" && rolled,
+      state: tier.state,
+      rolledBack: tier.rolledBack,
       changedAt: binding.changedAtDimensionId
         ? cut(row.dimensions[binding.changedAtDimensionId], 40)
         : null,
-      value: cut(raw, SERVICE_STATE_VALUE_MAX),
+      value: cut(
+        row.dimensions[binding.stateDimensionId],
+        SERVICE_STATE_VALUE_MAX,
+      ),
     };
   });
-  return sortServiceStateItems(items);
 }
 
 /**
- * The items of a state widget (#875), not healthy first: at most the
- * list's `limit` (the single form: one), with `total` counting every
- * match. One widget never fails the dashboard: any error answers `no_data`
- * with its code.
+ * The items of a state widget (#875), ranked inside the query over every
+ * match (no limit applies before the most urgent come first): at most the
+ * list's `limit` (the single form: one), `total` counting every match,
+ * `counts` the matches per state. One widget never fails the dashboard:
+ * any error answers `no_data` with its code.
  */
 export async function queryDashboardState(
   tx: Transaction,
@@ -262,12 +317,12 @@ export async function queryDashboardState(
         input.binding,
         slideScope,
       );
+      const sources = await modelSourceDatasets(
+        savepoint,
+        workspaceId,
+        release,
+      );
       if (freshnessReader) {
-        const sources = await modelSourceDatasets(
-          savepoint,
-          workspaceId,
-          release,
-        );
         fresh = await freshnessReader.read(
           savepoint,
           await sourceFreshnessDependencies(
@@ -283,6 +338,10 @@ export async function queryDashboardState(
           ),
         );
       }
+      const sourcesStale = stateSourcesStale(
+        await stateSourceStates(savepoint, workspaceId, sources),
+        now.getTime(),
+      );
       const { policy } = await resolveDataPolicy(
         savepoint,
         workspaceId,
@@ -306,59 +365,51 @@ export async function queryDashboardState(
             deviceScope,
             slideScope,
             read,
+            input.options.states,
           ).query,
           now,
           policy,
           false,
           undefined,
           true,
-          (definition) => stateModelWithCount(definition, input.binding),
+          (definition) =>
+            stateModelWithRank(definition, input.binding, input.options.states),
         );
-      // Ranked before the read limit (review): the distinct state values
-      // first, then the items in a state that is not up, then the rest, so
-      // no outage falls past STATE_QUERY_MAX behind healthy items.
-      const distinct = await run({ statesOnly: true });
-      const plan = stateReadPlan(
-        distinct.rows.map(
-          (row) => row.dimensions[input.binding.stateDimensionId],
-        ),
-        input.options.states,
-      );
-      const urgent =
-        plan.urgent.length || plan.urgentNull
-          ? await run({
-              stateValues: plan.urgent,
-              includeNull: plan.urgentNull,
-            })
-          : null;
-      const room = STATE_QUERY_MAX - (urgent?.rows.length ?? 0);
-      const healthy = plan.healthy.length
-        ? await run({ stateValues: plan.healthy, limit: Math.max(1, room) })
-        : null;
-      const all = stateItemsOf(
-        [...(urgent?.rows ?? []), ...(room > 0 ? (healthy?.rows ?? []) : [])],
-        input.binding,
-        input.options,
-      );
-      const counts = serviceStateCounts(all);
-      // Healthy items past the read limit are up all the same.
-      counts.up += Math.max(
-        0,
-        (healthy?.totalRows ?? 0) -
-          (room > 0 ? (healthy?.rows.length ?? 0) : 0),
-      );
-      const items = all.slice(0, single ? 1 : input.options.limit);
+      // Ranked and counted inside the query, over every match (final
+      // review): the most urgent items first, then the per-state counts,
+      // then the values no word knows, for the Studio.
+      const ranked = await run({
+        limit: single ? 1 : input.options.limit,
+      });
+      const tiers = await run({ kind: "counts" });
+      const unknown = await run({ kind: "unknownValues", limit: 100 });
+      const counts = serviceStateCounts([]);
+      const [totals] = tiers.rows;
+      SERVICE_STATE_TIERS.forEach((tier, index) => {
+        const value = Number(
+          totals?.measures[STATE_TIER_MEASURE_IDS[index]!]?.value ?? 0,
+        );
+        const rows = Number.isFinite(value) ? value : 0;
+        counts[tier.state] += rows;
+        if (tier.rolledBack) counts.rolledBack += rows;
+      });
+      const items = stateItemsOf(ranked.rows, input.binding);
       return {
         widgetId: input.id,
         status: stateWidgetStatus({
           items: items.length,
-          stale: [distinct, urgent, healthy].some((read) => read?.stale),
+          stale:
+            sourcesStale || [ranked, tiers, unknown].some((read) => read.stale),
           overdue: fresh.overdue,
         }),
         items,
-        total: (urgent?.totalRows ?? 0) + (healthy?.totalRows ?? 0),
+        total: ranked.totalRows,
         counts,
-        sourceValues: plan.sourceValues,
+        sourceValues: stateSourceValues(
+          unknown.rows.map(
+            (row) => row.dimensions[input.binding.stateDimensionId],
+          ),
+        ),
         error: null,
         exclusions,
         ...(fresh.freshness ? { freshness: fresh.freshness } : {}),

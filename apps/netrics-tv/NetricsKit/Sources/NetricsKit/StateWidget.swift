@@ -281,16 +281,66 @@ public enum StateBoard {
         return item.rolledBack ? "\(word) · \(KitStrings.text(.stateRolledBack, language))" : word
     }
 
+    /**
+     * A change time as an instant: a timestamp as it is, a date
+     * ("2026-11-24", a date dimension) as its midnight in UTC, as the web
+     * reads it; nil for anything else.
+     */
+    public static func instant(_ changedAt: String?) -> String? {
+        guard let changedAt else { return nil }
+        if changedAt.count == 10, changedAt.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil {
+            return changedAt + "T00:00:00.000Z"
+        }
+        return ISODate.parse(changedAt) == nil ? nil : changedAt
+    }
+
     /** A list row's age of the last change ("3 h"); nil without one. */
     public static func age(_ changedAt: String?, now: Date, language: ScreenLanguage) -> String? {
-        guard let changedAt, StudioLayout.statusAge(changedAt, now: now) != nil else { return nil }
-        return StatusBoard.ageText(changedAt, now: now, language: language)
+        guard let at = instant(changedAt), StudioLayout.statusAge(at, now: now) != nil else { return nil }
+        return StatusBoard.ageText(at, now: now, language: language)
     }
 
     /** "Changed 3 hours ago" ("Geändert vor 3 Stunden"); nil without a readable time. */
     public static func changed(_ changedAt: String?, now: Date, language: ScreenLanguage) -> String? {
-        guard let changedAt, ISODate.parse(changedAt) != nil else { return nil }
-        return KitStrings.text(.stateChanged, language, RelativeTime.describe(changedAt, now: now, language: language))
+        guard let at = instant(changedAt) else { return nil }
+        return KitStrings.text(.stateChanged, language, RelativeTime.describe(at, now: now, language: language))
+    }
+
+    /** What the scroll view's card shows (the canvas's rules, every row). */
+    public struct ScrollPlan: Equatable, Sendable {
+        /** The summary when the single form has no item chosen; else nil. */
+        public var summary: String?
+        public var summaryState: ServiceState
+        public var summaryRolledBack: Bool
+        public var items: [StateWidgetItem]
+        public var more: Int
+        public var moreTone: StatusTone
+        /** A last valid snapshot or an overdue source: warn (ADR 0025 §8). */
+        public var stale: Bool
+    }
+
+    /**
+     * The scroll card's content (final review of #875): the summary for a
+     * single form without an item, that item for a chosen one, else every
+     * item sent and "+N more" in the tone of the most urgent hidden item;
+     * stale as the status says.
+     */
+    public static func scrollPlan(
+        _ options: StateWidgetOptions, _ data: StateWidgetData, language: ScreenLanguage
+    ) -> ScrollPlan {
+        let stale = data.status == .stale
+        if options.single, options.item == nil {
+            let state = summaryState(data.counts)
+            return ScrollPlan(
+                summary: summaryText(data.counts, language: language), summaryState: state?.0 ?? .up,
+                summaryRolledBack: state?.1 ?? false, items: [], more: 0, moreTone: .muted, stale: stale)
+        }
+        let items = options.single ? Array(data.items.prefix(1)) : data.items
+        let more = options.single ? 0 : max(0, data.total - items.count)
+        let hidden = hiddenTone(data.counts, shown: items)
+        return ScrollPlan(
+            summary: nil, summaryState: .up, summaryRolledBack: false, items: items, more: more,
+            moreTone: hidden == .down ? .down : hidden == .warning ? .warning : .muted, stale: stale)
     }
 
     /**
