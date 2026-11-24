@@ -258,11 +258,32 @@ jobs:
               exit 1
             fi
           done
+      # Trivy does not recognise the Node binary copied into the images, so
+      # check its version against nodejs.org: fail when a security release
+      # in the same major line is out for more than 3 days (time for the
+      # official node image to catch up). Fix: bump the node digest.
+      - name: Check the Node runtime has its security releases
+        run: |
+          cutoff=$(date -u -d '3 days ago' +%F)
+          curl -fsS --retry 3 https://nodejs.org/dist/index.json > node-releases.json
+          for image in netrics-server:ci netrics-web:ci; do
+            version=$(docker run --rm --entrypoint node "$image" -p process.version)
+            missing=$(jq -r --arg v "$version" --arg cutoff "$cutoff" '
+              [.[] | select(.version | startswith(($v | split(".")[0]) + "."))] as $line
+              | ($line | map(.version) | index($v)) as $i
+              | if $i == null then "unknown version \($v)"
+                else $line[:$i] | map(select(.security and .date <= $cutoff) | .version) | join(" ")
+                end' node-releases.json)
+            echo "$image: Node $version"
+            if [ -n "$missing" ]; then
+              echo "::error::$image runs Node $version; missing security release(s): $missing"
+              exit 1
+            fi
+          done
       # Fail on known high and critical vulnerabilities that have a fix: bump
-      # the base digests (Dependabot proposes them) or the dependency. One
-      # architecture is enough; both install the same packages.
+      # the base digests (Dependabot proposes them) or the dependency. Both
+      # architectures: native packages differ (sharp ships per platform).
       - name: Scan images for vulnerabilities
-        if: matrix.arch == 'amd64'
         run: |
           mkdir -p "$RUNNER_TEMP/trivy"
           for image in netrics-server:ci netrics-web:ci; do

@@ -159,6 +159,10 @@ jobs:
             org.opencontainers.image.licenses=AGPL-3.0-only
           cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.platform.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.platform.arch }}
+          # The runtime stage runs `apk upgrade`; never reuse it from the
+          # cache, or a release ships Alpine packages older than the ones CI
+          # scanned (#906). It is small: Alpine, the Node binary, the app.
+          no-cache-filters: runner
 
       - name: Record digest
         env:
