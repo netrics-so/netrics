@@ -14,6 +14,7 @@ export const apiErrorsEn = {
     state_state_dimension_invalid: "Pick a text or yes/no field for the state.",
     state_changed_dimension_invalid: "Pick a date or time field.",
     state_rolled_back_dimension_invalid: "Pick a yes/no field.",
+    state_dimensions_not_distinct: "Pick a different field for each part.",
     store_mapping_duplicate: "Each app can belong to only one linked product.",
     store_scope_invalid: "Choose an app from one of the selected connections.",
     store_website_invalid:

@@ -2,10 +2,18 @@ import { describe, expect, it } from "vitest";
 
 import type { PublishedModelCatalog } from "@netrics/contracts";
 
-import { stateMappingValues } from "@/components/studio-editor/state-fields";
+import {
+  commitStateItem,
+  stateMappingValues,
+} from "@/components/studio-editor/state-fields";
+import { scrollStatePlacement } from "@/components/scroll/scroll-widgets";
 
 import { newWidget } from "./studio-new-widget";
-import { stateBindingFor, stateModels } from "./studio-state";
+import {
+  stateBindingFor,
+  stateFieldChoices,
+  stateModels,
+} from "./studio-state";
 
 // The state widget's Studio defaults (#875): which fields a new widget
 // binds, and which source values its mapping lists.
@@ -135,5 +143,51 @@ describe("stateMappingValues (#875)", () => {
 
   it("keeps a mapping of a built-in word", () => {
     expect(stateMappingValues({ ok: "down" }, ["ok"])).toEqual(["ok"]);
+  });
+});
+
+describe("review fixes (#875)", () => {
+  const hosts = model("hosts", [
+    ["host", "Host", "string"],
+    ["condition", "Condition", "string"],
+  ]);
+
+  it("offers a model whose fields are named otherwise; names only rank", () => {
+    expect(stateModels([hosts]).map((m) => m.modelId)).toEqual(["hosts"]);
+    expect(stateBindingFor(hosts)).toMatchObject({
+      nameDimensionId: "host",
+      stateDimensionId: "condition",
+    });
+    // A field named like a state still wins.
+    expect(stateBindingFor(railway)?.stateDimensionId).toBe("state");
+    // One text field cannot be both name and state.
+    expect(
+      stateBindingFor(model("one", [["host", "Host", "string"]])),
+    ).toBeNull();
+  });
+
+  it("never offers one field for two roles", () => {
+    const choices = stateFieldChoices(railway, {
+      nameDimensionId: "service_name",
+      stateDimensionId: "state",
+    });
+    expect(choices.names.map((d) => d.id)).not.toContain("state");
+    expect(choices.states.map((d) => d.id)).not.toContain("service_name");
+    expect(choices.names.map((d) => d.id)).toContain("service_name");
+    expect(choices.states.map((d) => d.id)).toContain("state");
+  });
+
+  it("keeps inner spaces of an item name, trimming only on commit", () => {
+    expect(commitStateItem("Billing API")).toBe("Billing API");
+    expect(commitStateItem("  Billing API ")).toBe("Billing API");
+    expect(commitStateItem("   ")).toBeNull();
+  });
+
+  it("grows the scroll card with the rows a list shows", () => {
+    const { rowCapacity } = scrollStatePlacement(20, 1);
+    expect(rowCapacity).toBeGreaterThanOrEqual(20);
+    expect(scrollStatePlacement(3, 1).placement.unitBox.height).toBeLessThan(
+      scrollStatePlacement(20, 1).placement.unitBox.height,
+    );
   });
 });

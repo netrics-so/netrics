@@ -68,6 +68,9 @@ public enum KitText: String, Sendable, CaseIterable {
     case itemsOne, itemsOther, latestItems
     case stateUp, stateDown, stateFailed, stateBuilding, stateSleeping, stateUnknown, stateRolledBack, stateChanged
     case stateLabel, stateEmpty
+    case stateSummaryAllUp, stateSummaryWorst, stateStale
+    case stateLowerUp, stateLowerDown, stateLowerFailed, stateLowerBuilding, stateLowerSleeping, stateLowerUnknown
+    case stateLowerRolledBack
     case statusEmpty, statusMore, statusConnected, statusDelayed, statusFailing
     case statusAgeMinutes, statusAgeHours, statusAgeDays, statusNever
     case compareRatio, comparePoints, compareDerived
@@ -176,6 +179,16 @@ public enum KitStrings {
         .stateChanged: "Changed %@",
         .stateLabel: "Status",
         .stateEmpty: "No items yet",
+        .stateSummaryAllUp: "All %d up",
+        .stateSummaryWorst: "%d of %d %@",
+        .stateStale: "Last known state, may be out of date",
+        .stateLowerUp: "up",
+        .stateLowerDown: "down",
+        .stateLowerFailed: "failed",
+        .stateLowerBuilding: "building",
+        .stateLowerSleeping: "sleeping",
+        .stateLowerUnknown: "unknown",
+        .stateLowerRolledBack: "rolled back",
         .statusEmpty: "No sources connected",
         .statusMore: "+%d more",
         .statusConnected: "%d connected",
@@ -345,6 +358,16 @@ public enum KitStrings {
         .stateChanged: "Geändert %@",
         .stateLabel: "Status",
         .stateEmpty: "Noch keine Einträge",
+        .stateSummaryAllUp: "Alle %d online",
+        .stateSummaryWorst: "%d von %d %@",
+        .stateStale: "Letzter bekannter Status, evtl. veraltet",
+        .stateLowerUp: "online",
+        .stateLowerDown: "offline",
+        .stateLowerFailed: "fehlgeschlagen",
+        .stateLowerBuilding: "im Aufbau",
+        .stateLowerSleeping: "schlafend",
+        .stateLowerUnknown: "unbekannt",
+        .stateLowerRolledBack: "zurückgesetzt",
         .statusEmpty: "Keine Quellen verbunden",
         .statusMore: "+%d weitere",
         .statusConnected: "%d verbunden",

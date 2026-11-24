@@ -311,7 +311,9 @@ public struct WidgetDetail: Sendable, Equatable, Identifiable {
                         [Item.Line(text: $0, warning: false)]
                     } ?? [])
             }
-            let attention = data.items.filter { !$0.healthy }.count
+            // Failing means down or failed, over every item (review): building,
+            // sleeping and a rollback are no failure.
+            let attention = data.counts.down + data.counts.failed
             let summary = data.items.isEmpty
                 ? KitStrings.text(.stateEmpty, language)
                 : [

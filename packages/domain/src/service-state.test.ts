@@ -4,8 +4,11 @@ import {
   isKnownServiceStateValue,
   isServiceStateHealthy,
   normalizeServiceState,
+  serviceStateCounts,
+  serviceStateHiddenTone,
   serviceStateIcon,
   serviceStateKey,
+  serviceStateSummary,
   serviceStateRank,
   serviceStateRowsShown,
   serviceStateTone,
@@ -164,5 +167,72 @@ describe("serviceStateRowsShown (#875)", () => {
 
   it("shows nothing without room", () => {
     expect(serviceStateRowsShown(3, 3, 0)).toEqual({ rows: 0, more: 0 });
+  });
+});
+
+describe("counts, summary and the hidden tone (#875 review)", () => {
+  const item = (state: ServiceState, rolledBack = false) => ({
+    name: "x",
+    state,
+    rolledBack,
+  });
+  const counts = (patch: Partial<ReturnType<typeof serviceStateCounts>>) => ({
+    ...serviceStateCounts([]),
+    ...patch,
+  });
+
+  it("counts every state and the rollbacks on up", () => {
+    expect(
+      serviceStateCounts([
+        item("up"),
+        item("up", true),
+        item("down"),
+        item("down"),
+        item("building"),
+      ]),
+    ).toEqual({
+      up: 2,
+      down: 2,
+      failed: 0,
+      building: 1,
+      sleeping: 0,
+      unknown: 0,
+      rolledBack: 1,
+    });
+  });
+
+  it("sums up all up, else the worst state and its count", () => {
+    expect(serviceStateSummary(counts({ up: 5 }))).toEqual({
+      kind: "all_up",
+      total: 5,
+    });
+    expect(
+      serviceStateSummary(counts({ up: 3, down: 2, building: 1 })),
+    ).toEqual({
+      kind: "worst",
+      state: "down",
+      rolledBack: false,
+      count: 2,
+      total: 6,
+    });
+    expect(serviceStateSummary(counts({ up: 4, rolledBack: 1 }))).toEqual({
+      kind: "worst",
+      state: "up",
+      rolledBack: true,
+      count: 1,
+      total: 4,
+    });
+    expect(serviceStateSummary(counts({}))).toBeNull();
+  });
+
+  it("tones +N more by the worst item it hides", () => {
+    const all = serviceStateCounts([item("down"), item("up"), item("up")]);
+    // The down item is shown: the hidden ones are up.
+    expect(serviceStateHiddenTone(all, [item("down")])).toBe("up");
+    // The server left the down item out.
+    expect(serviceStateHiddenTone(all, [item("up")])).toBe("down");
+    expect(
+      serviceStateHiddenTone(all, [item("down"), item("up"), item("up")]),
+    ).toBeNull();
   });
 });

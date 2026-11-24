@@ -634,6 +634,20 @@ export function stateGroupBy(binding: StateWidgetBinding): string[] {
 }
 
 /**
+ * What one state read asks for (#875 review): only the items whose state
+ * value is one of `stateValues` (or null with `includeNull`), so the
+ * urgent ones are read before the healthy ones and never fall past the
+ * read limit; `statesOnly` groups by the state value alone (the distinct
+ * values); `limit` instead of `STATE_QUERY_MAX`.
+ */
+export interface StateQueryRead {
+  stateValues?: readonly unknown[];
+  includeNull?: boolean;
+  statesOnly?: boolean;
+  limit?: number;
+}
+
+/**
  * The items of a state widget (#875): a copy of the model with an internal
  * count measure, and the query grouped by name, state, changed-at and
  * rolled-back, at most `STATE_QUERY_MAX` groups. `item` (the single form's
@@ -649,6 +663,7 @@ export function stateModelQuery(
   item: string | null = null,
   scope?: DeviceFilterScope,
   slide?: SlideFilterScope,
+  read: StateQueryRead = {},
 ): { model: SemanticModelDefinition; query: Omit<ModelQuery, "now"> } {
   const withCount = stateModelWithCount(model, binding);
   const parts: DataExpression[] = [];
@@ -659,17 +674,42 @@ export function stateModelQuery(
       fn: "eq",
       args: [field(binding.nameDimensionId), literal("string", item)],
     });
+  if (read.stateValues) {
+    const state = field(binding.stateDimensionId);
+    const choices: DataExpression[] = [];
+    if (read.stateValues.length)
+      choices.push({
+        kind: "call",
+        fn: "in",
+        args: [
+          state,
+          { kind: "literal", type: "json", value: read.stateValues },
+        ],
+      });
+    if (read.includeNull)
+      choices.push({ kind: "call", fn: "is_null", args: [state] });
+    // No value at all: nothing matches.
+    parts.push(
+      combine("or", choices) ?? {
+        kind: "literal",
+        type: "boolean",
+        value: false,
+      },
+    );
+  }
   const query = dashboardModelQuery(
     filters,
     values,
     {
       modelId: binding.modelId,
       measureIds: [STATE_COUNT_MEASURE_ID],
-      groupBy: stateGroupBy(binding),
+      groupBy: read.statesOnly
+        ? [binding.stateDimensionId]
+        : stateGroupBy(binding),
       ...(parts.length ? { filter: combine("and", parts)! } : {}),
       exclusions: binding.exclusions,
     },
-    STATE_QUERY_MAX,
+    read.limit ?? STATE_QUERY_MAX,
     "first",
     scope,
     slide,

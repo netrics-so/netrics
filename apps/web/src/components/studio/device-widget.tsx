@@ -443,6 +443,7 @@ export function DeviceWidgetView({
           label={widget.label}
           items={widget.data.items}
           total={widget.data.total}
+          counts={widget.data.counts}
           options={widget.options}
           status={widget.data.status}
           freshness={widget.data.freshness ?? null}

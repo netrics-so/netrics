@@ -796,7 +796,8 @@ and `dashboard_widgets_model_valid`):
 plus `filter` and `exclusions` as on a measure widget. A save checks the
 types (`state_name_dimension_invalid`, `state_state_dimension_invalid`,
 `state_changed_dimension_invalid`, `state_rolled_back_dimension_invalid`,
-`state_dimension_unknown`) and the filter mappings.
+`state_dimension_unknown`), that every role names a field of its own
+(`state_dimensions_not_distinct`) and the filter mappings.
 
 **A fixed set of states.** `up`, `down`, `failed`, `building`, `sleeping`
 and `unknown` (`SERVICE_STATES` in the domain), with "rolled back" as a
@@ -815,28 +816,38 @@ else `unknown`. The native connectors already write the normalized words.
 A preparation step could map values too (a calculated column), and still
 can, but the widget needs the fixed set whatever the preparation did, and
 a mapping per widget keeps one dataset usable by widgets that read it
-differently. The Studio lists the source values the live preview did not
-recognise and offers a state for each. No new concept, so no new ADR.
+differently. The Studio lists the source values no built-in word knows,
+over every matching item (`sourceValues`, at most 30), and offers a state
+for each. No new concept, so no new ADR.
 
 **Order.** Not healthy first: down, failed, unknown, building, sleeping,
 up after a rollback, up; then by name (case-insensitive, then exact;
-nameless last), `sortServiceStateItems`. The server reads at most 500
-items (`STATE_QUERY_MAX`), orders them and sends the first `limit`, with
-`total` counting all.
+nameless last), `sortServiceStateItems`. The urgency is applied before any
+read limit: the server first reads the distinct state values, then the
+items whose value is not up (or null), then the up items, at most 500
+items in all (`STATE_QUERY_MAX`), so an outage never falls past the limit
+behind healthy items. It sends the first `limit`, with `total` counting
+every match and `counts` the items per state (`serviceStateCounts`).
 
 **Options.** `layout`: `list` (default) or `single`; `item`: the single
-form's item by name (null: the most urgent item, which on a project-scoped
-slide is usually the only one); `limit` 1–20 (8): the most rows a list
+form's item by name (null: a summary of every item, owner decision
+2026-11-24: "All 5 up", else the most urgent state and its count, "2 of 5
+down" / "2 von 5 offline", `serviceStateSummary`); `limit` 1–20 (8): the
+most rows a list
 shows; `showChanged` (true); `states` (above).
 
 **Payload.** Web (`POST …/dashboards/:id/data` and the Studio preview,
 `states`): per widget `{ widgetId, status, items: [{ name, state,
-rolledBack, changedAt, value }], total, error, exclusions, freshness? }`;
-`value` is the source value for the Studio's mapping. Devices: the widget
-member `state` with `label` (title, else "Status"), `options` without
-`states` (the mapping stays on the server) and `data: { status, items:
-[{ name, state, rolledBack, changedAt }], total, freshness? }`. Freshness
-comes from the model's sources (ADR 0025). Clients that do not ask with
+rolledBack, changedAt, value }], total, counts, sourceValues, error,
+exclusions, freshness? }`; `value` and `sourceValues` serve the Studio's
+mapping. Devices: the widget member `state` with `label` (title, else
+"Status"), `options` without `states` (the mapping stays on the server)
+and `data: { status, items: [{ name, state, rolledBack, changedAt }],
+total, counts, freshness? }`. Freshness comes from the model's sources
+(ADR 0025). `status` is `stale` when the rows are a last valid snapshot or
+a source is overdue (ADR 0025 section 8): screens then show "Last known
+state, may be out of date" ("Letzter bekannter Status, evtl. veraltet"),
+so an old "Up" never reads as current. Clients that do not ask with
 `?features=state` get a text widget in its place ("Update netrics TV to
 show the status.", in the screen's language) and a version suffix
 `-nostate`, as the latest-items widget does (#810).
@@ -851,8 +862,10 @@ for building and sleeping) colours icon and word. The list uses the status
 board's rows (`statusLayout`: row pitch, capacity, name shrinking to 24 u
 then an ellipsis): icon, name, state word and the age of the change
 ("3 h"); when items exceed the rows that fit or the server's limit, the
-last row is "+N more" (`serviceStateRowsShown`) in the worst hidden tone,
-so a problem is never the one hidden. The single form shows the label, the
+last row is "+N more" (`serviceStateRowsShown`) in the tone of the most
+urgent item it hides, also one the server left out
+(`serviceStateHiddenTone` over `counts`), so a problem is never hidden
+silently; with room for that row only, it is the list. The single form shows the label, the
 item's name in the resource role, the state word with its icon as large
 as fits (at least the cell role) and a line "Rolled back · Changed 3 h
 ago" (change role), then the freshness footer. Screen readers read
@@ -863,17 +876,20 @@ ago" (change role), then the freshness footer. Screen readers read
 reports `rows_cut` (info) when a list's `limit` exceeds the rows that fit,
 as for the status board. The type scale (`widgetTypeScale`) has title,
 resource, cell and change; the vectors and the Swift port carry it. In the
-scroll view the widget takes one column and lists its rows.
+scroll view the widget takes one column and grows with its rows (web and
+netrics TV), nothing cut.
 
-**Limits.** One grouped model query per widget; it counts once toward the
-48 data widgets.
+**Limits.** Up to three small grouped model reads per widget (values,
+urgent items, the rest); it counts once toward the 48 data widgets.
 
-**Studio.** "Service status" in the add menu; a new widget binds the first
-published model with a field named like a state (or a yes/no field), its
-first text field no shared filter maps as the name, and a changed-at or
-rolled-back field when one is named like it. The inspector picks model,
+**Studio.** "Service status" in the add menu; any published model with two
+text (or text and yes/no) fields can back it. Field names only rank the
+defaults: the state is a field named like a state, else a yes/no field,
+else another text field; the name its first text field no shared filter
+maps; a changed-at or rolled-back field when one is named like it. One
+field never takes two roles. The inspector picks model,
 name, state, changed-at, rolled-back, list or one item, the item (with the
-preview's names offered), the row limit, "Show when it changed", the
+preview's names offered, committed on leaving the field), the row limit, "Show when it changed", the
 mapping of unknown source values and the filters it ignores. Store
 templates may carry state widgets (#876).
 

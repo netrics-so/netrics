@@ -1,5 +1,5 @@
 "use client";
-import { useId } from "react";
+import { useEffect, useId, useState } from "react";
 import Link from "next/link";
 import type {
   DashboardWidget,
@@ -20,16 +20,23 @@ import { useT } from "@/lib/i18n/client";
 import type { StudioAction } from "@/lib/studio-document";
 import {
   stateBindingFor,
-  stateChangedDimensions,
-  stateFlagDimensions,
+  stateFieldChoices,
   stateModels,
-  stateNameDimensions,
-  stateValueDimensions,
 } from "@/lib/studio-state";
 
 import { FilterExclusions } from "./shared-filters";
 
 type StateWidget = Extract<DashboardWidget, { type: "state" }>;
+
+/**
+ * The single form's item as typed, kept while typing and trimmed on commit
+ * (blur or Enter), so a name with spaces ("Billing API") can be typed;
+ * empty is none (the summary).
+ */
+export function commitStateItem(draft: string): string | null {
+  const item = draft.trim();
+  return item === "" ? null : item.slice(0, 200);
+}
 
 /**
  * The source values a state widget's mapping lists (#875): those it already
@@ -78,6 +85,12 @@ export function StateFields({
     data = useT("data.dashboard"),
     id = useId();
   const preview = useDashboardData()?.states?.get(widget.id);
+  const [itemDraft, setItemDraft] = useState(widget.options.item ?? "");
+  // A change from elsewhere (undo, another widget) replaces the draft.
+  useEffect(
+    () => setItemDraft(widget.options.item ?? ""),
+    [widget.options.item],
+  );
   const candidates = stateModels(models);
   const model = models.find(
     (model) => model.modelId === widget.binding.modelId,
@@ -132,10 +145,19 @@ export function StateFields({
       </select>
     </div>
   );
+  // The source values no built-in word knows, over every matching item,
+  // not only the rows shown (review).
   const mapping = stateMappingValues(
     widget.options.states,
-    (preview?.items ?? []).map((item) => item.value),
+    preview?.sourceValues ?? [],
   );
+  const choices = model
+    ? stateFieldChoices(model, widget.binding)
+    : { names: [], states: [], changed: [], flags: [] };
+  const commitItem = () => {
+    const item = commitStateItem(itemDraft);
+    if (item !== widget.options.item) options({ item });
+  };
   const names = [
     ...new Set(
       (preview?.items ?? []).flatMap((item) => (item.name ? [item.name] : [])),
@@ -184,30 +206,43 @@ export function StateFields({
       {dimensionSelect(
         "name",
         widget.binding.nameDimensionId,
-        model ? stateNameDimensions(model) : [],
+        choices.names,
         (value) => value && update({ nameDimensionId: value }),
       )}
       {dimensionSelect(
         "state",
         widget.binding.stateDimensionId,
-        model ? stateValueDimensions(model) : [],
-        (value) => value && update({ stateDimensionId: value }),
+        choices.states,
+        (value) => {
+          if (!value) return;
+          // A rolled-back flag is never the state as well.
+          const { rolledBackDimensionId: flag, ...rest } = widget.binding;
+          dispatch({
+            type: "updateWidget",
+            widgetId: widget.id,
+            patch: {
+              binding: {
+                ...rest,
+                stateDimensionId: value,
+                ...(flag && flag !== value
+                  ? { rolledBackDimensionId: flag }
+                  : {}),
+              },
+            },
+          });
+        },
       )}
       {dimensionSelect(
         "changed",
         widget.binding.changedAtDimensionId,
-        model ? stateChangedDimensions(model) : [],
+        choices.changed,
         (value) => optional("changedAtDimensionId", value),
         true,
       )}
       {dimensionSelect(
         "rolledBack",
         widget.binding.rolledBackDimensionId,
-        model
-          ? stateFlagDimensions(model).filter(
-              (dimension) => dimension.id !== widget.binding.stateDimensionId,
-            )
-          : [],
+        choices.flags,
         (value) => optional("rolledBackDimensionId", value),
         true,
       )}
@@ -235,10 +270,12 @@ export function StateFields({
             list={`${id}-items`}
             maxLength={200}
             placeholder={t("itemWorst")}
-            value={widget.options.item ?? ""}
-            onChange={(event) =>
-              options({ item: event.target.value.trim() || null })
-            }
+            value={itemDraft}
+            onChange={(event) => setItemDraft(event.target.value)}
+            onBlur={() => commitItem()}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") commitItem();
+            }}
           />
           <datalist id={`${id}-items`}>
             {names.map((name) => (

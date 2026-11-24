@@ -466,7 +466,7 @@ export const studioEn = {
       list: "As a list",
       single: "One item",
       item: "Item",
-      itemWorst: "The most urgent",
+      itemWorst: "All (a summary)",
       limit: "At most",
       showChanged: "Show when it changed",
       mapping: "Source values",

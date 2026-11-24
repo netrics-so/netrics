@@ -242,3 +242,106 @@ export function serviceStateRowsShown(
   const rows = Math.min(shownItems, capacity - 1);
   return { rows, more: all - rows };
 }
+
+/** Items per state over every matching item; `rolledBack` counts the ups
+ * with the qualifier (they are in `up` too). */
+export type ServiceStateCounts = Record<ServiceState, number> & {
+  rolledBack: number;
+};
+
+export function serviceStateCounts(
+  items: readonly Pick<ServiceStateItem, "state" | "rolledBack">[],
+): ServiceStateCounts {
+  const counts: ServiceStateCounts = {
+    up: 0,
+    down: 0,
+    failed: 0,
+    building: 0,
+    sleeping: 0,
+    unknown: 0,
+    rolledBack: 0,
+  };
+  for (const item of items) {
+    counts[item.state] += 1;
+    if (item.state === "up" && item.rolledBack) counts.rolledBack += 1;
+  }
+  return counts;
+}
+
+/** Every state from the most to the least urgent, a rollback as its own. */
+const URGENCY: ReadonlyArray<{ state: ServiceState; rolledBack: boolean }> = [
+  ...SERVICE_STATES.filter((state) => state !== "up").map((state) => ({
+    state,
+    rolledBack: false,
+  })),
+  { state: "up" as const, rolledBack: true },
+  { state: "up" as const, rolledBack: false },
+].sort(
+  (a, b) =>
+    serviceStateRank(a.state, a.rolledBack) -
+    serviceStateRank(b.state, b.rolledBack),
+);
+
+const countOf = (
+  counts: ServiceStateCounts,
+  state: ServiceState,
+  rolledBack: boolean,
+) =>
+  state === "up"
+    ? rolledBack
+      ? counts.rolledBack
+      : counts.up - counts.rolledBack
+    : counts[state];
+
+/**
+ * The single form's summary when no item is chosen (owner decision on
+ * #875): "All 5 up" when everything is up without a rollback, else the
+ * most urgent state and how many items are in it ("2 of 5 down"); null
+ * without items.
+ */
+export type ServiceStateSummary =
+  | { kind: "all_up"; total: number }
+  | {
+      kind: "worst";
+      state: ServiceState;
+      rolledBack: boolean;
+      count: number;
+      total: number;
+    };
+export function serviceStateSummary(
+  counts: ServiceStateCounts,
+): ServiceStateSummary | null {
+  const total = SERVICE_STATES.reduce((sum, state) => sum + counts[state], 0);
+  if (total === 0) return null;
+  const worst = URGENCY.find(
+    (entry) => countOf(counts, entry.state, entry.rolledBack) > 0,
+  )!;
+  if (worst.state === "up" && !worst.rolledBack)
+    return { kind: "all_up", total };
+  return {
+    kind: "worst",
+    state: worst.state,
+    rolledBack: worst.rolledBack,
+    count: countOf(counts, worst.state, worst.rolledBack),
+    total,
+  };
+}
+
+/**
+ * The tone of "+N more": the most urgent of the items not shown (every
+ * matching item's `counts` less the `shown` ones), so an outage the server
+ * left out still colours the row; null when nothing is hidden.
+ */
+export function serviceStateHiddenTone(
+  counts: ServiceStateCounts,
+  shown: readonly Pick<ServiceStateItem, "state" | "rolledBack">[],
+): ServiceStateTone | null {
+  const seen = serviceStateCounts(shown);
+  const left: ServiceStateCounts = { ...counts };
+  for (const key of Object.keys(left) as (keyof ServiceStateCounts)[])
+    left[key] = Math.max(0, counts[key] - seen[key]);
+  const worst = URGENCY.find(
+    (entry) => countOf(left, entry.state, entry.rolledBack) > 0,
+  );
+  return worst ? serviceStateTone(worst.state, worst.rolledBack) : null;
+}

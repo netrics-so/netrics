@@ -105,6 +105,14 @@ struct StateWidgetView: View {
                     .font(env.font(layout.sizes.cell))
                     .foregroundStyle(env.colors.muted)
                     .padding(.top, env.pt(StudioLayout.StatusSpacing.rowGap))
+            } else if options.single, options.item == nil,
+                let text = StateBoard.summaryText(data.counts, language: env.language),
+                let (state, rolledBack) = StateBoard.summaryState(data.counts)
+            {
+                // No item chosen: a summary of every item (owner decision on #875).
+                summary(
+                    text, state: state, rolledBack: rolledBack, sizes: sizes,
+                    height: box.height - labelLayout.height - (footer == nil ? 0 : layout.footerHeight))
             } else if options.single, let item = data.items.first {
                 single(
                     item, sizes: sizes,
@@ -113,6 +121,14 @@ struct StateWidgetView: View {
                 list(layout)
             }
             Spacer(minLength: 0)
+            if data.status == .stale {
+                // An old "Up" never reads as current (ADR 0025 §8).
+                Text("● " + KitStrings.text(.stateStale, env.language))
+                    .font(env.font(layout.sizes.age))
+                    .foregroundStyle(env.colors.warning)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
             if let footer {
                 Text(footer.text)
                     .font(env.font(layout.sizes.footer).monospacedDigit())
@@ -127,8 +143,9 @@ struct StateWidgetView: View {
     private func list(_ layout: StudioLayout.StatusLayout) -> some View {
         let fit = StateBoard.rowsShown(items: data.items.count, total: data.total, capacity: layout.rowCapacity)
         let rise = env.pt(EnterMotion.rowRise)
-        let hidden = data.items.dropFirst(fit.rows).map { $0.state.tone(rolledBack: $0.rolledBack) }
-        let moreTone: StatusTone = hidden.contains(.down) ? .down : hidden.contains(.warning) ? .warning : .muted
+        // The most urgent hidden item, also one the server left out.
+        let hidden = StateBoard.hiddenTone(data.counts, shown: Array(data.items.prefix(fit.rows)))
+        let moreTone: StatusTone = hidden == .down ? .down : hidden == .warning ? .warning : .muted
         ForEach(Array(data.items.prefix(fit.rows).enumerated()), id: \.offset) { index, item in
             StateRowView(item: item, showChanged: options.showChanged, layout: layout, env: env, now: now)
                 .modifier(RowRise(progress: progressValue, index: index, rise: rise))
@@ -140,6 +157,28 @@ struct StateWidgetView: View {
             )
             .modifier(RowRise(progress: progressValue, index: fit.rows, rise: rise))
         }
+    }
+
+    private func summary(
+        _ text: String, state: ServiceState, rolledBack: Bool, sizes: [StudioTextRole: Double], height: Double
+    ) -> some View {
+        let color = Self.color(state.tone(rolledBack: rolledBack), env)
+        let cell = sizes[.cell] ?? StudioLayout.Minimum.cell
+        let word = Self.singlePlan(height: height, sizes: sizes, hasName: false, hasQualifier: false).word
+        return HStack(alignment: .center, spacing: env.pt(word * 0.25)) {
+            Image(systemName: state.symbol)
+                .font(.system(size: env.pt(word * 0.85), weight: .semibold))
+                .foregroundStyle(color)
+                .accessibilityHidden(true)
+            Text(text)
+                .font(env.font(word, .semibold))
+                .foregroundStyle(color)
+                .lineLimit(1)
+                .minimumScaleFactor(max(0.1, cell / word))
+        }
+        .padding(.top, env.pt(StudioRender.stackGap))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(text)
     }
 
     private func single(_ item: StateWidgetItem, sizes: [StudioTextRole: Double], height: Double) -> some View {

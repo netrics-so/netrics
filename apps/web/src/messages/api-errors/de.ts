@@ -14,6 +14,7 @@ export const apiErrorsDe: Catalog<typeof apiErrorsEn> = {
       "Wähle ein Text- oder Ja/Nein-Feld für den Status.",
     state_changed_dimension_invalid: "Wähle ein Datums- oder Zeitfeld.",
     state_rolled_back_dimension_invalid: "Wähle ein Ja/Nein-Feld.",
+    state_dimensions_not_distinct: "Wähle für jeden Teil ein anderes Feld.",
     store_mapping_duplicate:
       "Jede App darf nur zu einem verknüpften Produkt gehören.",
     store_scope_invalid:

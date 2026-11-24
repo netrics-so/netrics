@@ -1606,6 +1606,7 @@ async function buildSlides(
                 changedAt: item.changedAt,
               })),
               total: data.total,
+              counts: data.counts,
               ...(data.freshness ? { freshness: data.freshness } : {}),
             },
           });

@@ -208,5 +208,45 @@ private func stateWidget(_ payload: DeviceDashboardV2) throws -> (StateWidgetOpt
         #expect(detail.items.map(\.label) == ["api", "cron", "site", "web"])
         #expect(detail.items.map(\.value) == ["Failed", "Building", "Up · rolled back", "Up"])
         #expect(detail.items[0].lines.map(\.text) == ["Changed 3 hours ago"])
+        // Only down and failed count as failing, not building or a rollback (review).
+        let summary = try #require(detail.rows.first)
+        #expect(summary.text == "4 items · 1 failing")
+    }
+
+    @Test func decodesCountsAndStale() throws {
+        let json = stateWidgetJSON().replacingOccurrences(
+            of: #""status": "ok""#,
+            with: #""status": "stale", "counts": {"up": 2, "down": 1, "failed": 1, "building": 1, "sleeping": 0, "unknown": 0, "rolledBack": 1}"#
+        )
+        let (_, data) = try stateWidget(v2Payload(slides: stateSlides(json)))
+        #expect(data.status == .stale)
+        #expect(data.counts.down == 1)
+        #expect(data.counts.rolledBack == 1)
+        // Without counts (an older server), they come from the items.
+        let (_, plain) = try stateWidget(v2Payload(slides: stateSlides(stateWidgetJSON())))
+        #expect(plain.counts == ServiceStateCounts(items: plain.items))
+    }
+
+    @Test func summarisesWithoutAChosenItem() {
+        var counts = ServiceStateCounts()
+        counts.up = 5
+        #expect(StateBoard.summaryText(counts, language: .en) == "All 5 up")
+        #expect(StateBoard.summaryText(counts, language: .de) == "Alle 5 online")
+        counts.up = 3
+        counts.down = 2
+        #expect(StateBoard.summaryText(counts, language: .en) == "2 of 5 down")
+        #expect(StateBoard.summaryText(counts, language: .de) == "2 von 5 offline")
+        #expect(StateBoard.summaryState(counts)?.0 == .down)
+        #expect(StateBoard.summaryState(counts)?.1 == false)
+        #expect(StateBoard.summaryText(ServiceStateCounts(), language: .en) == nil)
+    }
+
+    @Test func tonesMoreByAHiddenOutage() {
+        var counts = ServiceStateCounts()
+        counts.up = 2
+        counts.down = 1
+        let up = StateWidgetItem(name: "web", state: .up)
+        #expect(StateBoard.hiddenTone(counts, shown: [up]) == .down)
+        #expect(StateBoard.hiddenTone(counts, shown: [StateWidgetItem(name: "db", state: .down)]) == .up)
     }
 }

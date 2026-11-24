@@ -44,6 +44,7 @@ import {
   measureWidgetOptionsSchema,
   STATE_LIST_MAX,
   stateWidgetBindingSchema,
+  stateWidgetCountsSchema,
   stateWidgetItemSchema,
   stateWidgetOptionsSchema,
 } from "./dashboard-data.js";
@@ -3865,7 +3866,8 @@ export type DeviceItemsData = z.infer<typeof deviceItemsDataSchema>;
  * list's limit; `total` counts every matching item ("+N more").
  */
 export const deviceStateDataSchema = z.object({
-  status: z.enum(["ok", "no_data"]),
+  /** "stale": last valid snapshot or an overdue source (ADR 0025 §8). */
+  status: z.enum(["ok", "no_data", "stale"]),
   items: z
     .array(
       z.object({
@@ -3877,6 +3879,8 @@ export const deviceStateDataSchema = z.object({
     )
     .max(STATE_LIST_MAX),
   total: z.number().int().min(0),
+  /** Every matching item per state (summary, "+N more" tone). */
+  counts: stateWidgetCountsSchema,
   freshness: widgetFreshnessSchema.optional(),
 });
 export type DeviceStateData = z.infer<typeof deviceStateDataSchema>;

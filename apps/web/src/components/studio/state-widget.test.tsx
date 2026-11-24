@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { DeviceWidget } from "@netrics/contracts";
-import { SERVICE_STATES } from "@netrics/domain";
+import {
+  SERVICE_STATES,
+  serviceStateCounts,
+  type ServiceStateCounts,
+} from "@netrics/domain";
 
 import { renderI18n } from "@/lib/i18n/test-render";
 
@@ -46,6 +50,7 @@ const ITEMS: StateItemView[] = [
 
 const options = (patch: Partial<StateViewOptions> = {}): StateViewOptions => ({
   layout: "list",
+  item: null,
   limit: 8,
   showChanged: true,
   ...patch,
@@ -58,6 +63,8 @@ const render = (
     total?: number;
     placement?: { x: number; y: number; w: number; h: number };
     fontScale?: number;
+    counts?: ServiceStateCounts;
+    status?: "ok" | "no_data" | "stale";
   } = {},
   locale: "en" | "de" = "en",
 ) => {
@@ -67,8 +74,9 @@ const render = (
       label="Services"
       items={items}
       total={input.total ?? items.length}
+      counts={input.counts ?? serviceStateCounts(items)}
       options={options(input.options)}
-      status={items.length ? "ok" : "no_data"}
+      status={input.status ?? (items.length ? "ok" : "no_data")}
       placement={input.placement ?? { x: 0, y: 0, w: 6, h: 6 }}
       showHeader
       fontScale={input.fontScale ?? 1}
@@ -142,7 +150,7 @@ describe("the state list (#875)", () => {
 describe("the single form (#875)", () => {
   it("shows one item's state large, with the rollback and the change", () => {
     const html = render({
-      options: { layout: "single" },
+      options: { layout: "single", item: "site" },
       items: [ITEMS[3]!],
     });
     expect(html).toContain('class="sw sw-svc sw-svc--single warning"');
@@ -156,7 +164,8 @@ describe("the single form (#875)", () => {
         label="Status"
         items={[ITEMS[0]!]}
         total={1}
-        options={options({ layout: "single" })}
+        counts={serviceStateCounts([ITEMS[0]!])}
+        options={options({ layout: "single", item: "api" })}
         status="ok"
         placement={{ x: 0, y: 0, w: 3, h: 2 }}
         showHeader
@@ -172,12 +181,61 @@ describe("the single form (#875)", () => {
   it("gives every state its own icon", () => {
     const icons = SERVICE_STATES.map((state) => {
       const html = render({
-        options: { layout: "single" },
+        options: { layout: "single", item: "x" },
         items: [{ name: "x", state, rolledBack: false, changedAt: null }],
       });
       return /data-icon="([a-z]+)"/.exec(html)![1];
     });
     expect(new Set(icons).size).toBe(SERVICE_STATES.length);
+  });
+});
+
+describe("review fixes (#875)", () => {
+  const summary = (html: string) =>
+    /class="sw-svc-word"[^>]*>.*?<span>([^<]*)<\/span>/.exec(html)?.[1];
+
+  it("sums up the items when no item is chosen", () => {
+    const single = { options: { layout: "single" as const } };
+    expect(summary(render(single))).toBe("1 of 5 down");
+    expect(summary(render(single, "de"))).toBe("1 von 5 offline");
+    const ups = ITEMS.filter((item) => item.state === "up" && !item.rolledBack);
+    const allUp = [
+      ...ups,
+      { ...ups[0]!, name: "b" },
+      { ...ups[0]!, name: "c" },
+    ];
+    expect(summary(render({ ...single, items: allUp }))).toBe("All 3 up");
+    expect(summary(render({ ...single, items: allUp }, "de"))).toBe(
+      "Alle 3 online",
+    );
+    const html = render({ ...single, items: allUp });
+    expect(html).toContain('data-icon="check"');
+    expect(html).toContain('class="sw sw-svc sw-svc--single up"');
+  });
+
+  it("shows +N more, not 'No items yet', when only that row fits", () => {
+    const html = render({
+      placement: { x: 0, y: 0, w: 3, h: 2 },
+      fontScale: 1.3,
+    });
+    expect(html).not.toContain("No items yet");
+    expect(html).toMatch(/>\+\d+ more</);
+  });
+
+  it("tones +N more by a hidden outage the server left out", () => {
+    const shown = ITEMS.filter((item) => item.state === "up");
+    const counts = { ...serviceStateCounts(shown), down: 1 };
+    const html = render({ items: shown, total: 3, counts });
+    expect(html).toMatch(/sw-status-more down"/);
+  });
+
+  it("warns when the states are not current", () => {
+    const html = render({ status: "stale" });
+    expect(html).toContain("sw-stale");
+    expect(html).toContain("Last known state, may be out of date");
+    expect(render({ status: "stale" }, "de")).toContain(
+      "Letzter bekannter Status, evtl. veraltet",
+    );
   });
 });
 
@@ -196,6 +254,7 @@ describe("a payload state widget (#875)", () => {
         status: "ok",
         items: ITEMS,
         total: 5,
+        counts: serviceStateCounts(ITEMS),
       },
     } as DeviceWidget;
     const html = renderI18n(

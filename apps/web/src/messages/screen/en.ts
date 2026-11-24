@@ -128,6 +128,18 @@ export const screenEn = {
       item: "{name}: {state}",
       empty: "No items yet",
       unavailable: "The status can’t be shown right now.",
+      /** A last valid snapshot or an overdue source (ADR 0025 §8). */
+      stale: "Last known state, may be out of date",
+      /** The single form's summary when no item is chosen. */
+      summaryAllUp: "All {count} up",
+      summaryWorst: "{count} of {total} {state}",
+      lowerUp: "up",
+      lowerDown: "down",
+      lowerFailed: "failed",
+      lowerBuilding: "building",
+      lowerSleeping: "sleeping",
+      lowerUnknown: "unknown",
+      lowerRolledBack: "rolled back",
     },
     /** What a playing screen shows around its slides (ADR 0018, section 5). */
     player: {

@@ -16895,7 +16895,8 @@
                             "type": "string",
                             "enum": [
                               "ok",
-                              "no_data"
+                              "no_data",
+                              "stale"
                             ]
                           },
                           "items": {
@@ -16966,6 +16967,65 @@
                             "type": "integer",
                             "minimum": 0,
                             "maximum": 9007199254740991
+                          },
+                          "counts": {
+                            "type": "object",
+                            "properties": {
+                              "up": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "down": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "failed": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "building": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "sleeping": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "unknown": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "rolledBack": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              }
+                            },
+                            "required": [
+                              "up",
+                              "down",
+                              "failed",
+                              "building",
+                              "sleeping",
+                              "unknown",
+                              "rolledBack"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "sourceValues": {
+                            "default": [],
+                            "maxItems": 30,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "maxLength": 60
+                            }
                           },
                           "error": {
                             "type": [
@@ -17120,6 +17180,8 @@
                           "status",
                           "items",
                           "total",
+                          "counts",
+                          "sourceValues",
                           "error",
                           "exclusions"
                         ],
@@ -19006,7 +19068,8 @@
                             "type": "string",
                             "enum": [
                               "ok",
-                              "no_data"
+                              "no_data",
+                              "stale"
                             ]
                           },
                           "items": {
@@ -19077,6 +19140,65 @@
                             "type": "integer",
                             "minimum": 0,
                             "maximum": 9007199254740991
+                          },
+                          "counts": {
+                            "type": "object",
+                            "properties": {
+                              "up": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "down": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "failed": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "building": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "sleeping": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "unknown": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "rolledBack": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              }
+                            },
+                            "required": [
+                              "up",
+                              "down",
+                              "failed",
+                              "building",
+                              "sleeping",
+                              "unknown",
+                              "rolledBack"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "sourceValues": {
+                            "default": [],
+                            "maxItems": 30,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "maxLength": 60
+                            }
                           },
                           "error": {
                             "type": [
@@ -19231,6 +19353,8 @@
                           "status",
                           "items",
                           "total",
+                          "counts",
+                          "sourceValues",
                           "error",
                           "exclusions"
                         ],
@@ -88531,7 +88655,8 @@
                                               "type": "string",
                                               "enum": [
                                                 "ok",
-                                                "no_data"
+                                                "no_data",
+                                                "stale"
                                               ]
                                             },
                                             "items": {
@@ -88590,6 +88715,56 @@
                                               "type": "integer",
                                               "minimum": 0,
                                               "maximum": 9007199254740991
+                                            },
+                                            "counts": {
+                                              "type": "object",
+                                              "properties": {
+                                                "up": {
+                                                  "type": "integer",
+                                                  "minimum": 0,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "down": {
+                                                  "type": "integer",
+                                                  "minimum": 0,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "failed": {
+                                                  "type": "integer",
+                                                  "minimum": 0,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "building": {
+                                                  "type": "integer",
+                                                  "minimum": 0,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "sleeping": {
+                                                  "type": "integer",
+                                                  "minimum": 0,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "unknown": {
+                                                  "type": "integer",
+                                                  "minimum": 0,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "rolledBack": {
+                                                  "type": "integer",
+                                                  "minimum": 0,
+                                                  "maximum": 9007199254740991
+                                                }
+                                              },
+                                              "required": [
+                                                "up",
+                                                "down",
+                                                "failed",
+                                                "building",
+                                                "sleeping",
+                                                "unknown",
+                                                "rolledBack"
+                                              ],
+                                              "additionalProperties": false
                                             },
                                             "freshness": {
                                               "type": "object",
@@ -88714,7 +88889,8 @@
                                           "required": [
                                             "status",
                                             "items",
-                                            "total"
+                                            "total",
+                                            "counts"
                                           ],
                                           "additionalProperties": false
                                         }
@@ -94119,7 +94295,8 @@
                                               "type": "string",
                                               "enum": [
                                                 "ok",
-                                                "no_data"
+                                                "no_data",
+                                                "stale"
                                               ]
                                             },
                                             "items": {
@@ -94178,6 +94355,56 @@
                                               "type": "integer",
                                               "minimum": 0,
                                               "maximum": 9007199254740991
+                                            },
+                                            "counts": {
+                                              "type": "object",
+                                              "properties": {
+                                                "up": {
+                                                  "type": "integer",
+                                                  "minimum": 0,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "down": {
+                                                  "type": "integer",
+                                                  "minimum": 0,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "failed": {
+                                                  "type": "integer",
+                                                  "minimum": 0,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "building": {
+                                                  "type": "integer",
+                                                  "minimum": 0,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "sleeping": {
+                                                  "type": "integer",
+                                                  "minimum": 0,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "unknown": {
+                                                  "type": "integer",
+                                                  "minimum": 0,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "rolledBack": {
+                                                  "type": "integer",
+                                                  "minimum": 0,
+                                                  "maximum": 9007199254740991
+                                                }
+                                              },
+                                              "required": [
+                                                "up",
+                                                "down",
+                                                "failed",
+                                                "building",
+                                                "sleeping",
+                                                "unknown",
+                                                "rolledBack"
+                                              ],
+                                              "additionalProperties": false
                                             },
                                             "freshness": {
                                               "type": "object",
@@ -94302,7 +94529,8 @@
                                           "required": [
                                             "status",
                                             "items",
-                                            "total"
+                                            "total",
+                                            "counts"
                                           ],
                                           "additionalProperties": false
                                         }

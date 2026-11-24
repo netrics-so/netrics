@@ -368,13 +368,40 @@ export const itemsWidgetDataSchema = z.object({
   freshness: widgetFreshnessSchema.optional(),
 });
 export type ItemsWidgetData = z.infer<typeof itemsWidgetDataSchema>;
+/** Matching items per state (`serviceStateCounts`); `rolledBack` counts
+ * the ups with the qualifier. */
+export const stateWidgetCountsSchema = z.object({
+  up: z.number().int().min(0),
+  down: z.number().int().min(0),
+  failed: z.number().int().min(0),
+  building: z.number().int().min(0),
+  sleeping: z.number().int().min(0),
+  unknown: z.number().int().min(0),
+  rolledBack: z.number().int().min(0),
+});
 export const stateWidgetDataSchema = z.object({
   widgetId: z.uuid(),
-  status: z.enum(["ok", "no_data"]),
+  /**
+   * "stale": the rows are a last valid snapshot, or a source is overdue
+   * (ADR 0025 section 8); screens warn instead of showing the states as
+   * current.
+   */
+  status: z.enum(["ok", "no_data", "stale"]),
   /** Not healthy first (`sortServiceStateItems`), at most the list's limit. */
   items: z.array(stateWidgetItemSchema).max(STATE_LIST_MAX),
   /** Every matching item, also those beyond the limit ("+N more"). */
   total: z.number().int().min(0),
+  /** Every matching item per state: the single form's summary and the
+   * tone of "+N more". */
+  counts: stateWidgetCountsSchema,
+  /**
+   * Source values no built-in word knows, at most 30 (for the Studio's
+   * mapping, whichever rows are shown).
+   */
+  sourceValues: z
+    .array(z.string().max(SERVICE_STATE_VALUE_MAX))
+    .max(SERVICE_STATE_OVERRIDES_MAX)
+    .default([]),
   error: z.string().nullable(),
   exclusions: z.array(dashboardFilterExclusionSchema),
   /** ADR 0025: through the model's sources; absent without freshness. */

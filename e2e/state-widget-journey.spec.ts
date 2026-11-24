@@ -190,9 +190,21 @@ test("a state widget is added, configured and played on a screen", async ({
   await fields
     .getByRole("combobox", { name: t.fields.layout, exact: true })
     .selectOption({ label: t.fields.single });
+  // No item chosen: a summary of every item, the worst state first.
+  await expect(canvas.locator(".sw-svc-word")).toHaveText(
+    fill(t.words.summaryWorst, {
+      count: 1,
+      total: 4,
+      state: t.words.lowerDown,
+    }),
+  );
   await fields
     .getByRole("combobox", { name: t.fields.item, exact: true })
     .fill("site");
+  // The name is committed on leaving the field (it may hold spaces).
+  await fields
+    .getByRole("combobox", { name: t.fields.item, exact: true })
+    .press("Tab");
   await expect(canvas.locator(".sw-svc-word")).toHaveText(t.words.up);
   await expect(canvas.locator(".sw-svc-single")).toHaveAttribute(
     "aria-label",

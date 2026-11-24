@@ -142,29 +142,94 @@ public struct StateWidgetItem: Codable, Sendable, Equatable {
     public var healthy: Bool { state == .up && !rolledBack }
 }
 
+/**
+ * Every matching item per state (web: `serviceStateCounts`): the single
+ * form's summary and the tone of "+N more"; `rolledBack` counts the ups
+ * with the qualifier (they are in `up` too).
+ */
+public struct ServiceStateCounts: Codable, Sendable, Equatable {
+    public var up = 0, down = 0, failed = 0, building = 0, sleeping = 0, unknown = 0, rolledBack = 0
+
+    public init() {}
+
+    public init(items: [StateWidgetItem]) {
+        for item in items {
+            self[item.state] += 1
+            if item.state == .up && item.rolledBack { rolledBack += 1 }
+        }
+    }
+
+    public subscript(state: ServiceState) -> Int {
+        get {
+            switch state {
+            case .up: return up
+            case .down: return down
+            case .failed: return failed
+            case .building: return building
+            case .sleeping: return sleeping
+            case .unknown: return unknown
+            }
+        }
+        set {
+            switch state {
+            case .up: up = newValue
+            case .down: down = newValue
+            case .failed: failed = newValue
+            case .building: building = newValue
+            case .sleeping: sleeping = newValue
+            case .unknown: unknown = newValue
+            }
+        }
+    }
+
+    public var total: Int { ServiceState.allCases.reduce(0) { $0 + self[$1] } }
+
+    /** Items in `state` (with `rolledBack` for up: those with or without the qualifier). */
+    func count(_ state: ServiceState, rolledBack: Bool) -> Int {
+        state == .up ? (rolledBack ? self.rolledBack : up - self.rolledBack) : self[state]
+    }
+
+    private enum CodingKeys: String, CodingKey { case up, down, failed, building, sleeping, unknown, rolledBack }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        up = max(0, c.lenient(Int.self, .up) ?? 0)
+        down = max(0, c.lenient(Int.self, .down) ?? 0)
+        failed = max(0, c.lenient(Int.self, .failed) ?? 0)
+        building = max(0, c.lenient(Int.self, .building) ?? 0)
+        sleeping = max(0, c.lenient(Int.self, .sleeping) ?? 0)
+        unknown = max(0, c.lenient(Int.self, .unknown) ?? 0)
+        rolledBack = max(0, c.lenient(Int.self, .rolledBack) ?? 0)
+    }
+}
+
 /** A state widget's data: not healthy first, as the server sorted it. */
 public struct StateWidgetData: Codable, Sendable, Equatable {
     /** The most items the server sends (STATE_LIST_MAX). */
     public static let maxItems = 20
 
-    /** ok or no_data. */
+    /** ok, no_data or stale (a last valid snapshot or an overdue source). */
     public var status: DeviceTileStatus
     public var items: [StateWidgetItem]
     /** Every matching item, also those beyond the list's limit. */
     public var total: Int
+    /** Every matching item per state; from the items when the server sent none. */
+    public var counts: ServiceStateCounts
     /** ADR 0025; nil without freshness. */
     public var freshness: WidgetFreshness?
 
     public init(
-        status: DeviceTileStatus = .ok, items: [StateWidgetItem], total: Int? = nil, freshness: WidgetFreshness? = nil
+        status: DeviceTileStatus = .ok, items: [StateWidgetItem], total: Int? = nil,
+        counts: ServiceStateCounts? = nil, freshness: WidgetFreshness? = nil
     ) {
         self.status = status
         self.items = items
         self.total = max(total ?? items.count, items.count)
+        self.counts = counts ?? ServiceStateCounts(items: items)
         self.freshness = freshness
     }
 
-    private enum CodingKeys: String, CodingKey { case status, items, total, freshness }
+    private enum CodingKeys: String, CodingKey { case status, items, total, counts, freshness }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -173,7 +238,8 @@ public struct StateWidgetData: Codable, Sendable, Equatable {
             try c.decode(LossyArray<StateWidgetItem>.self, forKey: .items).elements.prefix(Self.maxItems))
         self.init(
             status: c.lenient(DeviceTileStatus.self, .status) ?? .ok, items: items,
-            total: c.lenient(Int.self, .total), freshness: c.lenient(WidgetFreshness.self, .freshness))
+            total: c.lenient(Int.self, .total), counts: c.lenient(ServiceStateCounts.self, .counts),
+            freshness: c.lenient(WidgetFreshness.self, .freshness))
     }
 }
 
@@ -243,6 +309,52 @@ public enum StateBoard {
         guard let last = forms.last else { return nil }
         let fit = forms.first { StudioLayout.wrappedLineCount($0, maxWidth: width, fontSize: size) <= 1 }
         return (fit ?? last, false)
+    }
+
+    /** Every state from the most to the least urgent, a rollback as its own. */
+    static let urgency: [(ServiceState, Bool)] = ServiceState.allCases
+        .flatMap { $0 == .up ? [($0, true), ($0, false)] : [($0, false)] }
+        .sorted { $0.0.rank(rolledBack: $0.1) < $1.0.rank(rolledBack: $1.1) }
+
+    /** The most urgent state that has items; nil without items. */
+    public static func summaryState(_ counts: ServiceStateCounts) -> (ServiceState, Bool)? {
+        urgency.first { counts.count($0.0, rolledBack: $0.1) > 0 }
+    }
+
+    /**
+     * The single form's summary when no item is chosen (web:
+     * `serviceStateSummary`): "All 5 up" ("Alle 5 online"), else the most
+     * urgent state and its count, "2 of 5 down" ("2 von 5 offline"); nil
+     * without items.
+     */
+    public static func summaryText(_ counts: ServiceStateCounts, language: ScreenLanguage) -> String? {
+        guard let (state, rolledBack) = summaryState(counts) else { return nil }
+        if state == .up && !rolledBack { return KitStrings.text(.stateSummaryAllUp, language, counts.total) }
+        let word: KitText
+        switch state {
+        case .up: word = rolledBack ? .stateLowerRolledBack : .stateLowerUp
+        case .down: word = .stateLowerDown
+        case .failed: word = .stateLowerFailed
+        case .building: word = .stateLowerBuilding
+        case .sleeping: word = .stateLowerSleeping
+        case .unknown: word = .stateLowerUnknown
+        }
+        return KitStrings.text(
+            .stateSummaryWorst, language, counts.count(state, rolledBack: rolledBack), counts.total,
+            KitStrings.text(word, language))
+    }
+
+    /**
+     * The tone of "+N more" (web: `serviceStateHiddenTone`): the most urgent
+     * item not shown, also one the server left out; nil when nothing is hidden.
+     */
+    public static func hiddenTone(_ counts: ServiceStateCounts, shown: [StateWidgetItem]) -> StatusTone? {
+        let seen = ServiceStateCounts(items: shown)
+        var left = ServiceStateCounts()
+        for state in ServiceState.allCases { left[state] = max(0, counts[state] - seen[state]) }
+        left.rolledBack = max(0, counts.rolledBack - seen.rolledBack)
+        guard let (state, rolledBack) = summaryState(left) else { return nil }
+        return state.tone(rolledBack: rolledBack)
     }
 
     /** What VoiceOver reads for an item: "api, Failed". */

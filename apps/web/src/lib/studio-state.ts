@@ -49,10 +49,6 @@ export function stateBindingFor(
   filters: readonly Pick<DashboardDataFilter, "mappings">[] = [],
 ): StateWidgetBinding | null {
   const values = stateValueDimensions(model);
-  const state =
-    values.find((dimension) => matches(dimension, STATE_NAME)) ??
-    stateFlagDimensions(model)[0];
-  if (!state) return null;
   const filtered = new Set(
     filters.flatMap((filter) =>
       filter.mappings
@@ -60,16 +56,33 @@ export function stateBindingFor(
         .map((mapping) => mapping.dimensionId),
     ),
   );
-  const names = stateNameDimensions(model).filter(
-    (dimension) => dimension.id !== state.id && !matches(dimension, STATE_NAME),
-  );
-  const name =
-    names.find(
-      (dimension) => !filtered.has(dimension.id) && !/_id$/.test(dimension.id),
-    ) ??
-    names.find((dimension) => !filtered.has(dimension.id)) ??
-    names[0];
+  // Names rank the defaults, they never exclude a model (review): a field
+  // named like a state, else a yes/no field, else a text field the name
+  // does not take.
+  const named =
+    values.find((dimension) => matches(dimension, STATE_NAME)) ??
+    stateFlagDimensions(model)[0];
+  const pickName = (except: string | undefined) => {
+    const names = stateNameDimensions(model).filter(
+      (dimension) => dimension.id !== except,
+    );
+    const plain = names.filter((dimension) => !matches(dimension, STATE_NAME));
+    return (
+      plain.find(
+        (dimension) =>
+          !filtered.has(dimension.id) && !/_id$/.test(dimension.id),
+      ) ??
+      plain.find((dimension) => !filtered.has(dimension.id)) ??
+      plain[0] ??
+      names[0]
+    );
+  };
+  const name = pickName(named?.id);
   if (!name) return null;
+  const state =
+    named ??
+    [...values].reverse().find((dimension) => dimension.id !== name.id);
+  if (!state || state.id === name.id) return null;
   const changed = stateChangedDimensions(model).find((dimension) =>
     matches(dimension, CHANGED_NAME),
   );
@@ -84,6 +97,29 @@ export function stateBindingFor(
     ...(changed ? { changedAtDimensionId: changed.id } : {}),
     ...(rolledBack ? { rolledBackDimensionId: rolledBack.id } : {}),
     exclusions: [],
+  };
+}
+
+/**
+ * The fields each role of a binding may take, none taken by another role
+ * (review): the name's choices without the state, the state's without the
+ * name, the rolled-back flag's without the state.
+ */
+export function stateFieldChoices(
+  model: CatalogModel,
+  binding: Pick<StateWidgetBinding, "nameDimensionId" | "stateDimensionId">,
+) {
+  return {
+    names: stateNameDimensions(model).filter(
+      (dimension) => dimension.id !== binding.stateDimensionId,
+    ),
+    states: stateValueDimensions(model).filter(
+      (dimension) => dimension.id !== binding.nameDimensionId,
+    ),
+    changed: stateChangedDimensions(model),
+    flags: stateFlagDimensions(model).filter(
+      (dimension) => dimension.id !== binding.stateDimensionId,
+    ),
   };
 }
 

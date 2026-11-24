@@ -474,7 +474,7 @@ export const studioDe: Catalog<typeof studioEn> = {
       list: "Als Liste",
       single: "Ein Eintrag",
       item: "Eintrag",
-      itemWorst: "Der dringendste",
+      itemWorst: "Alle (Zusammenfassung)",
       limit: "Höchstens",
       showChanged: "Änderungszeit anzeigen",
       mapping: "Werte der Quelle",

@@ -10,14 +10,20 @@ import type {
 } from "@netrics/contracts";
 import {
   estimateTextWidth,
+  serviceStateCounts,
+  serviceStateHiddenTone,
   serviceStateIcon,
   serviceStateRowsShown,
+  serviceStateSummary,
+  STUDIO_SPACING,
   serviceStateTone,
   stateWidgetLabel,
   statusLayout,
   statusRowLabel,
   type ServiceState,
+  type ServiceStateCounts,
   type ServiceStateIcon,
+  type ServiceStateSummary,
 } from "@netrics/domain";
 
 import { useLocale, useT } from "@/lib/i18n/client";
@@ -62,7 +68,7 @@ export interface StateItemView {
 /** The options a screen draws by (the mapping stays on the server). */
 export type StateViewOptions = Pick<
   StateWidgetOptions,
-  "layout" | "limit" | "showChanged"
+  "layout" | "item" | "limit" | "showChanged"
 >;
 
 /** The icon's strokes on a 24 × 24 box, drawn in `currentColor`. */
@@ -113,8 +119,11 @@ export interface StateWidgetViewProps {
   items: readonly StateItemView[];
   /** Every matching item, also those the server left out. */
   total: number;
+  /** Every matching item per state: the summary and "+N more"'s tone. */
+  counts: ServiceStateCounts;
   options: StateViewOptions;
-  status: "ok" | "no_data";
+  /** "stale": a last valid snapshot or an overdue source (ADR 0025 §8). */
+  status: "ok" | "no_data" | "stale";
   placement: ScreenPlacement;
   showHeader: boolean;
   fontScale: number;
@@ -123,15 +132,77 @@ export interface StateWidgetViewProps {
   /** The query's error code (editor surfaces name it). */
   error?: string | null;
   loading?: boolean;
+  /** Scroll view: as tall as the rows it lists, nothing cut (ADR 0019 §15). */
+  grow?: boolean;
 }
 
-export function StateWidgetView(props: StateWidgetViewProps) {
+/**
+ * The box a growing state card is laid out in (scroll view, #875 review):
+ * half a slide wide and exactly tall enough for `rows` list rows.
+ */
+export function scrollStatePlacement(
+  rows: number,
+  fontScale: number,
+): {
+  placement: ScreenPlacement & { unitBox: { width: number; height: number } };
+  rowCapacity: number;
+} {
+  const base = { x: 0, y: 0, w: 6, h: 6 };
+  const width = contentBox(base, false).width;
+  const probe = statusLayout({
+    label: "Status",
+    width,
+    height: 10_000,
+    fontScale,
+  });
+  const height =
+    probe.headHeight +
+    probe.footerHeight +
+    Math.max(1, rows) * probe.rowPitch +
+    2 * STUDIO_SPACING.widgetPadding +
+    1;
+  const placement = {
+    ...base,
+    unitBox: { width: width + 2 * STUDIO_SPACING.widgetPadding, height },
+  };
+  const box = contentBox(placement, false);
+  return {
+    placement,
+    rowCapacity: statusLayout({
+      label: "Status",
+      width: box.width,
+      height: box.height,
+      fontScale,
+    }).rowCapacity,
+  };
+}
+
+const LOWER = {
+  up: "lowerUp",
+  down: "lowerDown",
+  failed: "lowerFailed",
+  building: "lowerBuilding",
+  sleeping: "lowerSleeping",
+  unknown: "lowerUnknown",
+} as const;
+
+export function StateWidgetView(input: StateWidgetViewProps) {
   const t = useT("screen.state");
   const words = useStateWords();
   const locale = useLocale();
   const now = useNow().getTime();
   const rowsRef = useRef<HTMLOListElement>(null);
   useRowRise(rowsRef);
+  const listRows =
+    input.options.layout === "single"
+      ? 1
+      : Math.min(input.total, input.options.limit) +
+        (input.total > input.options.limit ? 1 : 0);
+  const grown = input.grow
+    ? scrollStatePlacement(listRows, input.fontScale).placement
+    : null;
+  const props = grown ? { ...input, placement: grown } : input;
+  const stale = props.status === "stale";
   const box = contentBox(props.placement, props.showHeader);
   const scale = typeScaleFor(
     "state",
@@ -151,12 +222,28 @@ export function StateWidgetView(props: StateWidgetViewProps) {
     null,
     null,
     props.freshness ?? null,
-    props.status === "no_data" ? "no_data" : "ok",
+    props.status,
   )[0];
-  const notice =
-    props.error && props.audience !== "viewer" ? (
-      <WidgetNotice size={layout.sizes.cell}>{t("unavailable")}</WidgetNotice>
-    ) : null;
+  // An old "Up" never reads as current (ADR 0025 §8, review).
+  const notice = stale ? (
+    <WidgetNotice size={layout.sizes.age} stale>
+      {t("stale")}
+    </WidgetNotice>
+  ) : props.error && props.audience !== "viewer" ? (
+    <WidgetNotice size={layout.sizes.cell}>{t("unavailable")}</WidgetNotice>
+  ) : null;
+  const staleClass = stale ? " sw-stale" : "";
+  /** "All 5 up", "2 of 5 down" ("Alle 5 online", "2 von 5 offline"). */
+  const summarize = (summary: ServiceStateSummary) =>
+    summary.kind === "all_up"
+      ? t("summaryAllUp", { count: summary.total })
+      : t("summaryWorst", {
+          count: summary.count,
+          total: summary.total,
+          state: summary.rolledBack
+            ? t("lowerRolledBack")
+            : t(LOWER[summary.state]),
+        });
   const empty = (
     <p
       className="sw-placeholder sw-svc-empty"
@@ -165,6 +252,53 @@ export function StateWidgetView(props: StateWidgetViewProps) {
       {props.loading ? "…" : t("empty")}
     </p>
   );
+
+  const style = grown ? { height: u(grown.unitBox.height) } : undefined;
+
+  // One item not chosen: a summary of every item (owner decision on #875).
+  const summary =
+    props.options.layout === "single" && props.options.item === null
+      ? serviceStateSummary(props.counts)
+      : null;
+  if (props.options.layout === "single" && props.options.item === null) {
+    const text = summary ? summarize(summary) : "";
+    const state = summary?.kind === "worst" ? summary.state : "up";
+    const rolledBack = summary?.kind === "worst" && summary.rolledBack;
+    const room = Math.max(
+      layout.sizes.cell,
+      Math.min(
+        (box.height - label.height) * 0.4,
+        (box.width * 0.8) / Math.max(4, [...text].length * 0.6 + 1.4),
+      ),
+    );
+    return (
+      <article
+        className={`sw sw-svc sw-svc--single${summary ? ` ${serviceStateTone(state, rolledBack)}` : ""}${staleClass}`}
+        aria-busy={props.loading ?? false}
+        style={style}
+      >
+        <WidgetLabel layout={label} />
+        {summary ? (
+          <div className="sw-svc-single" role="group" aria-label={text}>
+            <p
+              className="sw-svc-word"
+              style={{ fontSize: u(room) }}
+              aria-hidden="true"
+            >
+              <StateIcon state={state} size={u(room * 0.9)} />
+              <span>{text}</span>
+            </p>
+          </div>
+        ) : (
+          empty
+        )}
+        {notice}
+        {footer && summary ? (
+          <WidgetFooter size={layout.sizes.footer}>{footer}</WidgetFooter>
+        ) : null}
+      </article>
+    );
+  }
 
   if (props.options.layout === "single") {
     const item = props.items[0];
@@ -188,8 +322,9 @@ export function StateWidgetView(props: StateWidgetViewProps) {
     );
     return (
       <article
-        className={`sw sw-svc sw-svc--single${item ? ` ${serviceStateTone(item.state, item.rolledBack)}` : ""}`}
+        className={`sw sw-svc sw-svc--single${item ? ` ${serviceStateTone(item.state, item.rolledBack)}` : ""}${staleClass}`}
         aria-busy={props.loading ?? false}
+        style={style}
       >
         <WidgetLabel layout={label} />
         {item ? (
@@ -246,10 +381,10 @@ export function StateWidgetView(props: StateWidgetViewProps) {
     layout.rowCapacity,
   );
   const shown = props.items.slice(0, rows);
-  const hiddenTone = props.items
-    .slice(rows)
-    .map((item) => serviceStateTone(item.state, item.rolledBack))
-    .find((tone) => tone === "down" || tone === "warning");
+  // The most urgent hidden item, also one the server left out (review).
+  const hidden = serviceStateHiddenTone(props.counts, shown);
+  const hiddenTone =
+    hidden === "down" || hidden === "warning" ? hidden : undefined;
   const row = {
     height: u(layout.rowPitch),
     paddingTop: u(layout.rowPitch - layout.sizes.cell * 1.15),
@@ -259,11 +394,12 @@ export function StateWidgetView(props: StateWidgetViewProps) {
   const icon = u(layout.sizes.cell);
   return (
     <article
-      className="sw sw-svc sw-svc--list"
+      className={`sw sw-svc sw-svc--list${staleClass}`}
       aria-busy={props.loading ?? false}
+      style={style}
     >
       <WidgetLabel layout={label} />
-      {shown.length ? (
+      {shown.length || more > 0 ? (
         <ol
           ref={rowsRef}
           className="sw-status-rows sw-svc-rows"
@@ -346,7 +482,7 @@ export function StateWidgetView(props: StateWidgetViewProps) {
         empty
       )}
       {notice}
-      {footer && shown.length ? (
+      {footer && (shown.length || more > 0) ? (
         <WidgetFooter size={layout.sizes.footer}>{footer}</WidgetFooter>
       ) : null}
     </article>
@@ -399,6 +535,8 @@ export function useStateData(
             status: "no_data",
             items: [],
             total: 0,
+            counts: serviceStateCounts([]),
+            sourceValues: [],
             error: "data_storage_failed",
             exclusions: input.binding.exclusions,
           });
@@ -426,10 +564,13 @@ export function useStateData(
 export function LiveStateWidget({
   widget,
   env,
+  grow = false,
 }: {
   widget: StateWidget &
     Partial<Pick<ScreenPlacement, "unitBox" | "unitPx" | "format">>;
   env: StudioEnv;
+  /** Scroll view: as tall as its rows. */
+  grow?: boolean;
 }) {
   const locale = useLocale();
   const { data, loading } = useStateData(widget, env);
@@ -438,6 +579,8 @@ export function LiveStateWidget({
       label={stateWidgetLabel(widget.title, locale)}
       items={data?.items ?? []}
       total={data?.total ?? 0}
+      counts={data?.counts ?? serviceStateCounts([])}
+      grow={grow}
       options={widget.options}
       status={data?.status ?? "no_data"}
       placement={widget}

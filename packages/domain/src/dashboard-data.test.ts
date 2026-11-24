@@ -1373,6 +1373,40 @@ describe("stateModelQuery (#875)", () => {
     ).toThrow("dashboard_filter_not_applicable");
   });
 
+  it("reads the distinct state values, or only items of given values (review)", () => {
+    const read = (stateRead: Parameters<typeof stateModelQuery>[7]) => {
+      const built = stateModelQuery(
+        model,
+        [],
+        {},
+        stateBinding,
+        null,
+        {},
+        {},
+        stateRead,
+      );
+      return querySemanticModel(
+        built.model,
+        new Map([["services", services]]),
+        built.query,
+      );
+    };
+    const values = read({ statesOnly: true });
+    expect(values.rows.map((row) => row.dimensions.state).sort()).toEqual([
+      "failed",
+      "up",
+    ]);
+    expect(
+      read({ stateValues: ["failed"] }).rows.map(
+        (row) => row.dimensions.service,
+      ),
+    ).toEqual(["api"]);
+    expect(read({ stateValues: [] }).rows).toEqual([]);
+    const limited = read({ stateValues: ["up"], limit: 1 });
+    expect(limited.rows).toHaveLength(1);
+    expect(limited.totalRows).toBe(2);
+  });
+
   it("refuses a state dimension the model does not have", () => {
     expect(() =>
       stateModelQuery(

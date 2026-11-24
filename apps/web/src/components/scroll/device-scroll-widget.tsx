@@ -38,7 +38,6 @@ import {
   ScrollCompareCard,
   ScrollTextCard,
   SCROLL_ITEMS_PLACEMENT,
-  SCROLL_STATE_PLACEMENT,
   type ScrollCardSize,
 } from "./scroll-widgets";
 
@@ -152,10 +151,12 @@ export function DeviceScrollWidget({
             label={widget.label}
             items={widget.data.items}
             total={widget.data.total}
+            counts={widget.data.counts}
             options={widget.options}
             status={widget.data.status}
             freshness={widget.data.freshness ?? null}
-            placement={SCROLL_STATE_PLACEMENT}
+            placement={{ x: 0, y: 0, w: 6, h: 6 }}
+            grow
             showHeader={false}
             fontScale={env.fontScale}
             audience="viewer"

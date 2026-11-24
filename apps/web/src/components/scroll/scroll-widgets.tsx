@@ -1259,9 +1259,8 @@ function LiveScrollClock({
 /** The box a latest-items card is laid out in (#810): a half-wide slide
  * widget, whatever its placement on the slide. */
 export const SCROLL_ITEMS_PLACEMENT = { x: 0, y: 0, w: 6, h: 4 } as const;
-/** The box a state card is laid out in (#875): half wide, tall enough for
- * a list of the most items. */
-export const SCROLL_STATE_PLACEMENT = { x: 0, y: 0, w: 6, h: 6 } as const;
+// A state card grows with the rows its list shows (#875 review).
+export { scrollStatePlacement } from "@/components/studio/state-widget";
 
 /** A widget's scroll view card with its own data (signed-in pages). */
 export function LiveScrollWidget({
@@ -1289,8 +1288,9 @@ export function LiveScrollWidget({
       return (
         <div className="scroll-items scroll-state">
           <LiveStateWidget
-            widget={{ ...widget, ...SCROLL_STATE_PLACEMENT }}
+            widget={{ ...widget, x: 0, y: 0, w: 6, h: 6 }}
             env={env}
+            grow
           />
         </div>
       );

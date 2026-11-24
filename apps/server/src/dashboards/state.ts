@@ -5,13 +5,20 @@ import type {
   StateWidgetOptions,
 } from "@netrics/contracts";
 import {
+  isKnownServiceStateValue,
   normalizeServiceState,
   querySemanticModel,
+  serviceStateCounts,
+  serviceStateKey,
   sortServiceStateItems,
   stateModelQuery,
   stateModelWithCount,
   DEFAULT_DATA_POLICY,
+  SERVICE_STATE_OVERRIDES_MAX,
   SERVICE_STATE_VALUE_MAX,
+  STATE_QUERY_MAX,
+  type ServiceState,
+  type StateQueryRead,
   type DashboardDataFilter,
   type DashboardFilterValue,
   type DataPolicy,
@@ -79,6 +86,16 @@ export async function validateDashboardState(
     dimension(binding.rolledBackDimensionId).type !== "boolean"
   )
     throw new DataServiceError("state_rolled_back_dimension_invalid");
+  // One field per role: a name that is also the state would group twice
+  // (review).
+  const named = [
+    binding.nameDimensionId,
+    binding.stateDimensionId,
+    binding.changedAtDimensionId,
+    binding.rolledBackDimensionId,
+  ].filter((id): id is string => id !== undefined);
+  if (new Set(named).size !== named.length)
+    throw new DataServiceError("state_dimensions_not_distinct");
   checkFilterMappings(filters, binding.modelId, model.metadata.dimensions);
   // The shape and filter paths against the published schema, without rows.
   const { model: definition, query } = stateModelQuery(
@@ -101,6 +118,63 @@ export async function validateDashboardState(
     query,
   );
   return model;
+}
+
+/**
+ * A state widget's status (review of #875): `stale` when its rows are a
+ * last valid snapshot or a source is overdue (ADR 0025 section 8), so an
+ * old "Up" never reads as current; `no_data` without items.
+ */
+export function stateWidgetStatus(input: {
+  items: number;
+  stale: boolean;
+  overdue: boolean;
+}): "ok" | "no_data" | "stale" {
+  if (input.items === 0) return "no_data";
+  return input.stale || input.overdue ? "stale" : "ok";
+}
+
+/**
+ * How the items are read (review of #875): the distinct state values split
+ * into those that are not up (read first; null is unknown) and those that
+ * are, and the values no built-in word knows, for the Studio's mapping.
+ */
+export function stateReadPlan(
+  values: readonly unknown[],
+  overrides: Readonly<Record<string, ServiceState>>,
+): {
+  urgent: unknown[];
+  urgentNull: boolean;
+  healthy: unknown[];
+  sourceValues: string[];
+} {
+  const urgent: unknown[] = [];
+  const healthy: unknown[] = [];
+  const sourceValues: string[] = [];
+  const keys = new Set<string>();
+  let urgentNull = false;
+  for (const value of values) {
+    if (value === null || value === undefined) {
+      urgentNull = true;
+      continue;
+    }
+    (normalizeServiceState(value, overrides) === "up" ? healthy : urgent).push(
+      value,
+    );
+    if (
+      !isKnownServiceStateValue(value) &&
+      (typeof value === "string" || typeof value === "number") &&
+      sourceValues.length < SERVICE_STATE_OVERRIDES_MAX
+    ) {
+      const text = cut(value, SERVICE_STATE_VALUE_MAX)!;
+      const key = serviceStateKey(text);
+      if (key !== "" && !keys.has(key)) {
+        keys.add(key);
+        sourceValues.push(text);
+      }
+    }
+  }
+  return { urgent, urgentNull, healthy, sourceValues };
 }
 
 /** A value as text of at most `max` characters, cut with "…". */
@@ -218,34 +292,73 @@ export async function queryDashboardState(
         sql`select set_config('statement_timeout', ${String(policy.queryTimeoutMs ?? 0)}, true)`,
       );
       const single = input.options.layout === "single";
-      const { query } = stateModelQuery(
-        release.definition,
-        filters,
-        values,
+      const run = (read: StateQueryRead) =>
+        queryDataModel(
+          savepoint,
+          workspaceId,
+          input.binding.modelId,
+          stateModelQuery(
+            release.definition,
+            filters,
+            values,
+            input.binding,
+            single ? input.options.item : null,
+            deviceScope,
+            slideScope,
+            read,
+          ).query,
+          now,
+          policy,
+          false,
+          undefined,
+          true,
+          (definition) => stateModelWithCount(definition, input.binding),
+        );
+      // Ranked before the read limit (review): the distinct state values
+      // first, then the items in a state that is not up, then the rest, so
+      // no outage falls past STATE_QUERY_MAX behind healthy items.
+      const distinct = await run({ statesOnly: true });
+      const plan = stateReadPlan(
+        distinct.rows.map(
+          (row) => row.dimensions[input.binding.stateDimensionId],
+        ),
+        input.options.states,
+      );
+      const urgent =
+        plan.urgent.length || plan.urgentNull
+          ? await run({
+              stateValues: plan.urgent,
+              includeNull: plan.urgentNull,
+            })
+          : null;
+      const room = STATE_QUERY_MAX - (urgent?.rows.length ?? 0);
+      const healthy = plan.healthy.length
+        ? await run({ stateValues: plan.healthy, limit: Math.max(1, room) })
+        : null;
+      const all = stateItemsOf(
+        [...(urgent?.rows ?? []), ...(room > 0 ? (healthy?.rows ?? []) : [])],
         input.binding,
-        single ? input.options.item : null,
-        deviceScope,
-        slideScope,
+        input.options,
       );
-      const result = await queryDataModel(
-        savepoint,
-        workspaceId,
-        input.binding.modelId,
-        query,
-        now,
-        policy,
-        false,
-        undefined,
-        true,
-        (definition) => stateModelWithCount(definition, input.binding),
+      const counts = serviceStateCounts(all);
+      // Healthy items past the read limit are up all the same.
+      counts.up += Math.max(
+        0,
+        (healthy?.totalRows ?? 0) -
+          (room > 0 ? (healthy?.rows.length ?? 0) : 0),
       );
-      const all = stateItemsOf(result.rows, input.binding, input.options);
       const items = all.slice(0, single ? 1 : input.options.limit);
       return {
         widgetId: input.id,
-        status: items.length ? ("ok" as const) : ("no_data" as const),
+        status: stateWidgetStatus({
+          items: items.length,
+          stale: [distinct, urgent, healthy].some((read) => read?.stale),
+          overdue: fresh.overdue,
+        }),
         items,
-        total: all.length,
+        total: (urgent?.totalRows ?? 0) + (healthy?.totalRows ?? 0),
+        counts,
+        sourceValues: plan.sourceValues,
         error: null,
         exclusions,
         ...(fresh.freshness ? { freshness: fresh.freshness } : {}),
@@ -258,6 +371,8 @@ export async function queryDashboardState(
       status: "no_data",
       items: [],
       total: 0,
+      counts: serviceStateCounts([]),
+      sourceValues: [],
       error: safeDataError(error),
       exclusions,
       ...(fresh.freshness ? { freshness: fresh.freshness } : {}),

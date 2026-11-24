@@ -6,7 +6,7 @@ import {
   deviceDashboardV3ResponseSchema,
 } from "@netrics/contracts";
 
-import { stateItemsOf } from "./dashboards/state.js";
+import { stateItemsOf, stateWidgetStatus } from "./dashboards/state.js";
 import { createItemsFixture, type ItemsFixture } from "./test-items.js";
 
 // The state widget (#875, ADR 0019 section 15): saved like a latest-items
@@ -395,6 +395,133 @@ describe("the state widget (#875)", () => {
         where id = ${modelId}`;
     }
   });
+
+  it("counts every state and lists unknown source values beyond the shown rows (review)", async () => {
+    const dashboard = await saved([stateWidget({ options: { limit: 1 } })]);
+    const [list] = (await data(dashboard.id)).states;
+    expect(names(list!.items)).toEqual(["api"]);
+    expect(list!.counts).toEqual({
+      up: 2,
+      down: 0,
+      failed: 1,
+      building: 1,
+      sleeping: 1,
+      unknown: 1,
+      rolledBack: 1,
+    });
+    // "degraded" (db) is not shown, yet the Studio can map it.
+    expect(list!.sourceValues).toEqual(["degraded"]);
+  });
+
+  it("refuses the same field for the name and the state (review)", async () => {
+    const response = await save([
+      stateWidget({ binding: binding({ nameDimensionId: "state" }) }),
+    ]);
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toBe("state_dimensions_not_distinct");
+  });
+
+  it("ranks by urgency before the read limit: a down item past 500 is first (review)", async () => {
+    const field = (id: string, type: string) => ({
+      id,
+      name: id,
+      type,
+      nullable: id !== "id",
+      classification: "internal",
+    });
+    const fleet = [
+      ...Array.from({ length: 600 }, (_, index) => ({
+        values: {
+          id: `a${index}`,
+          host: `a${String(index).padStart(3, "0")}`,
+          state: "running",
+        },
+      })),
+      { values: { id: "z", host: "zzz", state: "stopped" } },
+    ];
+    const manual = await f.call("POST", "/data/manual", {
+      definition: {
+        key: "fleet",
+        name: "Fleet",
+        version: 1,
+        mode: "snapshot",
+        grain: "one host",
+        keyFields: ["id"],
+        fields: [
+          field("id", "string"),
+          field("host", "string"),
+          field("state", "string"),
+        ],
+      },
+      records: fleet,
+    });
+    expect(manual.statusCode, manual.body).toBe(200);
+    const datasetId = manual.json().datasetId as string;
+    const model = await f.call("POST", "/data/models", {
+      name: "Fleet",
+      definition: {
+        version: 1,
+        datasets: [datasetId],
+        relationships: [],
+        dimensions: ["host", "state"].map((id) => ({
+          id,
+          name: id,
+          datasetId,
+          fieldId: id,
+        })),
+        measures: [
+          {
+            id: "hosts",
+            name: "Hosts",
+            kind: "aggregate",
+            datasetId,
+            aggregate: { id: "hosts", name: "hosts", op: "count" },
+          },
+        ],
+      },
+    });
+    expect(model.statusCode, model.body).toBe(200);
+    const { id, version } = model.json().model;
+    expect(
+      (await f.call("POST", `/data/models/${id}/publish`, { version }))
+        .statusCode,
+    ).toBe(200);
+    const dashboard = await saved([
+      stateWidget({
+        binding: {
+          modelId: id,
+          nameDimensionId: "host",
+          stateDimensionId: "state",
+        },
+        options: { limit: 3 },
+      }),
+    ]);
+    const [list] = (await data(dashboard.id)).states;
+    expect(list!.items.map((item) => `${item.name}:${item.state}`)).toEqual([
+      "zzz:down",
+      "a000:up",
+      "a001:up",
+    ]);
+    expect(list!.total).toBe(601);
+    expect(list!.counts).toMatchObject({ up: 600, down: 1 });
+  });
+});
+
+describe("stateWidgetStatus (review: stale and overdue)", () => {
+  it("warns when the rows are a last valid snapshot or a source is overdue", () => {
+    expect(stateWidgetStatus({ items: 2, stale: false, overdue: false })).toBe(
+      "ok",
+    );
+    expect(stateWidgetStatus({ items: 2, stale: true, overdue: false })).toBe(
+      "stale",
+    );
+    expect(stateWidgetStatus({ items: 2, stale: false, overdue: true })).toBe(
+      "stale",
+    );
+    expect(stateWidgetStatus({ items: 0, stale: true, overdue: true })).toBe(
+      "no_data",
+    );
+  });
 });
 
 describe("stateItemsOf (#875)", () => {
@@ -508,6 +635,16 @@ describe("the state widget on screens (#875)", () => {
       expect((widget.data as { items: object[] }).items[0]).not.toHaveProperty(
         "value",
       );
+      // Every item counted, so "+N more" can show a hidden outage (review).
+      expect((widget.data as { counts: object }).counts).toEqual({
+        up: 2,
+        down: 1,
+        failed: 1,
+        building: 1,
+        sleeping: 1,
+        unknown: 0,
+        rolledBack: 1,
+      });
       if (schema === "3") expect(widget.min).toEqual({ w: 3, h: 2 });
     }
   });
