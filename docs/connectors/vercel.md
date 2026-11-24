@@ -1,8 +1,9 @@
-# Vercel Web Analytics connector
+# Vercel connector
 
-Reads visitors, page views and custom events from
-[Vercel Web Analytics](https://vercel.com/docs/analytics) for one or more
-Vercel projects.
+Reads the deployments and production state of your Vercel projects, their
+visitors, page views and custom events from
+[Vercel Web Analytics](https://vercel.com/docs/analytics) where it is
+enabled, and this month's billing charges of each team.
 
 ## Create a token
 
@@ -24,17 +25,22 @@ see.
 4. Click **Create**, copy the token and paste it into netrics. Vercel shows
    it only once.
 
+Connections made before deployments were added keep working with the token
+they have: the next sync reads deployments too, and the history of the new
+datasets is read once in the background.
+
 ## Change which projects are synced
 
 On the connection's page, **Edit connection → Synced projects** shows what
 is selected: all current and future projects, or the selected ones by name
-(by ID until a project has been named). A selected project is only synced
-while the token can see it and Web Analytics is enabled for it; with "all
-projects", those the token lists (for the Team ID, if one is set) that have
-Web Analytics. **Change project selection** lists
-the projects the token can see (those with Web Analytics enabled) and lets
-you choose all current and future projects, or a selection.
+(by ID until a project has been named). **Change project selection** lists
+every project the token can see and lets you choose all current and future
+projects, or a selection.
 
+- Every project can be selected. A project without Web Analytics is marked
+  "Deployments only": its deployments and production state are synced, its
+  visitor numbers stay empty, and they never show as fresh.
+- A selected project is only synced while the token can see it.
 - A project you remove is no longer synced and is no longer offered in
   pickers. The data it already collected is kept.
 - A project you add gets its history with the next import, which reads the
@@ -45,19 +51,62 @@ you choose all current and future projects, or a selection.
   project before this was required keeps collecting nothing new; its page
   says so, its widgets show the last values with the time they were last
   checked, and choosing a project (or all projects) makes it sync again.
-- When none of the selected projects can be synced (Web Analytics was
-  turned off for them), the list says so. Enable Web Analytics for a
-  project in Vercel, or choose another project. Deleting the connection
-  is the third way out, and also deletes the data it collected.
+- When a selected project is no longer listed (deleted, or the token lost
+  access), the list says so. Restore the token's access, or remove it from
+  the selection. Deleting the connection is the third way out, and also
+  deletes the data it collected.
 
 A Vercel token grants the same access you have within its scope. netrics
-only reads the project list and Web Analytics with it. The token is stored
-encrypted (AES-GCM, bound to the connection) and is never shown or logged.
+only reads projects, deployments, Web Analytics and billing charges with it
+and changes nothing. The token is stored encrypted (AES-GCM, bound to the
+connection) and is never shown or logged.
 
 Vercel's OAuth integrations cannot read Web Analytics (there is no analytics
 scope), so this connector uses tokens.
 
 ## What is collected
+
+### Deployments
+
+| Data                             | Meaning                                                                                                                                                     |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Dataset `deployments`            | One row per deployment: state, target, created, build started, ready, build duration, branch, URL                                                           |
+| Dataset `production_deployments` | Per project as of the last sync: the newest production deployment, the one serving traffic, and `state` (`up`, `building`, `failed`, `down`), `rolled_back` |
+| Metric Deployments               | Deployments per day (UTC), project and environment (`production`, `preview`, or a custom environment), by creation time                                     |
+| Metric Failed deployments        | The same, counting state `ERROR` only                                                                                                                       |
+
+- `state` is Vercel's `readyState`: `QUEUED`, `INITIALIZING`, `BUILDING`,
+  `READY`, `ERROR`, `CANCELED`, `BLOCKED` or `DELETED`. A state Vercel adds
+  later is kept as it comes. `failed` is true for `ERROR` only.
+- `target` is the slug of the deployment's custom environment, else
+  Vercel's target; a deployment without either is a `preview`.
+- `build_duration_seconds` is from build start to ready; empty while
+  building and for deployments that did not finish.
+- The production `state`: `building` while the newest production build
+  is queued or building; else `up` while the project's production target
+  points at a deployment (the one serving production traffic, also after an
+  instant rollback, however old), even when a newer build failed; else
+  `failed` when the newest build failed; else `down`. The `live_*` fields
+  are that target's deployment, the `latest_*` fields the newest build.
+- `rolled_back` is true when production points at an older build than the
+  newest promoted `READY` production build (read from the newest 20 READY
+  ones); `state` stays `up`, so a status widget can show "up · rolled
+  back".
+- The first sync reads deployments up to 90 days back. Every sync then
+  reads each project's deployments of the last two days again: a
+  deployment that finished building shows its new state, and one the
+  previous sync read in those days that Vercel no longer lists was deleted
+  and is removed. Older rows keep the state they had when last read. A sync
+  stores the dataset once, whatever the number of projects.
+- A page of deployments that ends at an instant shared with the next one
+  is continued from that instant, and the deployments already read there
+  are skipped: none is lost or counted twice.
+- Each day of a read window gets a count for `production`, `preview` and
+  every environment the previous sync saw in the re-read days, zero
+  included, so a re-read day whose deployments were deleted drops to
+  zero.
+
+### Web Analytics (projects with Web Analytics enabled)
 
 Every value is a daily count per project, dated by Vercel's reporting day
 (UTC).
@@ -76,12 +125,47 @@ Every value is a daily count per project, dated by Vercel's reporting day
   out keeps the daily values it already has, so summing all routes for the
   current month can slightly overcount.
 
+### Charges this month
+
+Dataset `billing_charges`: per team, project and product, the charges of
+the current calendar month (UTC) so far, from Vercel's FOCUS billing
+export. `billed_cost` is what Vercel invoices, `effective_cost` includes
+discounts and commitments; both in the billing currency (USD). Charges of no
+single project (seats, the plan) have an empty project ID. With a project
+selection, charges of other projects are left out; team-wide charges stay.
+
+- Only teams are billed through this export: a personal account's projects
+  have no charges here.
+- Charges are read one day at a time and summed, so the answer for a
+  team stays small however much it is charged. A charge belongs to the day
+  it starts on.
+- Vercel lets the Owner, Member, Developer, Security, Billing and
+  Enterprise Viewer roles read it. A token whose role may not, or a plan
+  without the export (Vercel answers 400, 402, 403 or 404), leaves the
+  charges as last stored, and the connection's other data syncs as usual.
+  A rate limit or an outage while reading charges is retried like any
+  other request. A day whose export is larger than netrics accepts for one
+  answer (10 MiB) leaves the charges as last stored too; the other data
+  publishes.
+- Metric **Cost** (`vercel.cost`): the effective cost per day (UTC), net of
+  discounts, in minor units (cents) with its currency, per project; charges
+  of no single project under the team's ID as `resource`, and every value
+  with its `team`. Summed over a calendar month it is the month's spend.
+  The billed cost stays in the dataset.
+
 ## History and refresh
 
-- The first sync reads up to 366 days back. Plans that keep less (Hobby) are
-  read as far back as Vercel allows.
-- Afterwards the connection syncs every 15 minutes and re-reads yesterday
-  and today, which Vercel is still counting.
+- The first sync reads Web Analytics up to 366 days back (plans that keep
+  less, like Hobby, as far back as Vercel allows) and deployments up to 90
+  days back. Vercel's plan window moves with the current UTC day: a sync
+  that goes on after midnight starts its analytics queries a day later,
+  while the last day it reads stays the one it started on.
+- Afterwards the connection syncs every 15 minutes and re-reads the last
+  two days, which Vercel is still counting and where deployments still
+  change state.
+- A sync runs in short steps of one request each and records its position
+  after every step: a failed request is retried alone, and a large history
+  is read over several steps.
 - Vercel allows a limited number of API calls per window and reports with
   every answer how many are left and when the window resets. netrics stops
   a few requests before the limit: a reset within 30 seconds is waited
@@ -92,11 +176,21 @@ Every value is a daily count per project, dated by Vercel's reporting day
 
 ## When numbers arrive
 
-Vercel counts visitors and page views live, so there is no day to wait
-for. Widgets show when netrics last checked and when it checks next
+Vercel counts live, so there is no day to wait for. Widgets show when
+netrics last checked and when it checks next
 ([ADR 0025](../decisions/0025-data-freshness.md)): every completed sync,
 about every 15 minutes, counts as a check. Today's numbers keep growing
 until the day ends.
+
+- Visitors and page views are checked per project. A project without Web
+  Analytics is never reported as checked: its widgets show no data rather
+  than a fresh zero.
+- Deployments are checked per project and for the connection. With very
+  many projects (over the 2,000 entries a sync may report) only the
+  connection entry is kept for deployments, so Web Analytics keeps its
+  per-project entries.
+- Charges are checked for the connection when every team's charges were
+  read.
 
 ## When something goes wrong
 
@@ -104,13 +198,37 @@ until the day ends.
 | ------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
 | "Vercel rejected the access token"                     | The token expired or was revoked. Create a new one and paste it into **Edit connection**. |
 | "The token cannot see any projects"                    | Give the token the project's or team's scope.                                             |
-| "Web Analytics is not enabled for …"                   | Enable Web Analytics in the project's **Analytics** tab in Vercel.                        |
 | "The token no longer has access to … projects"         | Use a token that covers them, or remove them under **Synced projects**.                   |
 | "Vercel limit reached, continuing at …"                | Nothing: syncing continues after Vercel's reset.                                          |
 | "Vercel's API rate limit is used up" / "not answering" | Nothing: netrics retries automatically.                                                   |
+| "Vercel answered … in an unexpected shape"             | Vercel changed its API. Report it; the sync retries.                                      |
 
-After a new token is saved, syncing restarts right away.
+Error messages never quote Vercel's own error text. After a new token is
+saved, syncing restarts right away.
 
 ## Network access
 
 The connector only talks to `api.vercel.com`.
+
+## Vercel's API (checked 2026-11-23)
+
+| What          | Endpoint                                                                                                | Facts the connector relies on                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------- | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Projects      | [`GET /v10/projects`](https://vercel.com/docs/rest-api/projects/retrieve-a-list-of-projects)            | `limit`, `from` continuation; `pagination.next` null on the last page; `webAnalytics.enabledAt` set when enabled; `teamId` scopes to a team.                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Project       | [`GET /v9/projects/{idOrName}`](https://vercel.com/docs/rest-api/projects/find-a-project-by-id-or-name) | `targets` maps a target name to the deployment it points at ([OpenAPI](https://vercel.com/openapi.json): `id`, `readyState`, `readySubstate`, `createdAt`, `readyAt`, `url`); `targets.production` is the deployment serving production.                                                                                                                                                                                                                                                                                                                                                      |
+| Deployments   | [`GET /v7/deployments`](https://vercel.com/docs/rest-api/deployments/list-deployments)                  | Filters `projectId`, `target`, `state`, `since`/`until` (creation time, ms), `limit`, `teamId`; newest first; `pagination.next` is the timestamp to pass as `until` for the next page, null on the last. `readyState` enum: `BLOCKED BUILDING CANCELED DELETED ERROR INITIALIZING QUEUED READY`; `target`: `production`, `staging` or null; `created`, `buildingAt`, `ready` in ms; `readySubstate` `STAGED`/`ROLLING`/`PROMOTED`; `customEnvironment.slug` names a custom environment. `pagination` with `next` (null on the last page) is required: a list without it is an invalid answer. |
+| Web Analytics | `GET /v1/query/web-analytics/{visits,events}/aggregate`                                                 | As read since milestone 05 (recorded fixtures): `since`/`until` days, `by`, `limit`; the plan's window is reported as a 400 naming its days.                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Billing       | [`GET /v1/billing/charges`](https://vercel.com/docs/rest-api/billing/list-focus-billing-charges)        | FOCUS 1.3 as newline-delimited JSON for one team; `from` inclusive, `to` exclusive (ISO, UTC); one-day granularity, at most a year; roles Owner, Member, Developer, Security, Billing, Enterprise Viewer. `Tags` carry the project ID and name (read as `ProjectId`/`ProjectName`).                                                                                                                                                                                                                                                                                                           |
+| Rate limits   | [Limits](https://vercel.com/docs/limits#rate-limits)                                                    | "Deployments list per minute": 1000 per 60 s per user. Every answer reports `x-ratelimit-remaining` and `x-ratelimit-reset`; 429 when used up. The connector declares 400 requests a minute to the host.                                                                                                                                                                                                                                                                                                                                                                                      |
+
+Open points: the billing export's tag names are documented only as
+"ProjectId and ProjectName information"; the connector reads `ProjectId`
+and `ProjectName` (or their lowercase forms) and treats a charge without
+them as team-wide. Vercel does not document whether `until` is inclusive;
+the connector skips a deployment at the `until` it asked with, so a page
+boundary never counts one twice (if it is exclusive, a second deployment
+created in the very millisecond a page ends at could be missed until the
+next re-read). Deletions are found by comparing with the deployments the
+previous sync read in the re-read days, which its final cursor carries: a
+backfill that starts without it, or a project with more than 2,000
+deployments in two days, removes nothing.

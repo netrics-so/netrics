@@ -200,19 +200,19 @@ test("a Vercel connection names its projects and changes which are synced", asyn
     panel.getByRole("radio", { name: t.projects.choose }),
   ).toBeFocused();
 
-  // The projects by name; one without Web Analytics is not offered.
+  // The projects by name. One without Web Analytics is offered too, for
+  // its deployments (#871), and says so.
   const alpha = panel.getByRole("checkbox", { name: /alpha-site/ });
   const beta = panel.getByRole("checkbox", { name: /beta-site/ });
+  const gamma = panel.getByRole("checkbox", { name: /gamma-docs/ });
   await expect(alpha).toBeChecked();
   await expect(beta).toBeChecked();
-  await expect(panel.getByText("gamma-docs")).toHaveCount(0);
+  await expect(gamma).not.toBeChecked();
+  await expect(gamma).toBeEnabled();
   await expect(
-    panel.getByText(
-      locale === "de"
-        ? /1 Projekt wird nicht aufgelistet/
-        : /1 project is not listed/,
-    ),
-  ).toBeVisible();
+    panel.locator("label").filter({ hasText: "gamma-docs" }),
+  ).toContainText(t.projects.withoutAnalytics);
+  await expect(panel.getByText(t.projects.withoutAnalytics)).toHaveCount(1);
   const save = panel.getByRole("button", { name: t.projects.save });
   await expect(save).toBeDisabled();
 
@@ -247,20 +247,22 @@ test("a Vercel connection names its projects and changes which are synced", asyn
   await page.goto(`/workspaces/${workspaceId}/connections/${connectionId}`);
   await panel.getByRole("button", { name: t.projects.check }).click();
   await beta.uncheck();
+  // The project without Web Analytics is chosen for its deployments.
+  await gamma.check();
   await save.focus();
   await page.keyboard.press("Enter");
   await expect(panel.getByText(t.projects.saved)).toBeVisible();
-  expect(saved).toEqual([{ resources: ["prj_alpha"] }]);
+  expect(saved).toEqual([{ resources: ["prj_alpha", "prj_gamma"] }]);
   // The picker closed: the focus is back on the button that opens it.
   await expect(change).toBeFocused();
   await focusIsSomewhere(page);
   // The page shows the new selection without another click.
   await expect(
     panel.getByText(
-      locale === "de" ? "Ausgewähltes Projekt (1):" : "Selected project (1):",
+      locale === "de" ? "Ausgewählte Projekte (2):" : "Selected projects (2):",
     ),
   ).toBeVisible();
-  await expect(synced).toHaveText(["alpha-site"]);
+  await expect(synced).toHaveText(["alpha-site", /prj_gamma|gamma-docs/]);
   // The removed project's values are still there.
   await expect(rows.filter({ hasText: "17" })).toBeVisible();
 });

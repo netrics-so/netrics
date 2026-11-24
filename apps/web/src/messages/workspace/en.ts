@@ -257,7 +257,7 @@ export const workspaceEn = {
       title: "Projects to sync",
       all: "All current and future projects",
       allHelp:
-        "New projects the token lists (for the Team ID in the settings, if one is set) are included automatically once Web Analytics is enabled for them. Projects without Web Analytics are skipped.",
+        "New projects the token lists (for the Team ID in the settings, if one is set) are included automatically. Projects without Web Analytics are synced for their deployments only.",
       choose: "Choose projects",
       search: "Search projects by name or ID",
       selectResults: "Select results ({count})",
@@ -266,19 +266,19 @@ export const workspaceEn = {
         "{count, plural, one {# project selected} other {# projects selected}}",
       unlisted: "Not currently listed",
       unlistedHelp:
-        "The token does not list these selected projects, or Web Analytics is not enabled for them. Remove them from the selection, or restore access in Vercel. Their collected data is kept.",
-      empty: "No projects with Web Analytics found. Check the token’s scope.",
+        "The token does not list these selected projects. Remove them from the selection, or restore access in Vercel. Their collected data is kept.",
+      empty: "No projects found. Check the token’s scope.",
       noResults: "No matching projects.",
       noneHelp:
         "Select at least one project, or choose all projects: an empty selection cannot be saved.",
       syncedAll:
-        "Selection: all current and future projects. Synced are the projects the token lists (for the Team ID in the settings, if one is set) that have Web Analytics enabled; projects without it are skipped.",
+        "Selection: all current and future projects. Synced are the projects the token lists (for the Team ID in the settings, if one is set); projects without Web Analytics are synced for their deployments only.",
       syncedList:
         "{count, plural, one {Selected project (#):} other {Selected projects (#):}}",
       syncedHelp:
-        "A selected project is only synced while the token can see it and Web Analytics is enabled for it. “{action}” loads the current list and marks selected projects that are not listed.",
+        "A selected project is only synced while the token can see it; its Web Analytics only while they are enabled. “{action}” loads the current list and marks selected projects that are not listed.",
       syncedHelpViewer:
-        "A selected project is only synced while the token can see it and Web Analytics is enabled for it.",
+        "A selected project is only synced while the token can see it; its Web Analytics only while they are enabled.",
       syncedMore: "and {count} more",
       syncedShowAll: "Show all {count}",
       syncedShowMore: "Show {count} more",
@@ -293,15 +293,14 @@ export const workspaceEn = {
       previous: "Previous",
       next: "Next",
       page: "Page {page} of {pages}",
-      withoutAnalytics:
-        "{count, plural, one {# project is} other {# projects are}} not listed because Web Analytics is not enabled for {count, plural, one {it} other {them}} in Vercel.",
+      withoutAnalytics: "Deployments only: Web Analytics is not enabled",
       check: "Change project selection",
       checking: "Loading projects…",
       accessFailed: "The project list could not be loaded.",
       refusedHelp:
-        "If no project can be synced: enable Web Analytics for a project in Vercel and load the list again, or choose another project; the data already collected is kept either way. Deleting this connection instead also deletes the data it collected. You can still remove projects from the selection below; at least one has to stay selected.",
+        "If a selected project can no longer be synced: restore the token’s access to it in Vercel and load the list again, or choose another project; the data already collected is kept either way. Deleting this connection instead also deletes the data it collected. You can still remove projects from the selection below; at least one has to stay selected.",
       refusedHelpNoDelete:
-        "If no project can be synced: enable Web Analytics for a project in Vercel and load the list again, or choose another project; the data already collected is kept either way. If the connection should be deleted instead, ask an owner or admin: deleting it also deletes the data it collected. You can still remove projects from the selection below; at least one has to stay selected.",
+        "If a selected project can no longer be synced: restore the token’s access to it in Vercel and load the list again, or choose another project; the data already collected is kept either way. If the connection should be deleted instead, ask an owner or admin: deleting it also deletes the data it collected. You can still remove projects from the selection below; at least one has to stay selected.",
       save: "Save project selection",
       cancel: "Cancel",
       saved:

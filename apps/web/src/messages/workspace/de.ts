@@ -269,7 +269,7 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
       title: "Projekte für die Synchronisierung",
       all: "Alle aktuellen und zukünftigen Projekte",
       allHelp:
-        "Neue Projekte, die das Token auflistet (für die Team-ID in den Einstellungen, falls gesetzt), werden automatisch einbezogen, sobald Web Analytics für sie aktiviert ist. Projekte ohne Web Analytics werden übersprungen.",
+        "Neue Projekte, die das Token auflistet (für die Team-ID in den Einstellungen, falls gesetzt), werden automatisch einbezogen. Von Projekten ohne Web Analytics werden nur die Deployments synchronisiert.",
       choose: "Projekte auswählen",
       search: "Projekte nach Name oder ID suchen",
       selectResults: "Suchergebnisse auswählen ({count})",
@@ -278,20 +278,19 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
         "{count, plural, one {# Projekt ausgewählt} other {# Projekte ausgewählt}}",
       unlisted: "Derzeit nicht aufgelistet",
       unlistedHelp:
-        "Das Token listet diese ausgewählten Projekte nicht auf, oder Web Analytics ist für sie nicht aktiviert. Entferne sie aus der Auswahl oder stelle den Zugriff in Vercel wieder her. Bereits importierte Daten bleiben erhalten.",
-      empty:
-        "Keine Projekte mit Web Analytics gefunden. Prüfe den Scope des Tokens.",
+        "Das Token listet diese ausgewählten Projekte nicht auf. Entferne sie aus der Auswahl oder stelle den Zugriff in Vercel wieder her. Bereits importierte Daten bleiben erhalten.",
+      empty: "Keine Projekte gefunden. Prüfe den Scope des Tokens.",
       noResults: "Keine passenden Projekte.",
       noneHelp:
         "Wähle mindestens ein Projekt aus oder alle Projekte: Eine leere Auswahl kann nicht gespeichert werden.",
       syncedAll:
-        "Auswahl: alle aktuellen und zukünftigen Projekte. Synchronisiert werden die Projekte, die das Token auflistet (für die Team-ID in den Einstellungen, falls gesetzt) und für die Web Analytics aktiviert ist; Projekte ohne Web Analytics werden übersprungen.",
+        "Auswahl: alle aktuellen und zukünftigen Projekte. Synchronisiert werden die Projekte, die das Token auflistet (für die Team-ID in den Einstellungen, falls gesetzt); von Projekten ohne Web Analytics nur die Deployments.",
       syncedList:
         "{count, plural, one {Ausgewähltes Projekt (#):} other {Ausgewählte Projekte (#):}}",
       syncedHelp:
-        "Ein ausgewähltes Projekt wird nur synchronisiert, solange das Token es sehen kann und Web Analytics dafür aktiviert ist. „{action}“ lädt die aktuelle Liste und kennzeichnet ausgewählte Projekte, die nicht aufgelistet sind.",
+        "Ein ausgewähltes Projekt wird nur synchronisiert, solange das Token es sehen kann; seine Web Analytics nur, solange sie aktiviert sind. „{action}“ lädt die aktuelle Liste und kennzeichnet ausgewählte Projekte, die nicht aufgelistet sind.",
       syncedHelpViewer:
-        "Ein ausgewähltes Projekt wird nur synchronisiert, solange das Token es sehen kann und Web Analytics dafür aktiviert ist.",
+        "Ein ausgewähltes Projekt wird nur synchronisiert, solange das Token es sehen kann; seine Web Analytics nur, solange sie aktiviert sind.",
       syncedMore: "und {count} weitere",
       syncedShowAll: "Alle {count} anzeigen",
       syncedShowMore: "{count} weitere anzeigen",
@@ -306,15 +305,14 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
       previous: "Zurück",
       next: "Weiter",
       page: "Seite {page} von {pages}",
-      withoutAnalytics:
-        "{count, plural, one {# Projekt wird} other {# Projekte werden}} nicht aufgelistet, weil Web Analytics dafür in Vercel nicht aktiviert ist.",
+      withoutAnalytics: "Nur Deployments: Web Analytics ist nicht aktiviert",
       check: "Projektauswahl ändern",
       checking: "Projekte werden geladen…",
       accessFailed: "Die Projektliste konnte nicht geladen werden.",
       refusedHelp:
-        "Wenn sich kein Projekt synchronisieren lässt: Aktiviere Web Analytics für ein Projekt in Vercel und lade die Liste neu, oder wähle ein anderes Projekt; bereits importierte Daten bleiben in beiden Fällen erhalten. Wenn du stattdessen diese Verbindung löschst, werden auch ihre importierten Daten gelöscht. Du kannst unten weiterhin Projekte aus der Auswahl entfernen; mindestens eines muss ausgewählt bleiben.",
+        "Wenn sich ein ausgewähltes Projekt nicht mehr synchronisieren lässt: Stelle den Zugriff des Tokens darauf in Vercel wieder her und lade die Liste neu, oder wähle ein anderes Projekt; bereits importierte Daten bleiben in beiden Fällen erhalten. Wenn du stattdessen diese Verbindung löschst, werden auch ihre importierten Daten gelöscht. Du kannst unten weiterhin Projekte aus der Auswahl entfernen; mindestens eines muss ausgewählt bleiben.",
       refusedHelpNoDelete:
-        "Wenn sich kein Projekt synchronisieren lässt: Aktiviere Web Analytics für ein Projekt in Vercel und lade die Liste neu, oder wähle ein anderes Projekt; bereits importierte Daten bleiben in beiden Fällen erhalten. Soll die Verbindung stattdessen gelöscht werden, bitte einen Inhaber oder Admin darum: Dabei werden auch ihre importierten Daten gelöscht. Du kannst unten weiterhin Projekte aus der Auswahl entfernen; mindestens eines muss ausgewählt bleiben.",
+        "Wenn sich ein ausgewähltes Projekt nicht mehr synchronisieren lässt: Stelle den Zugriff des Tokens darauf in Vercel wieder her und lade die Liste neu, oder wähle ein anderes Projekt; bereits importierte Daten bleiben in beiden Fällen erhalten. Soll die Verbindung stattdessen gelöscht werden, bitte einen Inhaber oder Admin darum: Dabei werden auch ihre importierten Daten gelöscht. Du kannst unten weiterhin Projekte aus der Auswahl entfernen; mindestens eines muss ausgewählt bleiben.",
       save: "Projektauswahl speichern",
       cancel: "Abbrechen",
       saved:

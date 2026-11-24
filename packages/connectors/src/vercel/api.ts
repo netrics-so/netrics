@@ -2,6 +2,7 @@ import {
   RateLimitedError,
   type ConnectorRuntime,
 } from "@netrics/connector-sdk";
+import type { z } from "zod";
 
 import { abortableSleep } from "../sleep.js";
 
@@ -26,36 +27,43 @@ const BASE_BACKOFF_MS = 500;
 export const MIN_REMAINING_REQUESTS = 5;
 
 /**
- * A non-2xx answer from the Vercel API. Only Vercel's own error code and
- * message are kept; the request never carries the token in its URL, so the
- * message cannot leak it.
+ * A non-2xx answer from the Vercel API. The message is fixed per status
+ * (#871): Vercel's own error text never reaches logs, run errors or
+ * screens. Its code and message are kept on the error for the connector's
+ * own decisions only (the plan window of an analytics query).
  */
-function describe(
-  status: number,
-  body: { code?: string; message?: string },
-): string {
+function describe(status: number): string {
   if (status === 429) {
     return "Vercel's API rate limit is used up for now (429). netrics tries again later.";
   }
   if (status >= 500) {
     return `Vercel is not answering right now (${status}). netrics tries again later.`;
   }
-  return `Vercel API answered ${status}${body.code ? ` ${body.code}` : ""}: ${body.message ?? "no message"}`;
+  if (status === 401 || status === 403) {
+    return `Vercel refused the request (${status}): the token has no access to it.`;
+  }
+  if (status === 404) {
+    return "Vercel answered 404: the project or team was not found.";
+  }
+  return `Vercel refused the request (${status}).`;
 }
 
 export class VercelApiError extends Error {
   readonly status: number;
   readonly code: string | undefined;
+  /** Vercel's own message: for decisions only, never shown or logged. */
+  readonly providerMessage: string | undefined;
   readonly invalidToken: boolean;
 
   constructor(
     status: number,
     body: { code?: string; message?: string; invalidToken?: boolean },
   ) {
-    super(describe(status, body));
+    super(describe(status));
     this.name = "VercelApiError";
     this.status = status;
     this.code = body.code;
+    this.providerMessage = body.message;
     this.invalidToken = body.invalidToken === true;
   }
 
@@ -63,6 +71,29 @@ export class VercelApiError extends Error {
   get isAuth(): boolean {
     return this.status === 401 || (this.status === 403 && this.invalidToken);
   }
+}
+
+/**
+ * An answer of an unexpected shape (a changed schema, a pagination cursor
+ * that does not move on). Its message is fixed: what Vercel sent is never
+ * quoted.
+ */
+export class VercelInvalidResponseError extends Error {
+  constructor(what: string) {
+    super(`Vercel answered ${what} in an unexpected shape.`);
+    this.name = "VercelInvalidResponseError";
+  }
+}
+
+/** Parses an answer; a mismatch is a VercelInvalidResponseError. */
+export function parseAnswer<T>(
+  schema: z.ZodType<T>,
+  value: unknown,
+  what: string,
+): T {
+  const parsed = schema.safeParse(value);
+  if (!parsed.success) throw new VercelInvalidResponseError(what);
+  return parsed.data;
 }
 
 export type Query = Record<string, string | string[] | undefined>;
@@ -160,7 +191,15 @@ export function createVercelClient(
     if (wait > 0) await sleep(wait, runtime.signal);
   }
 
-  return async function get(path: string, query: Query = {}): Promise<unknown> {
+  /**
+   * A GET: the parsed JSON, or the body as text with `format: "text"` (the
+   * billing export is newline-delimited JSON).
+   */
+  return async function get(
+    path: string,
+    query: Query = {},
+    format: "json" | "text" = "json",
+  ): Promise<unknown> {
     const url = buildUrl(path, query);
     for (let attempt = 1; ; attempt += 1) {
       await pace();
@@ -183,7 +222,12 @@ export function createVercelClient(
         window = { remaining, resetAt };
       }
       if (response.status >= 200 && response.status < 300) {
-        return response.json();
+        if (format === "text") return response.text();
+        try {
+          return response.json();
+        } catch {
+          throw new VercelInvalidResponseError("a request");
+        }
       }
       let body: ReturnType<typeof errorBody> = {};
       try {

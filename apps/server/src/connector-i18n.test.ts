@@ -263,7 +263,7 @@ describe("the API in the caller's language", () => {
     // Field titles, descriptions and setup steps of the wizard.
     const vercel = connectors.find((entry) => entry.id === "vercel")!;
     const de = vercelManifest.translations!.de!;
-    expect(vercel.name).toBe("Vercel Web Analytics");
+    expect(vercel.name).toBe("Vercel");
     expect(
       (vercel.configSchema.properties as Record<string, { title: string }>)
         .teamId!.title,

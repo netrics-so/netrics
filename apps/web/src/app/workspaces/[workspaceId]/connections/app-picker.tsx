@@ -11,7 +11,8 @@ const PAGE_SIZE = 50;
  * null follows all current and future apps; an empty list collects none.
  * `texts` names the resources: apps, or the projects of a website
  * connection (#782). `noneHelpId` is the id of the note shown for an empty
- * list, for a form that refers to it (#854).
+ * list, for a form that refers to it (#854). `describe` adds a note to a
+ * listed resource's line (a project without Web Analytics, #871).
  */
 export function AppPicker({
   resources,
@@ -20,6 +21,7 @@ export function AppPicker({
   disabled = false,
   texts = "connections.apps",
   noneHelpId,
+  describe,
 }: {
   resources: DiscoveredResource[];
   value: string[] | null;
@@ -27,6 +29,7 @@ export function AppPicker({
   disabled?: boolean;
   texts?: "connections.apps" | "connections.projects";
   noneHelpId?: string;
+  describe?: (resource: DiscoveredResource) => string | null;
 }) {
   const t = useT(texts);
   const id = useId();
@@ -161,15 +164,16 @@ export function AppPicker({
                 />
                 <span>
                   {resource.name}
-                  {resource.name !== resource.id ||
-                  missing.includes(resource.id) ? (
-                    <small className="help">
-                      {resource.name !== resource.id ? resource.id : null}
-                      {missing.includes(resource.id)
-                        ? `${resource.name !== resource.id ? " · " : ""}${t("unlisted")}`
-                        : ""}
-                    </small>
-                  ) : null}
+                  {(() => {
+                    const help = [
+                      resource.name !== resource.id ? resource.id : null,
+                      missing.includes(resource.id) ? t("unlisted") : null,
+                      describe?.(resource) ?? null,
+                    ].filter((part) => part !== null);
+                    return help.length > 0 ? (
+                      <small className="help">{help.join(" · ")}</small>
+                    ) : null;
+                  })()}
                 </span>
               </label>
             ))}
