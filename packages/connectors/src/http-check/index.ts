@@ -40,13 +40,21 @@ export {
   TEXT_INVALID_MESSAGE,
   URL_INVALID_CODE,
   URL_INVALID_MESSAGE,
+  URL_SECRET_CODE,
+  URL_SECRET_MESSAGE,
   checkId,
   readChecks,
   type HttpCheck,
 } from "./checks.js";
 export { checksDataset } from "./datasets.js";
 export { DOWN_REASONS, USER_AGENT, type DownReason } from "./probe.js";
-export { CHECKS_STREAM, CONCURRENCY, METRICS, RUN_MAX_AGE_MS } from "./sync.js";
+export {
+  CHECKS_STREAM,
+  CONCURRENCY,
+  METRICS,
+  MIN_ROUND_GAP_MS,
+  RUN_MAX_AGE_MS,
+} from "./sync.js";
 
 export const HTTP_CHECK_CONNECTOR_ID = "http-check";
 

@@ -126,6 +126,8 @@ export const sharedDe: Catalog<SharedMessages> = {
       noChecks: "Leg mindestens einen Check an, höchstens 20.",
       urlInvalid:
         "Jeder Check braucht eine https-URL, deren Host ein vollständiger Domainname oder eine IP-Adresse ist, ohne Benutzername oder Passwort, mit höchstens 2.048 Zeichen.",
+      urlSecret:
+        "Eine Check-URL darf kein Geheimnis in ihrer Query tragen (einen Key-, Token-, Signatur-, Passwort- oder ähnlichen Parameter, wie in einer signierten URL): Die Konfiguration wird nicht verschlüsselt und alle im Workspace sehen sie. Checks, die Zugangsdaten brauchen, werden noch nicht unterstützt.",
       nameDuplicate:
         "Jeder Check braucht einen Namen, und zwar einen eigenen: Zwei Checks einer Verbindung können nicht gleich heißen.",
       statusInvalid:

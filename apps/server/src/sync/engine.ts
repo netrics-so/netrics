@@ -369,9 +369,10 @@ async function ingestObservations(
  */
 async function runSync(
   ctx: JobHandlerContext,
-  mode: SyncMode,
+  requestedMode: SyncMode,
   deps: SyncEngineDeps,
 ): Promise<void> {
+  let mode = requestedMode;
   const { job, appDb, logger } = ctx;
   const workspaceId = job.workspaceId;
   const connectionId = job.connectionId;
@@ -471,6 +472,14 @@ async function runSync(
     row: { connectorId: connection.connectorId },
     customApi: connectionCustomApi(customApiEnvironmentId, pin),
   });
+  // A connector without backfills (HTTP checks, #874) only reads what is
+  // there now: the backfill job a new connection (or a finished setup)
+  // queues for every connector runs as its first incremental sync instead
+  // of failing the contract. Operator backfills refuse such connectors
+  // before they queue anything.
+  if (mode === "backfill" && resolved && !resolved.manifest.supportsBackfill) {
+    mode = "incremental";
+  }
   const state = loaded.state;
   // The provider's limit is used up (#781): no job of the connection asks
   // it before the reset. This one waits too, without a run or a retry.

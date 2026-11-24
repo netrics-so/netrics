@@ -202,6 +202,8 @@ export const sharedEn = {
       noChecks: "Add at least one check, and at most 20.",
       urlInvalid:
         "Every check needs an https URL whose host is a full domain name or an IP address, without a user name or password, of at most 2,048 characters.",
+      urlSecret:
+        "A check URL cannot carry a secret in its query (a key, token, signature, password or similar parameter, as in a signed URL): the configuration is not encrypted and everyone in the workspace sees it. Checks that need a credential are not supported yet.",
       nameDuplicate:
         "Every check needs a name, and a name of its own: two checks in a connection cannot share one.",
       statusInvalid:

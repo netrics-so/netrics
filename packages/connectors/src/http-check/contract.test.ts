@@ -36,12 +36,14 @@ import {
   MAX_BODY_BYTES,
   MAX_CHECKS,
   METRICS,
+  MIN_ROUND_GAP_MS,
   NAME_DUPLICATE_CODE,
   NO_CHECKS_CODE,
   RUN_MAX_AGE_MS,
   STATUS_INVALID_CODE,
   TEXT_INVALID_CODE,
   URL_INVALID_CODE,
+  URL_SECRET_CODE,
   USER_AGENT,
   checksDataset,
   createHttpCheckConnector,
@@ -344,6 +346,37 @@ describe("configuration", () => {
 
   it.each([
     [{ checks: [] }, NO_CHECKS_CODE],
+    [
+      {
+        checks: [
+          { name: "a", url: "https://a.example.com/health?api_key=k123" },
+        ],
+      },
+      URL_SECRET_CODE,
+    ],
+    [
+      {
+        checks: [
+          {
+            name: "a",
+            url: "https://bucket.example.com/f?X-Amz-Signature=abc&X-Amz-Credential=x",
+          },
+        ],
+      },
+      URL_SECRET_CODE,
+    ],
+    [
+      { checks: [{ name: "a", url: "https://a.example.com/?token=t" }] },
+      URL_SECRET_CODE,
+    ],
+    [
+      { checks: [{ name: "a", url: "https://a.example.com/?sig=s&v=1" }] },
+      URL_SECRET_CODE,
+    ],
+    [
+      { checks: [{ name: "a", url: "https://a.example.com/?Password=p" }] },
+      URL_SECRET_CODE,
+    ],
     [{}, NO_CHECKS_CODE],
     [
       {
@@ -685,6 +718,52 @@ describe("a run", () => {
       f.runtime,
     );
     expect(finished.done).toBe(true);
+  });
+
+  it("keeps ordinary query parameters", () => {
+    expect(
+      readChecks({
+        checks: [
+          { name: "a", url: "https://a.example.com/health?full=1&region=eu" },
+        ],
+      })[0]!.url,
+    ).toBe("https://a.example.com/health?full=1&region=eu");
+  });
+
+  it("starts no new round within the interval floor, even when asked (#874 review)", async () => {
+    const { last } = await run(context());
+    for (const later of [1_000, 30_000, MIN_ROUND_GAP_MS - 1]) {
+      const f = fake();
+      const result = await connector(NOW + later).sync(
+        context(),
+        request(last.nextCursor),
+        f.runtime,
+      );
+      expect(f.calls, String(later)).toEqual([]);
+      expect(result).toEqual({
+        observations: [],
+        datasetPages: [],
+        nextCursor: last.nextCursor,
+        done: true,
+      });
+    }
+    // At the floor a new round starts, and its run finishes as usual.
+    const f = fake();
+    const next = await connector(NOW + MIN_ROUND_GAP_MS).sync(
+      context(),
+      request(last.nextCursor),
+      f.runtime,
+    );
+    expect(f.calls).toHaveLength(CHECKS.length);
+    expect(next.done).toBe(false);
+    // A changed list waits for the floor too: an edit is no way around it.
+    const g = fake();
+    await connector(NOW + 1_000).sync(
+      context(CHECKS.slice(0, 1)),
+      request(last.nextCursor),
+      g.runtime,
+    );
+    expect(g.calls).toEqual([]);
   });
 
   it("ignores cursors it cannot read", async () => {

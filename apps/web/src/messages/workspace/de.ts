@@ -567,6 +567,8 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
         "{count, plural, one {# App gefunden} other {# Apps gefunden}} – entferne das Häkchen bei allem, was nicht synchronisiert werden soll.",
       foundResources:
         "{count, plural, one {# Ressource gefunden} other {# Ressourcen gefunden}} – entferne das Häkchen bei allem, was nicht synchronisiert werden soll.",
+      configResources:
+        "{count, plural, one {# Eintrag} other {# Einträge}}, jeder wird synchronisiert: Entferne einen aus der Liste oben, um ihn auszulassen.",
       create: "Verbindung anlegen",
       unavailableTitle: "{name} ist hier nicht verfügbar",
       selfHosting: "Betreibst du netrics selbst?",

@@ -63,6 +63,7 @@ export {
   TOKEN_REJECTED_MESSAGE as HETZNER_CLOUD_TOKEN_REJECTED_MESSAGE,
 } from "./hetzner-cloud/index.js";
 export {
+  checkId as httpCheckId,
   createHttpCheckConnector,
   HTTP_CHECK_CONNECTOR_ID,
   httpCheckManifest,
@@ -78,6 +79,8 @@ export {
   TEXT_INVALID_MESSAGE as HTTP_CHECK_TEXT_INVALID_MESSAGE,
   URL_INVALID_CODE as HTTP_CHECK_URL_INVALID_CODE,
   URL_INVALID_MESSAGE as HTTP_CHECK_URL_INVALID_MESSAGE,
+  URL_SECRET_CODE as HTTP_CHECK_URL_SECRET_CODE,
+  URL_SECRET_MESSAGE as HTTP_CHECK_URL_SECRET_MESSAGE,
 } from "./http-check/index.js";
 export {
   createPostHogConnector,

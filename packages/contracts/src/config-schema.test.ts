@@ -205,6 +205,25 @@ describe("arrays of objects (#874)", () => {
     });
   });
 
+  it("refuses inherited names as keys, in items and at the top (#874 review)", () => {
+    for (const key of ["toString", "constructor", "hasOwnProperty"]) {
+      expect(
+        validateConnectionConfig(listSchema, {
+          checks: [{ name: "a", [key]: "x" }],
+        }),
+      ).toEqual({
+        ok: false,
+        message: `unknown config property "checks[0].${key}"`,
+      });
+      expect(
+        validateConnectionConfig(listSchema, {
+          checks: [{ name: "a" }],
+          [key]: "x",
+        }),
+      ).toEqual({ ok: false, message: `unknown config property "${key}"` });
+    }
+  });
+
   it("refuses a list inside an item", () => {
     const nested = {
       type: "object",

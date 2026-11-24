@@ -78,6 +78,34 @@ export async function recordConnectionFreshness(
   }
 }
 
+/**
+ * Deletes the connection's per-resource freshness rows of resources it no
+ * longer has (#874 review: a check removed from an HTTP check connection).
+ * The connection's own rows (resource '') stay.
+ */
+export async function retireConnectionFreshness(
+  tx: Transaction,
+  input: {
+    workspaceId: string;
+    connectionId: string;
+    keepResources: readonly string[];
+  },
+): Promise<void> {
+  const table = schema.connectionFreshness;
+  await tx
+    .delete(table)
+    .where(
+      and(
+        eq(table.workspaceId, input.workspaceId),
+        eq(table.connectionId, input.connectionId),
+        sql`${table.resource} <> ''`,
+        input.keepResources.length > 0
+          ? sql`not (${table.resource} = any(${sql.param([...input.keepResources])}::text[]))`
+          : sql`true`,
+      ),
+    );
+}
+
 /** The connection's stored freshness rows, by stream and resource. */
 export async function listConnectionFreshness(
   tx: Transaction,

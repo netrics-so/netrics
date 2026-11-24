@@ -48,6 +48,9 @@ export const NO_CHECKS_MESSAGE = `Add at least one check, and at most ${MAX_CHEC
 export const URL_INVALID_CODE = "http_check.url_invalid";
 export const URL_INVALID_MESSAGE =
   "Every check needs an https URL whose host is a full domain name or an IP address, without a user name or password, of at most 2,048 characters.";
+export const URL_SECRET_CODE = "http_check.url_secret";
+export const URL_SECRET_MESSAGE =
+  "A check URL cannot carry a secret in its query (a key, token, signature, password or similar parameter, as in a signed URL): the configuration is not encrypted and everyone in the workspace sees it. Checks that need a credential are not supported yet.";
 export const NAME_DUPLICATE_CODE = "http_check.name_duplicate";
 export const NAME_DUPLICATE_MESSAGE =
   "Every check needs a name, and a name of its own: two checks in a connection cannot share one.";
@@ -107,6 +110,23 @@ export function parseExpectedStatus(
     ranges.push(range);
   }
   return ranges;
+}
+
+/**
+ * Query parameter names that carry credentials (#874 review): API keys,
+ * tokens, signatures of signed URLs (`sig`, AWS `X-Amz-*`, Google
+ * `X-Goog-*`), passwords and sessions. Case-insensitive, by part of the
+ * name, so `api_key`, `apiKey` and `access_token` are refused too.
+ */
+const SECRET_QUERY =
+  /key|token|secret|passw|pwd|auth|sig|credential|session|jwt|^code$|^x-amz-|^x-goog-/i;
+
+/** Whether a URL's query names a parameter that carries a credential. */
+export function querySecret(url: URL): boolean {
+  for (const name of url.searchParams.keys()) {
+    if (SECRET_QUERY.test(name)) return true;
+  }
+  return false;
 }
 
 /** Header names refused in the (unencrypted) configuration. */
@@ -186,6 +206,9 @@ export function readChecks(config: Record<string, unknown>): HttpCheck[] {
     }
     if (host === null || url.length > MAX_URL_LENGTH) {
       throw new HttpCheckConfigError(URL_INVALID_MESSAGE, URL_INVALID_CODE);
+    }
+    if (querySecret(new URL(url))) {
+      throw new HttpCheckConfigError(URL_SECRET_MESSAGE, URL_SECRET_CODE);
     }
     const id = checkId(name);
     if (ids.has(id)) {

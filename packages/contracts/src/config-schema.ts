@@ -238,7 +238,7 @@ function validateObject(
 
   if (refuseUnknown) {
     for (const key of Object.keys(normalized)) {
-      if (!(key in properties)) {
+      if (!Object.hasOwn(properties, key)) {
         return {
           ok: false,
           message: `unknown config property "${prefix}${key}"`,
@@ -257,7 +257,9 @@ function validateObject(
   }
 
   for (const [key, entry] of Object.entries(normalized)) {
-    const property = properties[key];
+    const property = Object.hasOwn(properties, key)
+      ? properties[key]
+      : undefined;
     if (!property) {
       continue;
     }

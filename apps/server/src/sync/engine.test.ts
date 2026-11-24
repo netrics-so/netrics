@@ -423,6 +423,35 @@ const leakyConnector: Connector = {
 };
 
 /** Explains a parked item through runtime.log (SDK 0.2.14, #638). */
+/** A connector without backfills (#874 review): it only reads "now". */
+const liveOnlyRequests: SyncRequest[] = [];
+const liveOnlyConnector: Connector = {
+  manifest: (({ backfillDays: _days, ...manifest }) => ({
+    ...manifest,
+    supportsBackfill: false,
+  }))(testManifest("live-only", "live.hits")),
+  async check() {
+    return { ok: true };
+  },
+  async discover() {
+    return [];
+  },
+  async sync(_context: ConnectionContext, request: SyncRequest) {
+    liveOnlyRequests.push(request);
+    return {
+      observations: [
+        {
+          metricKey: "live.hits",
+          sourceTimestamp: "2024-01-01T00:00:00.000Z",
+          value: 1,
+          dimensions: { resource: "r" },
+        },
+      ],
+      done: true,
+    };
+  },
+};
+
 const loggingConnector: Connector = {
   manifest: testManifest("logging", "logging.hits"),
   async check() {
@@ -740,6 +769,7 @@ beforeAll(async () => {
   registry.register(brokenConnector);
   registry.register(leakyConnector);
   registry.register(loggingConnector);
+  registry.register(liveOnlyConnector);
   registry.register(opaqueCursorConnector);
   registry.register(refusedCheckConnector);
   registry.register(probeConnector);
@@ -808,6 +838,7 @@ describe("catalog sync", () => {
       "http-check",
       "leaky",
       "learning",
+      "live-only",
       "logging",
       "naming",
       "opaque-cursor",
@@ -929,6 +960,28 @@ describe("sync engine", () => {
     expect(state!.historyFrom?.toISOString()).toBe(
       new Date(run.requested_from as string).toISOString(),
     );
+  });
+
+  it("runs the initial backfill job of a connector without backfills as an incremental sync (#874 review)", async () => {
+    const connectionId = await seedConnection(workspaceA, "live-only");
+    const jobId = await enqueue(
+      workspaceA,
+      connectionId,
+      "connection.backfill",
+    );
+    await waitFor(async () => {
+      const status = (await jobRow(jobId))?.status;
+      return status === "succeeded" || status === "failed" || status === "dead";
+    });
+    expect((await jobRow(jobId))?.status).toBe("succeeded");
+    const runs = await syncRunsFor(workspaceA, connectionId);
+    expect(runs.map((run) => [run.status, run.mode])).toEqual([
+      ["succeeded", "incremental"],
+    ]);
+    expect(liveOnlyRequests.map((request) => request.mode)).toEqual([
+      "incremental",
+    ]);
+    expect(await connectionObservationCount(workspaceA, connectionId)).toBe(1);
   });
 
   it("claims no read history after a backfill that failed (#378)", async () => {

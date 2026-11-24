@@ -680,16 +680,24 @@ export function createEgressFetch(options: EgressOptions) {
               "redirects",
             );
           }
-          const next = checkUrl(new URL(location, url).toString());
+          let target: URL;
+          try {
+            target = new URL(location, url);
+          } catch {
+            throw new EgressDeniedError(`egress denied: invalid URL`, "url");
+          }
+          // Same-host first (#874 review): a hop to another origin is a
+          // redirect refusal, whether or not that host is allowed at all.
           if (
             options.redirects === "same-host" &&
-            (next.protocol !== first.protocol || next.host !== first.host)
+            (target.protocol !== first.protocol || target.host !== first.host)
           ) {
             throw new EgressDeniedError(
-              `egress denied: redirect to another host ${next.host}`,
+              `egress denied: redirect to another host ${target.host}`,
               "redirect_host",
             );
           }
+          const next = checkUrl(target.toString());
           if (next.origin !== url.origin) {
             // Once dropped, credentials stay dropped for later hops.
             for (const name of Object.keys(headers)) {

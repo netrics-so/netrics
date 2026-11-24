@@ -58,6 +58,14 @@ export const CONCURRENCY = 10;
  * second page normally follows the first at once.
  */
 export const RUN_MAX_AGE_MS = 2 * 60 * 1000;
+/**
+ * The floor between two rounds of requests (#874 review): a sync that
+ * starts within this of the last finished round's start requests nothing,
+ * so "Sync now" or a quick config edit cannot probe a site more than about
+ * once a minute. Five seconds under the 60 s interval, so the scheduler's
+ * own jitter never makes a regular round wait a whole extra minute.
+ */
+export const MIN_ROUND_GAP_MS = 55 * 1000;
 
 const RUN_PREFIX = "http-check.run1:";
 const DONE_PREFIX = "http-check.done1:";
@@ -87,6 +95,8 @@ interface RunState {
 interface DoneState {
   v: 1;
   connection: string;
+  /** When the finished run requested its checks (ms since the epoch). */
+  at: number;
   states: Record<string, CheckState>;
 }
 
@@ -219,6 +229,24 @@ export async function syncPage(
   // A new run. The previous states: the last finished run's, else those an
   // abandoned run of this connection had already carried forward.
   const done = decode<DoneState>(request.cursor, DONE_PREFIX);
+  // Too soon after the last round of this connection, whatever its
+  // configuration: nothing is requested, nothing completed or claimed
+  // fresh, and the cursor stays as it is.
+  if (
+    done &&
+    done.v === 1 &&
+    done.connection === context.connectionId &&
+    typeof done.at === "number" &&
+    now() >= done.at &&
+    now() - done.at < MIN_ROUND_GAP_MS
+  ) {
+    return {
+      observations: [],
+      datasetPages: [],
+      nextCursor: request.cursor!,
+      done: true,
+    };
+  }
   const previous: Record<string, CheckState> =
     done &&
     done.v === 1 &&
@@ -330,6 +358,7 @@ export async function syncPage(
       nextCursor: encode(DONE_PREFIX, {
         v: 1,
         connection: state.connection,
+        at: state.at,
         states: state.states,
       } satisfies DoneState),
       done: true,

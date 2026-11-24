@@ -708,7 +708,13 @@ describe("redirects", () => {
         "/to-decimal",
         "/to-mapped",
       ]) {
-        await expect(guard(url(path))).rejects.toThrow(/non-public address/);
+        // Same-host mode refuses any other host first (#874 review): it
+        // never gets as far as the address.
+        await expect(guard(url(path))).rejects.toThrow(
+          redirects === "same-host"
+            ? /redirect to another host/
+            : /non-public address/,
+        );
       }
     }
   });
@@ -857,6 +863,19 @@ describe("per-request limits, HEAD and refusal reasons (SDK 0.2.21, #874)", () =
       expect(error).toBeInstanceOf(EgressDeniedError);
       expect((error as EgressDeniedError).reason, reason).toBe(reason);
     }
+  });
+
+  it("names a same-host redirect to a host outside the allowlist a redirect (#874 review)", async () => {
+    const error = await failure(
+      fixtureGuard({
+        allowedDomains: ["api.fixture.test"],
+        allowPrivateHosts: ["*.fixture.test"],
+        redirects: "same-host",
+      })(url("/to-sibling")),
+    );
+    expect(error).toBeInstanceOf(EgressDeniedError);
+    expect((error as EgressDeniedError).reason).toBe("redirect_host");
+    expect(error.message).toMatch(/redirect to another host/);
   });
 
   it("lowers the host's size limit for one request, never raises it", async () => {
