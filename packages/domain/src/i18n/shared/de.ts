@@ -122,6 +122,21 @@ export const sharedDe: Catalog<SharedMessages> = {
       tokenForbidden:
         "Hetzner Cloud hat das API-Token akzeptiert, lässt es aber die Server oder Preise des Projekts nicht lesen. Erstell in der Hetzner Console (dein Projekt → Security → API tokens) ein neues Token mit Leserechten (Read).",
     },
+    httpCheck: {
+      noChecks: "Leg mindestens einen Check an, höchstens 20.",
+      urlInvalid:
+        "Jeder Check braucht eine https-URL, deren Host ein vollständiger Domainname oder eine IP-Adresse ist, ohne Benutzername oder Passwort, mit höchstens 2.048 Zeichen.",
+      urlSecret:
+        "Eine Check-URL darf kein Geheimnis in ihrer Query tragen (einen Key-, Token-, Signatur-, Passwort- oder ähnlichen Parameter, wie in einer signierten URL): Die Konfiguration wird nicht verschlüsselt und alle im Workspace sehen sie. Checks, die Zugangsdaten brauchen, werden noch nicht unterstützt.",
+      nameDuplicate:
+        "Jeder Check braucht einen Namen, und zwar einen eigenen: Zwei Checks einer Verbindung können nicht gleich heißen.",
+      statusInvalid:
+        "Erwarteter Status: ein Code (200), ein Bereich (200-299), eine Klasse (2xx) oder bis zu zehn davon durch Kommas getrennt, alle zwischen 100 und 599.",
+      textInvalid:
+        "Erwarteter Text geht nur mit GET: Eine HEAD-Anfrage hat keinen Inhalt, in dem netrics suchen könnte.",
+      headersInvalid:
+        "Request-Header: ein „Name: Wert“ pro Zeile, höchstens zehn. Header mit Geheimnissen (Authorization, Cookie oder ein Name mit key, token, secret, auth, session, password oder signature) sowie Host, Content-Length, Connection und Transfer-Encoding sind nicht erlaubt: Die Konfiguration wird nicht verschlüsselt.",
+    },
     connection: {
       credentialsHostChanged:
         "Die gespeicherten Zugangsdaten wurden für einen anderen Host eingegeben. Gib sie für diesen Host erneut ein, in einer neuen Verbindung.",

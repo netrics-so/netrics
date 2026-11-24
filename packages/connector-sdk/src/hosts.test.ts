@@ -4,8 +4,11 @@ import {
   CREDENTIAL_HOSTS_KEY,
   bindCredentialHosts,
   configuredHost,
+  configuredHostPath,
   configuredHostsChanged,
   configuredHostsOf,
+  configuredUrlHost,
+  configuredUrlsFollowSameHostOnly,
   credentialHostsMatch,
   withoutCredentialHosts,
 } from "./hosts.js";
@@ -152,5 +155,97 @@ describe("configuredHost (#873)", () => {
         other: "POSTHOG.example.com",
       }),
     ).toEqual(["posthog.example.com"]);
+  });
+});
+
+describe("configured URLs in array items (#874)", () => {
+  const manifest = {
+    configuredHosts: ["checks[].url"],
+    authStrategies: [{ strategy: "none" }],
+  };
+
+  it("reads the host of an https URL, with port, path and query", () => {
+    expect(
+      configuredUrlHost("https://Status.Example.com:8443/health?x=1"),
+    ).toBe("status.example.com");
+    expect(configuredUrlHost("https://127.0.0.1:3470/health")).toBe(
+      "127.0.0.1",
+    );
+    expect(configuredUrlHost("https://[2001:db8::1]/")).toBe("2001:db8::1");
+    for (const refused of [
+      "http://example.com/",
+      "https://user:pass@example.com/",
+      "https://localhost/",
+      "ftp://example.com/",
+      "example.com",
+      "",
+      `https://example.com/${"a".repeat(2050)}`,
+      42,
+    ]) {
+      expect(configuredUrlHost(refused), String(refused)).toBeNull();
+    }
+  });
+
+  it("parses item paths", () => {
+    expect(configuredHostPath("checks[].url")).toEqual({
+      key: "checks",
+      item: "url",
+    });
+    expect(configuredHostPath("host")).toEqual({ key: "host" });
+  });
+
+  it("lists each item's host once, skipping invalid items", () => {
+    expect(
+      configuredHostsOf(manifest, {
+        checks: [
+          { url: "https://a.example.com/health" },
+          { url: "https://A.example.com/other" },
+          { url: "http://b.example.com/" },
+          { name: "no url" },
+          "not an item",
+          { url: "https://c.example.com/" },
+        ],
+      }),
+    ).toEqual(["a.example.com", "c.example.com"]);
+    expect(configuredHostsOf(manifest, { checks: "x" })).toEqual([]);
+    expect(configuredHostsOf(manifest, {})).toEqual([]);
+  });
+
+  it("follows redirects to the same host only for item URLs", () => {
+    expect(configuredUrlsFollowSameHostOnly(manifest)).toBe(true);
+    expect(
+      configuredUrlsFollowSameHostOnly({ configuredHosts: ["host"] }),
+    ).toBe(false);
+    expect(configuredUrlsFollowSameHostOnly({})).toBe(false);
+  });
+
+  it("binds nothing when there is no secret", () => {
+    expect(
+      bindCredentialHosts(
+        manifest,
+        { checks: [{ url: "https://a.example.com/" }] },
+        {},
+      ),
+    ).toEqual({});
+  });
+
+  it("lets a connector without credentials change its hosts", () => {
+    const before = { checks: [{ url: "https://a.example.com/" }] };
+    const after = { checks: [{ url: "https://b.example.com/" }] };
+    expect(configuredHostsChanged(manifest, before, after)).toBe(false);
+    expect(
+      configuredHostsChanged(
+        { ...manifest, authStrategies: [{ strategy: "token" }] },
+        before,
+        after,
+      ),
+    ).toBe(true);
+    expect(
+      configuredHostsChanged(
+        { configuredHosts: manifest.configuredHosts },
+        before,
+        after,
+      ),
+    ).toBe(true);
   });
 });

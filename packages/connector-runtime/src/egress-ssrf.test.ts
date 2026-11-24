@@ -708,7 +708,13 @@ describe("redirects", () => {
         "/to-decimal",
         "/to-mapped",
       ]) {
-        await expect(guard(url(path))).rejects.toThrow(/non-public address/);
+        // Same-host mode refuses any other host first (#874 review): it
+        // never gets as far as the address.
+        await expect(guard(url(path))).rejects.toThrow(
+          redirects === "same-host"
+            ? /redirect to another host/
+            : /non-public address/,
+        );
       }
     }
   });
@@ -819,5 +825,105 @@ describe("body limits and time", () => {
     expect(error).not.toBeInstanceOf(EgressTimeoutError);
     expect(error).not.toBeInstanceOf(EgressDeniedError);
     expect(error.name).toBe("AbortError");
+  });
+});
+
+describe("per-request limits, HEAD and refusal reasons (SDK 0.2.21, #874)", () => {
+  const siblings = {
+    allowedDomains: ["api.fixture.test", "cdn.fixture.test"],
+    allowPrivateHosts: ["*.fixture.test"],
+  };
+
+  it("names why a request was refused", async () => {
+    const cases: Array<[Promise<unknown>, string]> = [
+      [fixtureGuard(privateFixture)("not a url"), "url"],
+      [
+        createEgressFetch({ allowedDomains: ["api.fixture.test"], signal })(
+          url("/ok"),
+        ),
+        "scheme",
+      ],
+      [fixtureGuard(privateFixture)(url("/ok", "other.fixture.test")), "host"],
+      [fixtureGuard()(url("/ok")), "address"],
+      [
+        fixtureGuard({ ...siblings, redirects: "same-host" })(
+          url("/to-sibling"),
+        ),
+        "redirect_host",
+      ],
+      [
+        fixtureGuard({ ...privateFixture, maxResponseBytes: 1024 })(
+          url("/unknown-coding"),
+        ),
+        "size",
+      ],
+    ];
+    for (const [promise, reason] of cases) {
+      const error = await failure(promise);
+      expect(error).toBeInstanceOf(EgressDeniedError);
+      expect((error as EgressDeniedError).reason, reason).toBe(reason);
+    }
+  });
+
+  it("names a same-host redirect to a host outside the allowlist a redirect (#874 review)", async () => {
+    const error = await failure(
+      fixtureGuard({
+        allowedDomains: ["api.fixture.test"],
+        allowPrivateHosts: ["*.fixture.test"],
+        redirects: "same-host",
+      })(url("/to-sibling")),
+    );
+    expect(error).toBeInstanceOf(EgressDeniedError);
+    expect((error as EgressDeniedError).reason).toBe("redirect_host");
+    expect(error.message).toMatch(/redirect to another host/);
+  });
+
+  it("lowers the host's size limit for one request, never raises it", async () => {
+    const guard = fixtureGuard({ ...privateFixture, maxResponseBytes: 4096 });
+    const small = await failure(
+      guard(url("/unknown-coding"), { maxResponseBytes: 1024 }),
+    );
+    expect(small.message).toBe("egress denied: response exceeds 1024 bytes");
+    expect((await guard(url("/unknown-coding"))).bytes().byteLength).toBe(2048);
+    const raised = await failure(
+      fixtureGuard({ ...privateFixture, maxResponseBytes: 1024 })(
+        url("/unknown-coding"),
+        { maxResponseBytes: 1 * MIB },
+      ),
+    );
+    expect(raised.message).toBe("egress denied: response exceeds 1024 bytes");
+  });
+
+  it("lowers the host's time limit for one request", async () => {
+    const guard = fixtureGuard({ ...privateFixture, requestTimeoutMs: 5_000 });
+    const started = Date.now();
+    const error = await failure(
+      guard(url("/slow-headers"), { timeoutMs: 100 }),
+    );
+    expect(error).toBeInstanceOf(EgressTimeoutError);
+    expect(error.message).toBe(
+      "egress timeout: api.fixture.test did not answer within 100 ms",
+    );
+    expect(Date.now() - started).toBeLessThan(1500);
+  });
+
+  it("discards a body it is told not to read, and every HEAD body", async () => {
+    const guard = fixtureGuard({ ...privateFixture, maxResponseBytes: 1024 });
+    const discarded = await guard(url("/unknown-coding"), {
+      discardBody: true,
+    });
+    expect(discarded.status).toBe(200);
+    expect(discarded.bytes().byteLength).toBe(0);
+    const head = await guard(url("/ok"), { method: "HEAD" });
+    expect(head.status).toBe(200);
+    expect(head.text()).toBe("");
+  });
+
+  it("follows a HEAD request's same-host redirect, never another host", async () => {
+    const guard = fixtureGuard({ ...siblings, redirects: "same-host" });
+    expect((await guard(url("/to-self"), { method: "HEAD" })).status).toBe(200);
+    await expect(guard(url("/to-sibling"), { method: "HEAD" })).rejects.toThrow(
+      /redirect to another host/,
+    );
   });
 });

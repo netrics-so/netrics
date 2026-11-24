@@ -165,8 +165,9 @@ and the `web` app).
 
 Connectors that are not finished yet ship in the images as previews and
 stay off: the catalogue does not list them, and nothing can connect or sync
-them. Currently those are Railway (`railway`), PostHog (`posthog`) and
-Hetzner Cloud (`hetzner-cloud`), all milestone 13.1; every other connector in the images is available without a
+them. Currently those are Railway (`railway`), PostHog (`posthog`),
+Hetzner Cloud (`hetzner-cloud`) and HTTP checks (`http-check`), all
+milestone 13.1; every other connector in the images is available without a
 setting. To try a preview,
 name it in `NETRICS_PREVIEW_CONNECTORS` in `.env` (comma-separated IDs) and run
 `docker compose up -d`. It applies to `migrate` (the connector catalog),
@@ -244,6 +245,10 @@ definition still reaches only the hosts it declares. List exact hosts: the
 `*.com` or `localhost`. Cloud metadata and link-local addresses
 (`169.254.0.0/16`, `fe80::/10` and the like) stay refused even when listed.
 The setting is off by default.
+
+HTTP checks (`http-check`, a preview) use the same list: a check of a URL
+on your own network works once its host is listed, and is down with the
+reason `egress_refused` until then.
 
 If such a service uses a certificate from your own (private) certificate
 authority, netrics refuses the connection until it trusts that authority. Put

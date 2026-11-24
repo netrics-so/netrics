@@ -8,6 +8,12 @@
  * subset is a manifest authoring error, and keeping it small keeps it
  * auditable (no new dependency).
  *
+ * One level of nesting (#874): a property may be `type: "array"` with
+ * `minItems`/`maxItems` and `items` an object schema of scalar properties
+ * (the same subset, with its own `required`; unknown item keys are always
+ * refused). A string property may say `format: "multiline"`, which only
+ * changes its form input.
+ *
  * One reading of the subset for everyone: the API enforces it with
  * validateConnectionConfig, and the web app renders forms from
  * parseConfigSchema.
@@ -23,13 +29,16 @@ interface PropertySchema {
   maximum?: unknown;
   minLength?: unknown;
   maxLength?: unknown;
+  minItems?: unknown;
+  maxItems?: unknown;
+  items?: unknown;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function readSchema(schema: ConfigSchema): {
+function readSchema(schema: Record<string, unknown>): {
   properties: Record<string, PropertySchema>;
   required: string[];
 } {
@@ -54,7 +63,7 @@ export interface ConfigField {
   /** The property's title, or its key. */
   label: string;
   description?: string;
-  type: "string" | "integer" | "number" | "boolean";
+  type: "string" | "integer" | "number" | "boolean" | "array";
   enumValues?: string[];
   required: boolean;
   defaultValue?: unknown;
@@ -63,23 +72,34 @@ export interface ConfigField {
   /** A string's length in characters. */
   minLength?: number;
   maxLength?: number;
+  /** A string entered in several lines (`format: "multiline"`). */
+  multiline?: boolean;
+  /** An array's item fields (scalar), in schema order (#874). */
+  itemFields?: ConfigField[];
+  minItems?: number;
+  maxItems?: number;
 }
 
-/** The schema as form fields; unknown types render as strings. */
-export function parseConfigSchema(schema: ConfigSchema): ConfigField[] {
+function scalarType(
+  type: unknown,
+): "string" | "integer" | "number" | "boolean" {
+  return type === "integer" ||
+    type === "number" ||
+    type === "boolean" ||
+    type === "string"
+    ? type
+    : "string";
+}
+
+function fieldsOf(schema: Record<string, unknown>, nested: boolean) {
   const { required } = readSchema(schema);
   const properties = isRecord(schema.properties) ? schema.properties : {};
-  return Object.entries(properties).flatMap(([key, raw]) => {
+  return Object.entries(properties).flatMap(([key, raw]): ConfigField[] => {
     if (!isRecord(raw)) {
       return [];
     }
-    const type =
-      raw.type === "integer" ||
-      raw.type === "number" ||
-      raw.type === "boolean" ||
-      raw.type === "string"
-        ? raw.type
-        : "string";
+    const array =
+      !nested && raw.type === "array" && isRecord(raw.items) ? raw.items : null;
     const field: ConfigField = {
       key,
       label:
@@ -87,7 +107,7 @@ export function parseConfigSchema(schema: ConfigSchema): ConfigField[] {
       ...(typeof raw.description === "string" && raw.description !== ""
         ? { description: raw.description }
         : {}),
-      type,
+      type: array ? "array" : scalarType(raw.type),
       ...(Array.isArray(raw.enum) ? { enumValues: raw.enum.map(String) } : {}),
       required: required.includes(key),
       ...(raw.default !== undefined ? { defaultValue: raw.default } : {}),
@@ -99,9 +119,18 @@ export function parseConfigSchema(schema: ConfigSchema): ConfigField[] {
       ...(typeof raw.maxLength === "number"
         ? { maxLength: raw.maxLength }
         : {}),
+      ...(raw.format === "multiline" ? { multiline: true } : {}),
+      ...(array ? { itemFields: fieldsOf(array, true) } : {}),
+      ...(typeof raw.minItems === "number" ? { minItems: raw.minItems } : {}),
+      ...(typeof raw.maxItems === "number" ? { maxItems: raw.maxItems } : {}),
     };
     return [field];
   });
+}
+
+/** The schema as form fields; unknown types render as strings. */
+export function parseConfigSchema(schema: ConfigSchema): ConfigField[] {
+  return fieldsOf(schema, false);
 }
 
 // ─── Validation (API) ───────────────────────────────────────────────────────
@@ -128,24 +157,78 @@ function checkType(
         : `${key} must be a number`;
     case "boolean":
       return typeof value === "boolean" ? null : `${key} must be a boolean`;
+    case "array":
+      return Array.isArray(value) ? null : `${key} must be a list`;
     default:
       return null;
   }
 }
 
+/** Checks one scalar value against its property (enum, range, length). */
+function checkScalar(
+  key: string,
+  value: unknown,
+  property: PropertySchema,
+): string | null {
+  if (
+    Array.isArray(property.enum) &&
+    property.enum.length > 0 &&
+    !property.enum.includes(value)
+  ) {
+    return `${key} must be one of: ${property.enum.map(String).join(", ")}`;
+  }
+  if (
+    typeof value === "number" &&
+    typeof property.minimum === "number" &&
+    value < property.minimum
+  ) {
+    return `${key} must be at least ${property.minimum}`;
+  }
+  if (
+    typeof value === "number" &&
+    typeof property.maximum === "number" &&
+    value > property.maximum
+  ) {
+    return `${key} must be at most ${property.maximum}`;
+  }
+  // Lengths in characters (code points), as JSON Schema counts them, of
+  // the value as connectors read it: trimmed (e.g. a stored " US"
+  // storefront). The value is stored as sent.
+  const length =
+    typeof value === "string" ? [...value.trim()].length : undefined;
+  if (
+    length !== undefined &&
+    typeof property.minLength === "number" &&
+    length < property.minLength
+  ) {
+    return property.minLength === 1
+      ? `${key} must not be empty`
+      : `${key} must be at least ${property.minLength} characters`;
+  }
+  if (
+    length !== undefined &&
+    typeof property.maxLength === "number" &&
+    length > property.maxLength
+  ) {
+    return `${key} must be at most ${property.maxLength} characters`;
+  }
+  return null;
+}
+
 /**
- * Validates `config` against the manifest's configSchema subset and returns a
- * normalized copy with declared defaults applied. Unknown keys are rejected
- * when the schema sets `additionalProperties: false`.
+ * Validates one object against an object schema: defaults, unknown keys
+ * (when `additionalProperties` is false), required keys, types and scalar
+ * bounds. `prefix` names where the object is in messages ("checks[2].").
  */
-export function validateConnectionConfig(
-  schema: ConfigSchema,
-  config: Record<string, unknown>,
+function validateObject(
+  schema: Record<string, unknown>,
+  value: Record<string, unknown>,
+  prefix: string,
+  refuseUnknown: boolean,
+  nested: boolean,
 ): ConfigValidation {
   const { properties, required } = readSchema(schema);
-  const additionalProperties = schema.additionalProperties !== false;
-
-  const normalized: Record<string, unknown> = { ...config };
+  const normalized: Record<string, unknown> = { ...value };
 
   for (const [key, property] of Object.entries(properties)) {
     if (normalized[key] === undefined && property.default !== undefined) {
@@ -153,10 +236,13 @@ export function validateConnectionConfig(
     }
   }
 
-  if (!additionalProperties) {
+  if (refuseUnknown) {
     for (const key of Object.keys(normalized)) {
-      if (!(key in properties)) {
-        return { ok: false, message: `unknown config property "${key}"` };
+      if (!Object.hasOwn(properties, key)) {
+        return {
+          ok: false,
+          message: `unknown config property "${prefix}${key}"`,
+        };
       }
     }
   }
@@ -165,79 +251,92 @@ export function validateConnectionConfig(
     if (normalized[key] === undefined) {
       return {
         ok: false,
-        message: `missing required config property "${key}"`,
+        message: `missing required config property "${prefix}${key}"`,
       };
     }
   }
 
-  for (const [key, value] of Object.entries(normalized)) {
-    const property = properties[key];
+  for (const [key, entry] of Object.entries(normalized)) {
+    const property = Object.hasOwn(properties, key)
+      ? properties[key]
+      : undefined;
     if (!property) {
       continue;
     }
-    const typeError = checkType(key, value, property);
+    const name = `${prefix}${key}`;
+    if (property.type === "array" && nested) {
+      return { ok: false, message: `${name} must not be a list` };
+    }
+    const typeError = checkType(name, entry, property);
     if (typeError) {
       return { ok: false, message: typeError };
     }
-    if (
-      Array.isArray(property.enum) &&
-      property.enum.length > 0 &&
-      !property.enum.includes(value)
-    ) {
-      return {
-        ok: false,
-        message: `${key} must be one of: ${property.enum.map(String).join(", ")}`,
-      };
+    if (property.type === "array") {
+      const list = entry as unknown[];
+      if (
+        typeof property.minItems === "number" &&
+        list.length < property.minItems
+      ) {
+        return {
+          ok: false,
+          message:
+            property.minItems === 1
+              ? `${name} must not be empty`
+              : `${name} must have at least ${property.minItems} entries`,
+        };
+      }
+      if (
+        typeof property.maxItems === "number" &&
+        list.length > property.maxItems
+      ) {
+        return {
+          ok: false,
+          message: `${name} must have at most ${property.maxItems} entries`,
+        };
+      }
+      const itemSchema = isRecord(property.items) ? property.items : {};
+      const items: Record<string, unknown>[] = [];
+      for (const [index, item] of list.entries()) {
+        if (!isRecord(item)) {
+          return { ok: false, message: `${name}[${index}] must be an object` };
+        }
+        const checked = validateObject(
+          itemSchema,
+          item,
+          `${name}[${index}].`,
+          true,
+          true,
+        );
+        if (!checked.ok) return checked;
+        items.push(checked.config);
+      }
+      normalized[key] = items;
+      continue;
     }
-    if (
-      typeof value === "number" &&
-      typeof property.minimum === "number" &&
-      value < property.minimum
-    ) {
-      return {
-        ok: false,
-        message: `${key} must be at least ${property.minimum}`,
-      };
-    }
-    if (
-      typeof value === "number" &&
-      typeof property.maximum === "number" &&
-      value > property.maximum
-    ) {
-      return {
-        ok: false,
-        message: `${key} must be at most ${property.maximum}`,
-      };
-    }
-    // Lengths in characters (code points), as JSON Schema counts them, of
-    // the value as connectors read it: trimmed (e.g. a stored " US"
-    // storefront). The value is stored as sent.
-    const length =
-      typeof value === "string" ? [...value.trim()].length : undefined;
-    if (
-      length !== undefined &&
-      typeof property.minLength === "number" &&
-      length < property.minLength
-    ) {
-      return {
-        ok: false,
-        message:
-          property.minLength === 1
-            ? `${key} must not be empty`
-            : `${key} must be at least ${property.minLength} characters`,
-      };
-    }
-    if (
-      length !== undefined &&
-      typeof property.maxLength === "number" &&
-      length > property.maxLength
-    ) {
-      return {
-        ok: false,
-        message: `${key} must be at most ${property.maxLength} characters`,
-      };
+    const scalarError = checkScalar(name, entry, property);
+    if (scalarError) {
+      return { ok: false, message: scalarError };
     }
   }
 
   return { ok: true, config: normalized };
+}
+
+/**
+ * Validates `config` against the manifest's configSchema subset and returns a
+ * normalized copy with declared defaults applied (in array items too).
+ * Unknown keys are rejected when the schema sets `additionalProperties:
+ * false`, and always in array items.
+ */
+export function validateConnectionConfig(
+  schema: ConfigSchema,
+  config: Record<string, unknown>,
+): ConfigValidation {
+  return validateObject(
+    schema,
+    config,
+    "",
+    schema.additionalProperties === false,
+    false,
+  );
 }

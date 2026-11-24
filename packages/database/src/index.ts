@@ -352,6 +352,7 @@ export type {
 export {
   listConnectionFreshness,
   recordConnectionFreshness,
+  retireConnectionFreshness,
 } from "./freshness.js";
 export type {
   ConnectionFreshnessInput,

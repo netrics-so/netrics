@@ -372,7 +372,11 @@ Connector code reaches the network only through `runtime.fetch`. It allows
 https hosts from `outboundDomains`, and since SDK 0.2.20 the host names the
 connection's own configuration gives under the manifest's `configuredHosts`
 (a self-hosted PostHog, #873: a bare public name, no IP literal, port or
-path, for that connection only). It refuses private and metadata addresses,
+path, for that connection only). Since SDK 0.2.21 an entry `<key>[].<item>`
+names a URL in each item of a config array (the HTTP checks' URLs, #874:
+https, a full domain name or an IP address, any port and path); such URLs
+follow redirects to the same scheme, host and port only, whatever the call
+site passed. It refuses private and metadata addresses,
 re-checks redirects and buffers the whole body within a size cap (10 MiB by
 default) before the connector sees it. The guard (`createEgressFetch`) also:
 
@@ -393,9 +397,14 @@ default) before the connector sees it. The guard (`createEgressFetch`) also:
   by `requestTimeoutMs` (60 s by default, the connector call budget). A
   timeout is an `EgressTimeoutError`: a retryable provider failure, not a
   broken connector;
+- lets a connector lower the time and size limits for one request
+  (`timeoutMs`, `maxResponseBytes`), skip reading a body (`discardBody`) and
+  send `HEAD` (SDK 0.2.21, #874); an `EgressDeniedError` names its `reason`
+  (`address`, `size`, `redirect_host`, …), so connector code can tell why
+  a request was refused without reading the message;
 - lets a self-hosted instance name private hosts or ranges custom API
-  definitions may reach (`NETRICS_CUSTOM_API_PRIVATE_HOSTS`, off by default
-  and never set on the hosted service). It never widens the allowed hosts,
+  definitions and HTTP checks may reach (`NETRICS_CUSTOM_API_PRIVATE_HOSTS`,
+  off by default and never set on the hosted service). It never widens the allowed hosts,
   and metadata and link-local addresses stay refused even when listed.
 
 A `ConnectorResponse` offers the body three ways:
@@ -462,6 +471,7 @@ keeps loading on every 0.2.x runtime.
 | 0.2.18 | Optional reason codes: `CheckResult.code`, `ConnectorError` (#795)   |
 | 0.2.19 | Optional `discoversBeforeFirstSync`: names before a first run (#782) |
 | 0.2.20 | Optional `configuredHosts`: a host the configuration names (#873)    |
+| 0.2.21 | `configuredHosts` item URLs, `HEAD`, per-request limits (#874)       |
 
 Since SDK 0.2.13 a manifest may group its metrics and datasets into
 `freshnessStreams` (periodic, with the provider's time zone, or continuous),

@@ -50,6 +50,7 @@ import {
 import {
   ANALYTICS_METRIC_KEYS,
   ANALYTICS_STREAM,
+  HTTP_CHECK_CONNECTOR_ID,
   posthogManifest,
   vercelManifest,
 } from "@netrics/connectors";
@@ -75,6 +76,7 @@ import {
   finishConnectionSetup,
   findProject,
   findResourceNames,
+  retireConnectionFreshness,
   upsertConnectionResources,
   lockHistoryReload,
   lockWorkspaceBackfills,
@@ -339,6 +341,18 @@ const SELECTION_NEEDS_A_RESOURCE: ReadonlySet<string> = new Set([
   vercelManifest.id,
   posthogManifest.id,
 ]);
+/**
+ * Connectors whose resources are their configuration (#874 review: an HTTP
+ * check connection's checks). Discovery reads the config only, so a saved
+ * config change names its resources at once and retires the freshness of
+ * those it no longer has; a resource selection, which the sync could not
+ * honor, is refused (a check is removed from the list instead).
+ */
+const RESOURCES_FROM_CONFIG: ReadonlySet<string> = new Set([
+  HTTP_CHECK_CONNECTOR_ID,
+]);
+const RESOURCES_FROM_CONFIG_SELECTION =
+  "This connector's resources are its settings: remove a check from the list instead of deselecting it.";
 /** Saving an empty selection for such a connector. */
 const RESOURCE_SELECTION_EMPTY = "resource_selection_empty";
 /**
@@ -1860,6 +1874,12 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       }
       const config = { ...validated.value };
       if (
+        entry.resources !== undefined &&
+        RESOURCES_FROM_CONFIG.has(registered.manifest.id)
+      ) {
+        return fail(400, RESOURCES_FROM_CONFIG_SELECTION);
+      }
+      if (
         entry.resources?.length === 0 &&
         SELECTION_NEEDS_A_RESOURCE.has(registered.manifest.id)
       ) {
@@ -2955,6 +2975,8 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       /** What the account lists, when a new selection was checked against it. */
       let selectable: StoredConnectionPreviewResponse["resources"] = [];
       if (body.resources !== undefined) {
+        if (RESOURCES_FROM_CONFIG.has(registered.manifest.id))
+          return fail(400, RESOURCES_FROM_CONFIG_SELECTION);
         if (!registered.manifest.supportsResourceSelection)
           return fail(
             400,
@@ -3170,6 +3192,34 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         }
       }
 
+      // A connector whose resources are its configuration (#874 review):
+      // the saved list's resources, read from the config alone, so their
+      // names show at once and the freshness of removed ones goes.
+      let configResources: Array<{
+        id: string;
+        name: string;
+        kind: string;
+      }> | null = null;
+      if (
+        nextConfig !== undefined &&
+        body.config !== undefined &&
+        RESOURCES_FROM_CONFIG.has(registered.manifest.id)
+      ) {
+        const discovered = await callStoredConnection(
+          actor,
+          connectionId,
+          (connector, context, options) =>
+            executeDiscover(connector, context, options),
+          nextConfig,
+        );
+        if (!discovered.ok) return discovered;
+        configResources = discovered.value.map(({ id, name, kind }) => ({
+          id,
+          name,
+          kind,
+        }));
+      }
+
       const changes: ConnectionChanges = {
         ...(body.name !== undefined ? { name: body.name } : {}),
         ...(nextConfig !== undefined ? { config: nextConfig } : {}),
@@ -3215,6 +3265,20 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         );
         if (!row) {
           return fail(404, NOT_FOUND);
+        }
+        if (configResources) {
+          await upsertConnectionResources(tx, {
+            workspaceId: actor.workspaceId,
+            connectionId,
+            resources: configResources,
+            now: new Date(),
+            provisional: true,
+          });
+          await retireConnectionFreshness(tx, {
+            workspaceId: actor.workspaceId,
+            connectionId,
+            keepResources: configResources.map((resource) => resource.id),
+          });
         }
         // The names of what was just listed (#782): a newly selected
         // resource is named in pickers and tables before its first sync.

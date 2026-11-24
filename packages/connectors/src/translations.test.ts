@@ -10,6 +10,7 @@ import { demoManifest } from "./demo/index.js";
 import { searchConsoleManifest } from "./google-search-console/index.js";
 import { googlePlayManifest } from "./google-play/index.js";
 import { hetznerCloudManifest } from "./hetzner-cloud/index.js";
+import { httpCheckManifest } from "./http-check/index.js";
 import { posthogManifest } from "./posthog/index.js";
 import { railwayManifest } from "./railway/index.js";
 import { vercelManifest } from "./vercel/index.js";
@@ -28,6 +29,7 @@ const FIRST_PARTY: ConnectorManifest[] = [
   railwayManifest,
   posthogManifest,
   hetznerCloudManifest,
+  httpCheckManifest,
 ];
 
 const LOCALES = ["de"] as const;
@@ -49,17 +51,19 @@ describe.each(FIRST_PARTY.map((manifest) => [manifest.id, manifest] as const))(
   (_id, manifest) => {
     it("validate against the SDK version required by their capabilities", () => {
       expect(manifest.sdkVersion).toBe(
-        manifest.configuredHosts?.length
-          ? "^0.2.20"
-          : manifest.discoversBeforeFirstSync
-            ? "^0.2.19"
-            : manifest.freshnessStreams?.length
-              ? "^0.2.13"
-              : manifest.id === "google-play"
-                ? "^0.2.12"
-                : manifest.datasets?.length
-                  ? "^0.2.9"
-                  : "^0.2.7",
+        manifest.configuredHosts?.some((entry) => entry.includes("[]"))
+          ? "^0.2.21"
+          : manifest.configuredHosts?.length
+            ? "^0.2.20"
+            : manifest.discoversBeforeFirstSync
+              ? "^0.2.19"
+              : manifest.freshnessStreams?.length
+                ? "^0.2.13"
+                : manifest.id === "google-play"
+                  ? "^0.2.12"
+                  : manifest.datasets?.length
+                    ? "^0.2.9"
+                    : "^0.2.7",
       );
       expect(assertManifestCompatible(manifest).translations).toEqual(
         manifest.translations,

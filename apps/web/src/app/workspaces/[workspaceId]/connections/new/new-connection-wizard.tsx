@@ -39,6 +39,7 @@ import {
   unavailableCopy,
 } from "@/lib/oauth-connection";
 import type { ConnectorStanding } from "@/lib/sources";
+import { resourcesFromConfig } from "@/lib/config-resources";
 import {
   APP_STORE_CONNECT_DOCS_URL,
   APP_STORE_CONNECT_PROVIDER,
@@ -126,6 +127,8 @@ export function NewConnectionWizard({
   const keyStrategy = signedKeyStrategyOf(connector ?? undefined);
   const wantsToken = tokenStrategy !== undefined && keyStrategy === null;
   const appStore = keyStrategy?.provider === APP_STORE_CONNECT_PROVIDER;
+  // Its resources are its settings (#874): listed, never selected.
+  const fixedResources = connector ? resourcesFromConfig(connector.id) : false;
   // Apple Ads has its own guided setup (#375).
   const appleAds = keyStrategy?.provider === APPLE_ADS_PROVIDER;
   // OAuth-only connectors connect at the provider; the callback creates the
@@ -243,6 +246,8 @@ export function NewConnectionWizard({
       let resources: string[] | undefined;
       if (appStore) {
         resources = appSelection ?? undefined;
+      } else if (fixedResources) {
+        resources = undefined;
       } else if (preview && preview.resources.length > 0 && selectedResources) {
         if (selectedResources.size === 0) {
           setError(appStore ? t("selectApp") : t("selectResource"));
@@ -466,24 +471,36 @@ export function NewConnectionWizard({
           ) : preview.resources.length > 0 ? (
             <>
               <p className="muted">
-                {t(appStore ? "foundApps" : "foundResources", {
-                  count: preview.resources.length,
-                })}
+                {t(
+                  appStore
+                    ? "foundApps"
+                    : fixedResources
+                      ? "configResources"
+                      : "foundResources",
+                  { count: preview.resources.length },
+                )}
               </p>
               <ul className="workspace-list">
-                {preview.resources.map((resource) => (
-                  <li key={resource.id}>
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={selectedResources?.has(resource.id) ?? true}
-                        onChange={() => toggleResource(resource.id)}
-                      />{" "}
+                {preview.resources.map((resource) =>
+                  fixedResources ? (
+                    <li key={resource.id}>
                       {resource.name}{" "}
                       <span className="muted">({resource.kind})</span>
-                    </label>
-                  </li>
-                ))}
+                    </li>
+                  ) : (
+                    <li key={resource.id}>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={selectedResources?.has(resource.id) ?? true}
+                          onChange={() => toggleResource(resource.id)}
+                        />{" "}
+                        {resource.name}{" "}
+                        <span className="muted">({resource.kind})</span>
+                      </label>
+                    </li>
+                  ),
+                )}
               </ul>
             </>
           ) : null}

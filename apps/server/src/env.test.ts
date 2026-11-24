@@ -125,7 +125,7 @@ describe("loadConfig", () => {
     expect(() =>
       loadConfig({ NETRICS_PREVIEW_CONNECTORS: "apple-adz" }),
     ).toThrow(
-      /"apple-adz" is not a connector of this release \(preview connectors: railway, posthog, hetzner-cloud\)/,
+      /"apple-adz" is not a connector of this release \(preview connectors: railway, posthog, hetzner-cloud, http-check\)/,
     );
   });
 

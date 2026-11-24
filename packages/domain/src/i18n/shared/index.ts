@@ -173,6 +173,13 @@ export const PROVIDER_MESSAGE_CODES = {
   "hetzner_cloud.token_rejected": "providerMessages.hetznerCloud.tokenRejected",
   "hetzner_cloud.token_forbidden":
     "providerMessages.hetznerCloud.tokenForbidden",
+  "http_check.no_checks": "providerMessages.httpCheck.noChecks",
+  "http_check.url_invalid": "providerMessages.httpCheck.urlInvalid",
+  "http_check.url_secret": "providerMessages.httpCheck.urlSecret",
+  "http_check.name_duplicate": "providerMessages.httpCheck.nameDuplicate",
+  "http_check.status_invalid": "providerMessages.httpCheck.statusInvalid",
+  "http_check.text_invalid": "providerMessages.httpCheck.textInvalid",
+  "http_check.headers_invalid": "providerMessages.httpCheck.headersInvalid",
   "connection.credentials_host_changed":
     "providerMessages.connection.credentialsHostChanged",
   // The stored message keeps the stream, the HTTP status and the number of

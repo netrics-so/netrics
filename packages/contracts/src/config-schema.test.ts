@@ -138,3 +138,124 @@ describe("parseConfigSchema", () => {
     ]);
   });
 });
+
+describe("arrays of objects (#874)", () => {
+  const listSchema = {
+    type: "object",
+    properties: {
+      checks: {
+        type: "array",
+        title: "Checks",
+        minItems: 1,
+        maxItems: 2,
+        items: {
+          type: "object",
+          properties: {
+            name: { type: "string", title: "Name", minLength: 1 },
+            method: { type: "string", enum: ["GET", "HEAD"], default: "GET" },
+            timeout: { type: "integer", minimum: 1, maximum: 10 },
+            headers: { type: "string", format: "multiline" },
+          },
+          required: ["name"],
+        },
+      },
+    },
+    required: ["checks"],
+    additionalProperties: false,
+  };
+
+  it("validates every item and applies item defaults", () => {
+    expect(
+      validateConnectionConfig(listSchema, { checks: [{ name: "Site" }] }),
+    ).toEqual({
+      ok: true,
+      config: { checks: [{ name: "Site", method: "GET" }] },
+    });
+  });
+
+  it.each([
+    [{ checks: "x" }, "checks must be a list"],
+    [{ checks: [] }, "checks must not be empty"],
+    [
+      { checks: [{ name: "a" }, { name: "b" }, { name: "c" }] },
+      "checks must have at most 2 entries",
+    ],
+    [{ checks: ["a"] }, "checks[0] must be an object"],
+    [
+      { checks: [{ name: "a" }, {}] },
+      'missing required config property "checks[1].name"',
+    ],
+    [
+      { checks: [{ name: "a", extra: 1 }] },
+      'unknown config property "checks[0].extra"',
+    ],
+    [
+      { checks: [{ name: "a", method: "POST" }] },
+      "checks[0].method must be one of: GET, HEAD",
+    ],
+    [
+      { checks: [{ name: "a", timeout: 11 }] },
+      "checks[0].timeout must be at most 10",
+    ],
+    [{ checks: [{ name: " " }] }, "checks[0].name must not be empty"],
+  ])("refuses %j", (config, message) => {
+    expect(validateConnectionConfig(listSchema, config)).toEqual({
+      ok: false,
+      message,
+    });
+  });
+
+  it("refuses inherited names as keys, in items and at the top (#874 review)", () => {
+    for (const key of ["toString", "constructor", "hasOwnProperty"]) {
+      expect(
+        validateConnectionConfig(listSchema, {
+          checks: [{ name: "a", [key]: "x" }],
+        }),
+      ).toEqual({
+        ok: false,
+        message: `unknown config property "checks[0].${key}"`,
+      });
+      expect(
+        validateConnectionConfig(listSchema, {
+          checks: [{ name: "a" }],
+          [key]: "x",
+        }),
+      ).toEqual({ ok: false, message: `unknown config property "${key}"` });
+    }
+  });
+
+  it("refuses a list inside an item", () => {
+    const nested = {
+      type: "object",
+      properties: {
+        list: {
+          type: "array",
+          items: { type: "object", properties: { inner: { type: "array" } } },
+        },
+      },
+    };
+    expect(validateConnectionConfig(nested, { list: [{ inner: [] }] })).toEqual(
+      { ok: false, message: "list[0].inner must not be a list" },
+    );
+  });
+
+  it("parses the item fields for forms", () => {
+    const [field] = parseConfigSchema(listSchema);
+    expect(field).toMatchObject({
+      key: "checks",
+      label: "Checks",
+      type: "array",
+      required: true,
+      minItems: 1,
+      maxItems: 2,
+    });
+    expect(field?.itemFields?.map((item) => item.key)).toEqual([
+      "name",
+      "method",
+      "timeout",
+      "headers",
+    ]);
+    expect(field?.itemFields?.[1]?.enumValues).toEqual(["GET", "HEAD"]);
+    expect(field?.itemFields?.[3]?.multiline).toBe(true);
+  });
+});

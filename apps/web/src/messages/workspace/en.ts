@@ -656,6 +656,9 @@ export const workspaceEn = {
         "{count, plural, one {Found # app} other {Found # apps}} — uncheck any you do not want to sync.",
       foundResources:
         "{count, plural, one {Found # resource} other {Found # resources}} — uncheck any you do not want to sync.",
+      /** Resources that are the settings (#874: HTTP checks): listed, not chosen. */
+      configResources:
+        "{count, plural, one {# entry} other {# entries}}, each synced: remove one from the list above to leave it out.",
       create: "Create connection",
       unavailableTitle: "{name} is not available here",
       selfHosting: "Running netrics yourself?",
@@ -666,6 +669,11 @@ export const workspaceEn = {
       optionalLabel: "{label} (optional)",
       yes: "Yes",
       no: "No",
+      /** A list of entries (#874), such as an HTTP check connection's checks. */
+      listItem: "Entry {number}",
+      addItem: "Add an entry",
+      removeItem: "Remove entry {number}",
+      listLimit: "At most {max} entries.",
     },
     oauthButton: {
       otherAccount: "Use a different {name} account",

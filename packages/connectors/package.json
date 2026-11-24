@@ -40,6 +40,10 @@
       "types": "./dist/hetzner-cloud/index.d.ts",
       "default": "./dist/hetzner-cloud/index.js"
     },
+    "./http-check": {
+      "types": "./dist/http-check/index.d.ts",
+      "default": "./dist/http-check/index.js"
+    },
     "./posthog": {
       "types": "./dist/posthog/index.d.ts",
       "default": "./dist/posthog/index.js"

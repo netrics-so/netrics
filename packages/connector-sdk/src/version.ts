@@ -32,7 +32,12 @@ import { satisfiesRange } from "./semver.js";
 // 0.2.20: the optional manifest field configuredHosts: config keys whose
 // value is a host the connection may reach, such as a self-hosted
 // provider (#873).
-export const SDK_VERSION = "0.2.20";
+// 0.2.21: runtime.fetch takes HEAD and per-request timeoutMs,
+// maxResponseBytes and discardBody; egress refusals carry a reason;
+// configuredHosts may name a URL in each item of an array (`key[].url`),
+// followed on redirects to the same host only; credential-less connectors
+// may change their configured hosts (#874).
+export const SDK_VERSION = "0.2.21";
 
 /**
  * Validates a manifest against the contract schema and verifies that its

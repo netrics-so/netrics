@@ -38,17 +38,24 @@ describe("createDefaultRegistry", () => {
         createDefaultRegistry({ nodeEnv })
           .list()
           .map(({ manifest }) => manifest.id),
-      ).toEqual([...finished, "railway", "posthog", "hetzner-cloud"]);
+      ).toEqual([
+        ...finished,
+        "railway",
+        "posthog",
+        "hetzner-cloud",
+        "http-check",
+      ]);
     }
   });
 
-  it("ships Railway, PostHog and Hetzner Cloud as previews until milestone 13.1's exit gate (#870, #872, #873, #877)", () => {
+  it("ships Railway, PostHog, Hetzner Cloud and HTTP checks as previews until milestone 13.1's exit gate (#870, #872, #873, #874, #877)", () => {
     expect([...PREVIEW_CONNECTORS]).toEqual([
       "railway",
       "posthog",
       "hetzner-cloud",
+      "http-check",
     ]);
-    for (const id of ["railway", "posthog", "hetzner-cloud"]) {
+    for (const id of ["railway", "posthog", "hetzner-cloud", "http-check"]) {
       expect(
         createDefaultRegistry({ nodeEnv: "production" }).get(id),
       ).toBeUndefined();
