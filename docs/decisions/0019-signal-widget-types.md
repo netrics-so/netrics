@@ -3,7 +3,7 @@
 Status: accepted (2026-10-04, owner decision; #312). Amends
 [ADR 0015](./0015-dashboard-studio.md) sections 2 and 8, and
 [ADR 0014](./0014-app-store-connect-signed-keys.md) decision 2 (review
-data).
+data). Section 15 (state widget, #875) added 2026-11-24.
 
 ## Context
 
@@ -765,6 +765,117 @@ Periods come before goals because goals validate their period against the
 new list. Compare, countdown and status board are independent of each
 other. The issues belong to milestone 09.3 as follow-ups outside its exit
 gate (#314).
+
+### 15. State widget (`state`, amendment 2026-11-24, #875)
+
+**Purpose.** Is it up? The current state of services, servers,
+deployments and health checks (milestone 13.1): one item at a large size,
+or a list for an overview slide, everything not healthy first.
+
+**Not the status board.** The status board (section 7) shows the health of
+netrics' own connections. The state widget shows what a source reports
+about the customer's systems, so it reads data, not connection state: it is
+bound to a published model (ADR 0022), like the measure and latest-items
+widgets, and follows dashboard filters and slide scopes (a project slide
+shows that project's services). No connector-specific path: Railway's
+`service_states`, Hetzner Cloud's `servers`, Vercel's
+`production_deployments`, a health check or a custom API all work through
+a model.
+
+**Binding** (`model_id` and `model_binding`, the columns of `measure` and
+`items`; migration `0096_state_widget` widens `dashboard_widgets_type_valid`
+and `dashboard_widgets_model_valid`):
+
+| Field                   | Dimension type    | Notes                                     |
+| ----------------------- | ----------------- | ----------------------------------------- |
+| `nameDimensionId`       | string            | the item's name                           |
+| `stateDimensionId`      | string or boolean | the source value, normalized (below)      |
+| `changedAtDimensionId`  | date or timestamp | optional: when the state last changed     |
+| `rolledBackDimensionId` | boolean           | optional: a qualifier on up (Vercel #876) |
+
+plus `filter` and `exclusions` as on a measure widget. A save checks the
+types (`state_name_dimension_invalid`, `state_state_dimension_invalid`,
+`state_changed_dimension_invalid`, `state_rolled_back_dimension_invalid`,
+`state_dimension_unknown`) and the filter mappings.
+
+**A fixed set of states.** `up`, `down`, `failed`, `building`, `sleeping`
+and `unknown` (`SERVICE_STATES` in the domain), with "rolled back" as a
+qualifier on `up` only ("Up · rolled back"). Every client draws these and
+nothing else.
+
+**Where the mapping lives: in the widget, at read time.** The source value
+stays in the dataset and in prepared data; the server normalizes it when
+it answers the widget (`normalizeServiceState`): first the widget's own
+overrides (`options.states`, at most 30 source values, compared
+case-insensitively with spaces and dashes as underscores), then built-in
+words (`running`, `SUCCESS`, `READY`, `healthy` → up; `stopped`, `offline`
+→ down; `ERROR`, `CRASHED` → failed; `QUEUED`, `deploying`, `in progress`
+→ building; `paused`, `idle` → sleeping; booleans true → up, false → down),
+else `unknown`. The native connectors already write the normalized words.
+A preparation step could map values too (a calculated column), and still
+can, but the widget needs the fixed set whatever the preparation did, and
+a mapping per widget keeps one dataset usable by widgets that read it
+differently. The Studio lists the source values the live preview did not
+recognise and offers a state for each. No new concept, so no new ADR.
+
+**Order.** Not healthy first: down, failed, unknown, building, sleeping,
+up after a rollback, up; then by name (case-insensitive, then exact;
+nameless last), `sortServiceStateItems`. The server reads at most 500
+items (`STATE_QUERY_MAX`), orders them and sends the first `limit`, with
+`total` counting all.
+
+**Options.** `layout`: `list` (default) or `single`; `item`: the single
+form's item by name (null: the most urgent item, which on a project-scoped
+slide is usually the only one); `limit` 1–20 (8): the most rows a list
+shows; `showChanged` (true); `states` (above).
+
+**Payload.** Web (`POST …/dashboards/:id/data` and the Studio preview,
+`states`): per widget `{ widgetId, status, items: [{ name, state,
+rolledBack, changedAt, value }], total, error, exclusions, freshness? }`;
+`value` is the source value for the Studio's mapping. Devices: the widget
+member `state` with `label` (title, else "Status"), `options` without
+`states` (the mapping stays on the server) and `data: { status, items:
+[{ name, state, rolledBack, changedAt }], total, freshness? }`. Freshness
+comes from the model's sources (ADR 0025). Clients that do not ask with
+`?features=state` get a text widget in its place ("Update netrics TV to
+show the status.", in the screen's language) and a version suffix
+`-nostate`, as the latest-items widget does (#810).
+
+**Rendering.** Text and shape, never colour alone: each state has its word
+("Up"/"Online", "Down"/"Offline", "Failed"/"Fehlgeschlagen",
+"Building"/"Wird gebaut", "Sleeping"/"Schläft", "Unknown"/"Unbekannt",
+"rolled back"/"zurückgesetzt") and its icon shape (check, cross,
+exclamation mark, circular arrows, moon, question mark); the tone (`up`;
+`down` for down and failed; `warning` for unknown and a rollback; `muted`
+for building and sleeping) colours icon and word. The list uses the status
+board's rows (`statusLayout`: row pitch, capacity, name shrinking to 24 u
+then an ellipsis): icon, name, state word and the age of the change
+("3 h"); when items exceed the rows that fit or the server's limit, the
+last row is "+N more" (`serviceStateRowsShown`) in the worst hidden tone,
+so a problem is never the one hidden. The single form shows the label, the
+item's name in the resource role, the state word with its icon as large
+as fits (at least the cell role) and a line "Rolled back · Changed 3 h
+ago" (change role), then the freshness footer. Screen readers read
+"name: state".
+
+**Minimum 3 × 2.** One item's state, or a list of two rows (one item and
+"+N more") at 16:9. Studio's default size is 4 × 4. `formatWarnings`
+reports `rows_cut` (info) when a list's `limit` exceeds the rows that fit,
+as for the status board. The type scale (`widgetTypeScale`) has title,
+resource, cell and change; the vectors and the Swift port carry it. In the
+scroll view the widget takes one column and lists its rows.
+
+**Limits.** One grouped model query per widget; it counts once toward the
+48 data widgets.
+
+**Studio.** "Service status" in the add menu; a new widget binds the first
+published model with a field named like a state (or a yes/no field), its
+first text field no shared filter maps as the name, and a changed-at or
+rolled-back field when one is named like it. The inspector picks model,
+name, state, changed-at, rolled-back, list or one item, the item (with the
+preview's names offered), the row limit, "Show when it changed", the
+mapping of unknown source values and the filters it ignores. Store
+templates may carry state widgets (#876).
 
 ## Alternatives considered
 
