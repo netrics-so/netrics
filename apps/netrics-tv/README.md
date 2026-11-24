@@ -370,6 +370,20 @@ The details are in "How it works" below; the wall and desk setup of an iPad
   image, one the payload does not list, or one the server answered with
   404 (a race with the payload; retried with the next poll) shows a
   themed placeholder, never an error. The detail sheet lists the titles.
+- **State widget (#875).** The app also asks for `features=state` (the
+  query is `features=measure_split,items,state`), so the server sends the
+  state widget instead of its "Update netrics TV" text. It shows services,
+  servers, deployments or health checks as up, down, failed, building,
+  sleeping or unknown (a state this build does not know reads as
+  unknown), each as its word and its own SF Symbol shape, never colour
+  alone; "up · rolled back" when production serves an older build. The
+  list form uses the status board's rows: problems first (as the server
+  sorts them), the age of the last change, and "+N more" in the last row,
+  so a problem is never the hidden one. The single form shows one item's
+  state as large as fits, then drops the "changed 3 hours ago" line and
+  the name when room runs short. The payload carries the states, so a
+  cached payload plays them offline like any widget; the detail sheet
+  lists every item with its change time.
 - **Heartbeat.** Every 5 minutes: app version ("tvos", "ios" or "ipados"
   and the version, shown as tvOS, iOS and iPadOS in the web's device list),
   uptime, the last error and the screen: on Apple TV the points after the

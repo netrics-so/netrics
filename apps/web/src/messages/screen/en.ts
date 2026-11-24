@@ -107,6 +107,28 @@ export const screenEn = {
       image: "Image",
       unavailable: "The items can’t be shown right now.",
     },
+    /**
+     * The state widget (#875): the fixed states, always next to an icon,
+     * never by colour alone. netrics TV uses the same words.
+     */
+    state: {
+      up: "Up",
+      down: "Down",
+      failed: "Failed",
+      building: "Building",
+      sleeping: "Sleeping",
+      unknown: "Unknown",
+      /** A qualifier on up: production serves an older build. */
+      rolledBack: "rolled back",
+      /** The single form's line under the state. */
+      rolledBackLine: "Rolled back",
+      changed: "Changed {time}",
+      more: "+{count} more",
+      /** A row as a screen reader reads it. */
+      item: "{name}: {state}",
+      empty: "No items yet",
+      unavailable: "The status can’t be shown right now.",
+    },
     /** What a playing screen shows around its slides (ADR 0018, section 5). */
     player: {
       nextRefresh: "next refresh in {seconds} s",

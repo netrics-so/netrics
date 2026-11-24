@@ -1,6 +1,7 @@
 "use client";
 import { MeasureWidgetView } from "@/components/studio/measure-widget";
 import { ItemsWidgetView } from "@/components/studio/items-widget";
+import { StateWidgetView } from "@/components/studio/state-widget";
 
 import type { DeviceWidget } from "@netrics/contracts";
 import type { Locale } from "@netrics/domain";
@@ -37,6 +38,7 @@ import {
   ScrollCompareCard,
   ScrollTextCard,
   SCROLL_ITEMS_PLACEMENT,
+  SCROLL_STATE_PLACEMENT,
   type ScrollCardSize,
 } from "./scroll-widgets";
 
@@ -137,6 +139,23 @@ export function DeviceScrollWidget({
             options={widget.options}
             status={widget.data.status}
             placement={SCROLL_ITEMS_PLACEMENT}
+            showHeader={false}
+            fontScale={env.fontScale}
+            audience="viewer"
+          />
+        </div>
+      );
+    case "state":
+      return (
+        <div className="scroll-items scroll-state">
+          <StateWidgetView
+            label={widget.label}
+            items={widget.data.items}
+            total={widget.data.total}
+            options={widget.options}
+            status={widget.data.status}
+            freshness={widget.data.freshness ?? null}
+            placement={SCROLL_STATE_PLACEMENT}
             showHeader={false}
             fontScale={env.fontScale}
             audience="viewer"

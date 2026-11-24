@@ -5,6 +5,7 @@ import {
   dashboardDataResponseSchema,
   dashboardProductAppsResponseSchema,
   type ItemsWidgetOptions,
+  type StateWidgetOptions,
   type MetricPeriod,
   type ProjectFilterQuery,
 } from "@netrics/contracts";
@@ -16,6 +17,7 @@ import type {
   ItemsWidgetBinding,
   MeasureWidgetBinding,
   SlideFilterScope,
+  StateWidgetBinding,
 } from "@netrics/domain";
 import { browserSend } from "./api";
 import { projectQueryString } from "./project-scope";
@@ -47,12 +49,25 @@ export const previewDashboardMeasures = (
     options: ItemsWidgetOptions;
     scope?: SlideFilterScope;
   }> = [],
+  /** State widgets (#875). */
+  states: Array<{
+    id: string;
+    binding: StateWidgetBinding;
+    options: StateWidgetOptions;
+    scope?: SlideFilterScope;
+  }> = [],
 ) =>
   browserSend(
     dashboardDataResponseSchema,
     "POST",
     `/v1/workspaces/${workspaceId}/dashboards/data/preview`,
-    { filters, values, widgets, ...(items.length ? { items } : {}) },
+    {
+      filters,
+      values,
+      widgets,
+      ...(items.length ? { items } : {}),
+      ...(states.length ? { states } : {}),
+    },
   );
 
 /**

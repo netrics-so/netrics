@@ -73,7 +73,7 @@ export const studioEn = {
       add: "Add widget",
       hint: "Click to add it in the first free spot, or drag it onto the slide",
       addType:
-        "Add {type, select, measure {measure} items {latest items} metric {metric} line {line chart} bar {bar chart} table {table} review {latest review} compare {comparison} image {image} text {text} clock {clock} status {status board} countdown {countdown} other {widget}}",
+        "Add {type, select, measure {measure} items {latest items} state {service status} metric {metric} line {line chart} bar {bar chart} table {table} review {latest review} compare {comparison} image {image} text {text} clock {clock} status {status board} countdown {countdown} other {widget}}",
     },
     assignTvs: {
       title: "Show “{name}” on TVs",
@@ -453,10 +453,33 @@ export const studioEn = {
       showTime: "Show the time",
       help: "Shows the newest records of the model with their images. Images come from the newest records of each custom API stream.",
     },
+    /** The state widget's inspector (#875). */
+    state: {
+      legend: "Service status",
+      model: "Model",
+      name: "Name",
+      state: "State",
+      changed: "Changed",
+      rolledBack: "Rolled back",
+      none: "None",
+      layout: "Show",
+      list: "As a list",
+      single: "One item",
+      item: "Item",
+      itemWorst: "The most urgent",
+      limit: "At most",
+      showChanged: "Show when it changed",
+      mapping: "Source values",
+      mappingHelp:
+        "Values netrics does not know count as unknown. Map them to a state here.",
+      help: "Shows whether services, servers, deployments or checks are up: problems first, every state as a word and an icon.",
+    },
     newWidget: {
       noModels: "Publish a model in Data & measures first.",
       noImageModels:
         "Publish a model with an image field first, for example from a custom API.",
+      noStateModels:
+        "Publish a model with a state field first, for example from Railway, Vercel or Hetzner Cloud.",
       noMetrics: "Add a connection with metrics first.",
       noBreakdown: "No metric can be broken down yet.",
       noImage: "Upload an image first (dashboard settings, Logo).",
@@ -649,9 +672,9 @@ export const studioEn = {
         invalid: "{name}: {problem}",
       },
       typeName:
-        "{type, select, measure {Measure} items {Latest items} metric {Metric} line {Line chart} bar {Bar chart} table {Table} review {Latest review} compare {Compare} image {Image} text {Text} clock {Clock} status {Status} countdown {Countdown} gauge {Goal} other {Widget}}",
+        "{type, select, measure {Measure} items {Latest items} state {Service status} metric {Metric} line {Line chart} bar {Bar chart} table {Table} review {Latest review} compare {Compare} image {Image} text {Text} clock {Clock} status {Status} countdown {Countdown} gauge {Goal} other {Widget}}",
       namedWidget:
-        "{title} ({type, select, measure {measure} items {latest items} metric {metric} line {line chart} bar {bar chart} table {table} review {latest review} compare {comparison} image {image} text {text} clock {clock} status {status board} countdown {countdown} gauge {goal} other {widget}})",
+        "{title} ({type, select, measure {measure} items {latest items} state {service status} metric {metric} line {line chart} bar {bar chart} table {table} review {latest review} compare {comparison} image {image} text {text} clock {clock} status {status board} countdown {countdown} gauge {goal} other {widget}})",
       copyOf: "{name} (copy)",
       continued: "{name} ({part})",
       slide: "Slide {number}",

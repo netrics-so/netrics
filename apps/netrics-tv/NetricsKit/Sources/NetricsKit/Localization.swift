@@ -66,6 +66,8 @@ public enum KitText: String, Sendable, CaseIterable {
     case tableTop, tableNew
     case reviewsPaused, reviewsPausedHint, noReviews, reviewStars
     case itemsOne, itemsOther, latestItems
+    case stateUp, stateDown, stateFailed, stateBuilding, stateSleeping, stateUnknown, stateRolledBack, stateChanged
+    case stateLabel, stateEmpty
     case statusEmpty, statusMore, statusConnected, statusDelayed, statusFailing
     case statusAgeMinutes, statusAgeHours, statusAgeDays, statusNever
     case compareRatio, comparePoints, compareDerived
@@ -164,6 +166,16 @@ public enum KitStrings {
         .itemsOne: "%d item",
         .itemsOther: "%d items",
         .latestItems: "Latest items",
+        .stateUp: "Up",
+        .stateDown: "Down",
+        .stateFailed: "Failed",
+        .stateBuilding: "Building",
+        .stateSleeping: "Sleeping",
+        .stateUnknown: "Unknown",
+        .stateRolledBack: "rolled back",
+        .stateChanged: "Changed %@",
+        .stateLabel: "Status",
+        .stateEmpty: "No items yet",
         .statusEmpty: "No sources connected",
         .statusMore: "+%d more",
         .statusConnected: "%d connected",
@@ -323,6 +335,16 @@ public enum KitStrings {
         .itemsOne: "%d Eintrag",
         .itemsOther: "%d Einträge",
         .latestItems: "Neueste Einträge",
+        .stateUp: "Online",
+        .stateDown: "Offline",
+        .stateFailed: "Fehlgeschlagen",
+        .stateBuilding: "Wird gebaut",
+        .stateSleeping: "Schläft",
+        .stateUnknown: "Unbekannt",
+        .stateRolledBack: "zurückgesetzt",
+        .stateChanged: "Geändert %@",
+        .stateLabel: "Status",
+        .stateEmpty: "Noch keine Einträge",
         .statusEmpty: "Keine Quellen verbunden",
         .statusMore: "+%d weitere",
         .statusConnected: "%d verbunden",
