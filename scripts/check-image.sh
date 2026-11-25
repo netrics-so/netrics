@@ -12,7 +12,7 @@
 #    up). Trivy does not recognise the copied binary, so this checks the
 #    version against nodejs.org. Fix: bump the node digest in the Dockerfiles.
 # 4. No known high or critical vulnerability that has a fix (Trivy). Fix:
-#    bump the base digests (Dependabot proposes them) or the dependency.
+#    bump the base digests (Renovate proposes them) or the dependency.
 set -euo pipefail
 
 image=${1:?usage: scripts/check-image.sh <image>}

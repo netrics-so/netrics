@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-# Base pinned by digest; bump deliberately (Dependabot proposes updates).
+# Base pinned by digest; bump deliberately (Renovate proposes updates).
 FROM node:26-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS base
 RUN npm install -g pnpm@10.34.5
 # Node's license for the runtime stage; see apps/server/Dockerfile.

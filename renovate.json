@@ -1,0 +1,75 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Weekly dependency updates. Everything is pinned exactly (actions by commit SHA, images by digest, npm packages by version), so nothing moves without a reviewed pull request, and every merge to main is a production release: non-major updates arrive as one pull request on Tuesdays. Security fixes for known vulnerabilities are proposed at once.",
+  "extends": [
+    "config:recommended",
+    "docker:pinDigests",
+    "helpers:pinGitHubActionDigestsToSemver"
+  ],
+  "timezone": "Europe/Berlin",
+  "schedule": ["* * * * 2"],
+  "updateNotScheduled": false,
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 0,
+  "minimumReleaseAge": "7 days",
+  "internalChecksFilter": "strict",
+  "vulnerabilityAlerts": {
+    "schedule": ["at any time"],
+    "minimumReleaseAge": null
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Trivy image used by scripts/check-image.sh",
+      "managerFilePatterns": ["/^scripts/check-image\\.sh$/"],
+      "matchStrings": [
+        "trivy=(?<depName>aquasec/trivy):(?<currentValue>[^\\s@]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
+      ],
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "pnpm installed in the Docker build stage; moves with packageManager in package.json",
+      "managerFilePatterns": ["/(^|/)Dockerfile$/"],
+      "matchStrings": [
+        "npm install -g pnpm@(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+      ],
+      "depNameTemplate": "pnpm",
+      "datasourceTemplate": "npm"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "One pull request a week for everything that is not a major version",
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "groupName": "all non-major dependencies",
+      "groupSlug": "all-minor-patch"
+    },
+    {
+      "description": "The node base image gets security releases that scripts/check-image.sh enforces after 3 days: do not hold it back a full week.",
+      "matchDatasources": ["docker"],
+      "matchDepNames": ["node"],
+      "minimumReleaseAge": "3 days"
+    },
+    {
+      "description": "Node follows the LTS line (ADR 0003). Moving to the next LTS is a deliberate change: .nvmrc, engines, CI node-version, the node and matching alpine images and @types/node move together.",
+      "matchDepNames": ["node", "@types/node"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    },
+    {
+      "description": "The runtime alpine stage must stay on the alpine release of the node image: it moves with the Node LTS change, not on its own.",
+      "matchDatasources": ["docker"],
+      "matchDepNames": ["alpine"],
+      "matchUpdateTypes": ["major", "minor"],
+      "enabled": false
+    },
+    {
+      "description": "A PostgreSQL major cannot open the previous major's data directory, so bumping it breaks every self-hosted upgrade; that needs a documented dump/restore path. Caddy majors likewise stay deliberate.",
+      "matchFileNames": ["deploy/compose/**"],
+      "matchDepNames": ["postgres", "caddy"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    }
+  ]
+}

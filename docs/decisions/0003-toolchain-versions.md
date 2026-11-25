@@ -33,7 +33,7 @@ time, with all production toolchain versions pinned.
 - CI and Docker images run Node 26 even where developer machines run newer
   versions.
 - Upgrading TypeScript past 6.0 is blocked on typescript-eslint support.
-- Moving to the next LTS line is a deliberate change (Dependabot ignores
+- Moving to the next LTS line is a deliberate change (Renovate does not propose
   Node major versions): `.nvmrc`, `engines`, CI `node-version`, the Docker
   base images (node and the matching alpine) and `@types/node` move together, and this ADR records it.
 
