@@ -65,11 +65,15 @@
       "enabled": false
     },
     {
-      "description": "A PostgreSQL major cannot open the previous major's data directory, so bumping it breaks every self-hosted upgrade; that needs a documented dump/restore path. Caddy majors likewise stay deliberate.",
-      "matchFileNames": ["deploy/compose/**"],
+      "description": "A PostgreSQL major cannot open the previous major's data directory, so bumping it breaks every self-hosted upgrade; that needs a documented dump/restore path. CI, the release smoke test and local development run the same major as deploy/compose, so the hold covers every file. Caddy majors likewise stay deliberate.",
       "matchDepNames": ["postgres", "caddy"],
       "matchUpdateTypes": ["major"],
       "enabled": false
+    },
+    {
+      "description": "TypeScript stays on 6.0.x (ADR 0003): typescript-eslint 8.x supports >=4.8.4 <6.1.0. Revisit when typescript-eslint declares support for newer releases, together with the ADR.",
+      "matchPackageNames": ["typescript"],
+      "allowedVersions": "<6.1.0"
     }
   ]
 }
