@@ -246,6 +246,14 @@ jobs:
           echo "web keep-alive timeout: ${timeout:-none} s"
           docker rm -f web-keepalive >/dev/null
           test "${timeout:-0}" -gt 120 || { echo "::error::web server closes idle connections before the proxy does"; exit 1; }
+      # No npm, Node with its security releases, no fixable high or critical
+      # vulnerabilities (#906). The release runs the same script on the
+      # pushed digests before signing. Both architectures: native packages
+      # differ (sharp ships per platform).
+      - name: Check images (npm, Node security releases, vulnerabilities)
+        run: |
+          scripts/check-image.sh netrics-server:ci
+          scripts/check-image.sh netrics-web:ci
 
   # The supported self-hosted install must keep working end to end: build the
   # images from this commit, run install.sh, start deploy/compose, and complete

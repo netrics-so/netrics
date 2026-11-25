@@ -11,8 +11,10 @@ time, with all production toolchain versions pinned.
 
 - **Node.js 26** is the supported runtime. The root `package.json` declares
   `engines: { "node": ">=26" }` (permissive range so newer local installs keep
-  working), `.nvmrc` pins `26`, CI uses `node-version: 26`, and Docker base
-  images use `node:26-alpine` pinned by its multi-arch index digest.
+  working), `.nvmrc` pins `26`, CI uses `node-version: 26`, and the Docker
+  build stages use `node:26-alpine` pinned by its multi-arch index digest.
+  The runtime stages are the matching `alpine` release, also pinned by
+  digest, with only the Node binary copied in: no npm (#906).
 - **pnpm 10.34.5** is the package manager, pinned via
   `packageManager: "pnpm@10.34.5"`. CI activates exactly this with
   `pnpm/action-setup`. Node 25+ no longer bundles corepack, so the Docker
@@ -33,7 +35,7 @@ time, with all production toolchain versions pinned.
 - Upgrading TypeScript past 6.0 is blocked on typescript-eslint support.
 - Moving to the next LTS line is a deliberate change (Dependabot ignores
   Node major versions): `.nvmrc`, `engines`, CI `node-version`, the Docker
-  base images and `@types/node` move together, and this ADR records it.
+  base images (node and the matching alpine) and `@types/node` move together, and this ADR records it.
 
 ## History
 
