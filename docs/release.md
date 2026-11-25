@@ -305,10 +305,14 @@ cosign verify-attestation --type spdxjson \
 
 - Every action is pinned by commit SHA (with the version in a comment), base
   images by digest, npm packages by exact version.
-- Dependabot (`.github/dependabot.yml`) proposes updates weekly for actions,
-  npm, the Dockerfiles, and `deploy/compose`. Its seven-day cooldown keeps
-  releases younger than a week out. Major versions arrive as separate pull
-  requests.
+- Renovate (`renovate.json`) proposes updates for actions, npm, the
+  Dockerfiles, `deploy/compose` and the Trivy image in `scripts/check-image.sh`.
+  Non-major updates arrive as one pull request on Tuesdays, so they cost one
+  release a week. Releases younger than seven days are held back (three days
+  for the node base image, see `scripts/check-image.sh`); fixes for known
+  vulnerabilities are proposed at once. Major versions arrive as separate pull
+  requests, except the ones held on purpose: Node and the matching alpine
+  (ADR 0003), and PostgreSQL and Caddy in `deploy/compose`.
 - Workflows start with `permissions: {}`, and each job asks only for what it
   uses: `packages: write` only where images are pushed, `id-token: write`
   only in the signing job, `contents: write` only for the GitHub release.

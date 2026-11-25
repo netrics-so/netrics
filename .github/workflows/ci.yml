@@ -401,7 +401,7 @@ jobs:
   # image in a registry local to the job: sign --recursive, attest an SPDX
   # SBOM per platform and on the index, then verify the way promote.yml and
   # docs/release.md do. Keyless (GitHub OIDC, public Fulcio and Rekor) when
-  # the run gets an ID token; pull requests from forks and Dependabot do not,
+  # the run gets an ID token; pull requests from forks do not,
   # and fall back to a throwaway key without the transparency log.
   signing:
     runs-on: ubuntu-24.04
