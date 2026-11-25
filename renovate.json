@@ -31,7 +31,9 @@
       "customType": "regex",
       "description": "pnpm installed in the Docker build stage; moves with packageManager in package.json",
       "managerFilePatterns": ["/(^|/)Dockerfile$/"],
-      "matchStrings": ["npm install -g pnpm@(?<currentValue>\\d+\\.\\d+\\.\\d+)"],
+      "matchStrings": [
+        "npm install -g pnpm@(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+      ],
       "depNameTemplate": "pnpm",
       "datasourceTemplate": "npm"
     }
