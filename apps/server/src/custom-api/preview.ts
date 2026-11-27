@@ -5,7 +5,8 @@ import { rethrowWorkspaceGone } from "@netrics/database";
 // and JSON-escaped), and the body is bounded in array length, keys per
 // object, string length, depth and serialized size. Pure. Key-based
 // redaction (redactSecrets) is deliberately not applied: API data has keys
-// like "keyword" or "token_count" whose values are not secrets.
+// like "keyword" or "token_count" whose values are not secrets. A rendered
+// request body echoed as JSON, not as text, is replaced as a whole subtree.
 //
 // Bounding is one pass with a running byte budget: the work is bounded by
 // the budget, not by the size of the body (review of #820: re-serializing
@@ -50,7 +51,18 @@ export interface SecretSet {
    * into it (a 128 KiB body, percent-encoded, would outgrow V8's limit).
    */
   rendered: readonly string[];
-  /** The secret forms by plain search, both hex cases, when `pattern` is null. */
+  /**
+   * The rendered bodies parsed, when they are a non-empty object or array:
+   * a provider that echoes the body as JSON rather than as text (`{"json":
+   * {…}}`) has each matching subtree replaced, keys in any order (#885).
+   */
+  echoes: readonly object[];
+  /**
+   * The secret forms by plain search when `pattern` is null, each as it is
+   * and with its percent-escapes in upper hex case: the text is searched
+   * with its own escapes in upper case too, so an escape matches in any
+   * hex case, mixed ones (`%c3%BC`, `%cB`) included (#885).
+   */
   fallback: readonly string[];
 }
 
@@ -61,12 +73,9 @@ export interface SecretSet {
  */
 const MAX_PATTERN_CHARS = 262_144;
 
-/** A form as it is, and with its percent-escapes in lower and upper hex case. */
-function hexCases(form: string): string[] {
-  const lower = form.replace(/%[0-9A-Fa-f]{2}/g, (e) => e.toLowerCase());
-  const upper = form.replace(/%[0-9A-Fa-f]{2}/g, (e) => e.toUpperCase());
-  return [form, lower, upper];
-}
+/** The text with its percent-escapes in upper hex case; same length. */
+const upperHex = (text: string): string =>
+  text.replace(/%[0-9A-Fa-f]{2}/g, (e) => e.toUpperCase());
 
 const longestFirst = (values: Iterable<string>): string[] =>
   [...new Set(values)]
@@ -78,6 +87,33 @@ function replacePlain(text: string, values: readonly string[]): string {
   let out = text;
   for (const value of values)
     if (out.includes(value)) out = out.split(value).join(REDACTED);
+  return out;
+}
+
+/**
+ * Replaces every occurrence of each value, in order, by plain search in
+ * the text with its percent-escapes in upper hex case: upper-casing keeps
+ * every position, so a match there is cut from the text itself, and the
+ * escapes outside a match keep their case. Values with upper-case escapes
+ * match escapes in any hex case; a value whose escape is cut at its end
+ * (`…%c`) is left to the plain search after this one.
+ */
+function replaceAnyHexCase(text: string, values: readonly string[]): string {
+  let out = text;
+  let upper = upperHex(out);
+  for (const value of values) {
+    let at = upper.indexOf(value);
+    if (at < 0) continue;
+    let next = "";
+    let from = 0;
+    while (at >= 0) {
+      next += out.slice(from, at) + REDACTED;
+      from = at + value.length;
+      at = upper.indexOf(value, from);
+    }
+    out = next + out.slice(from);
+    upper = upperHex(out);
+  }
   return out;
 }
 
@@ -152,6 +188,22 @@ export function secretSetOf(
       return [body, json, json.replaceAll("/", "\\/")];
     }),
   );
+  const echoes: object[] = [];
+  for (const body of rendered) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(body);
+    } catch (caught) {
+      rethrowWorkspaceGone(caught);
+      continue;
+    }
+    if (
+      parsed !== null &&
+      typeof parsed === "object" &&
+      Object.keys(parsed).length > 0
+    )
+      echoes.push(parsed);
+  }
   const source = values.map(formPattern).join("|");
   let pattern: RegExp | null = null;
   if (values.length > 0 && source.length <= MAX_PATTERN_CHARS) {
@@ -167,9 +219,10 @@ export function secretSetOf(
     values,
     pattern,
     rendered: bodies,
+    echoes,
     fallback:
       values.length > 0 && pattern === null
-        ? longestFirst(values.flatMap(hexCases))
+        ? longestFirst(values.flatMap((value) => [value, upperHex(value)]))
         : [],
   };
 }
@@ -179,7 +232,115 @@ export function redactText(text: string, secrets: SecretSet): string {
   // break the body's match.
   let out = replacePlain(text, secrets.rendered);
   if (secrets.pattern) out = out.replace(secrets.pattern, REDACTED);
-  return replacePlain(out, secrets.fallback);
+  if (secrets.fallback.length === 0) return out;
+  return replacePlain(
+    replaceAnyHexCase(out, secrets.fallback),
+    secrets.fallback,
+  );
+}
+
+/**
+ * Whether a JSON value equals `target`: the same keys in any order, the
+ * same items in order. The recursion follows the target, a parsed body
+ * template (bounded in depth and size), never the response.
+ */
+function sameJson(value: unknown, target: unknown): boolean {
+  if (value === target) return true;
+  if (
+    value === null ||
+    target === null ||
+    typeof value !== "object" ||
+    typeof target !== "object"
+  )
+    return false;
+  if (Array.isArray(target)) {
+    if (!Array.isArray(value) || value.length !== target.length) return false;
+    for (let i = 0; i < target.length; i++)
+      if (!sameJson(value[i], target[i])) return false;
+    return true;
+  }
+  if (Array.isArray(value)) return false;
+  const keys = Object.keys(target);
+  if (Object.keys(value).length !== keys.length) return false;
+  for (const key of keys)
+    if (
+      !Object.hasOwn(value, key) ||
+      !sameJson(
+        (value as Record<string, unknown>)[key],
+        (target as Record<string, unknown>)[key],
+      )
+    )
+      return false;
+  return true;
+}
+
+const isEcho = (value: unknown, secrets: SecretSet): boolean =>
+  value !== null &&
+  typeof value === "object" &&
+  secrets.echoes.some((target) => sameJson(value, target));
+
+/**
+ * The value with every subtree that equals a rendered body replaced by
+ * "[redacted]" (#885). Copies only the containers on the way to a
+ * replacement and returns the value itself when nothing matched. Walks
+ * with its own stack, so a deeply nested response cannot overflow it.
+ */
+export function redactEchoes(value: unknown, secrets: SecretSet): unknown {
+  if (secrets.echoes.length === 0) return value;
+  if (isEcho(value, secrets)) return REDACTED;
+  if (value === null || typeof value !== "object") return value;
+  type Container = Record<string, unknown> | unknown[];
+  interface Frame {
+    source: Container;
+    keys: string[];
+    next: number;
+    copy: Container | null;
+    parent: Frame | null;
+    key: string;
+  }
+  const open = (
+    source: Container,
+    parent: Frame | null,
+    key: string,
+  ): Frame => ({
+    source,
+    keys: Array.isArray(source)
+      ? Array.from(source, (_, i) => String(i))
+      : Object.keys(source),
+    next: 0,
+    copy: null,
+    parent,
+    key,
+  });
+  const set = (frame: Frame, key: string, item: unknown) => {
+    frame.copy ??= Array.isArray(frame.source)
+      ? frame.source.slice()
+      : { ...frame.source };
+    // Defined, not assigned: a "__proto__" key stays an own property.
+    Object.defineProperty(frame.copy, key, {
+      value: item,
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    });
+  };
+  let result: unknown = value;
+  let top: Frame | null = open(value as Container, null, "");
+  while (top) {
+    if (top.next < top.keys.length) {
+      const key = top.keys[top.next++]!;
+      const child = (top.source as Record<string, unknown>)[key];
+      if (child === null || typeof child !== "object") continue;
+      if (isEcho(child, secrets)) set(top, key, REDACTED);
+      else top = open(child as Container, top, key);
+      continue;
+    }
+    const done: Frame = top;
+    top = done.parent;
+    if (!top) result = done.copy ?? done.source;
+    else if (done.copy) set(top, done.key, done.copy);
+  }
+  return result;
 }
 
 /**
@@ -314,6 +475,7 @@ export function boundedPreview(
       });
     }
     if (typeof value !== "object") return scalar(null);
+    if (isEcho(value, secrets)) return scalar(REDACTED);
     if (depth >= limits.depth) {
       const placed = scalar("… (nested deeper)");
       if (placed !== undefined) omitted.depth += 1;

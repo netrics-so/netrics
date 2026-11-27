@@ -7,6 +7,7 @@ import {
   inArray,
   isNull,
   lt,
+  lte,
   ne,
   sql,
 } from "drizzle-orm";
@@ -379,13 +380,10 @@ export interface CustomApiDefinitionVersionEntry {
   createdAt: Date;
   /** Null when the author's account is gone. */
   author: { id: string; name: string } | null;
-  /** The nearest earlier version with the identical document, if any. */
-  sameAs: number | null;
 }
 
 /**
  * Up to `limit` versions, newest first, older than `before` when given.
- * sameAs compares the stored canonical hashes with every older version.
  * users has no RLS (installation-level), so joining it is tenant-safe: the
  * versions are filtered by workspace.
  */
@@ -403,12 +401,6 @@ export async function listCustomApiDefinitionVersions(
       createdAt: versions.createdAt,
       authorId: schema.users.id,
       authorName: schema.users.displayName,
-      sameAs: sql<number | null>`(
-        select max(older.version) from custom_api_definition_versions older
-        where older.workspace_id = ${versions.workspaceId}
-          and older.definition_id = ${versions.definitionId}
-          and older.document_sha256 = ${versions.documentSha256}
-          and older.version < ${versions.version})`,
     })
     .from(versions)
     .leftJoin(schema.users, eq(schema.users.id, versions.createdBy))
@@ -432,8 +424,46 @@ export async function listCustomApiDefinitionVersions(
       row.authorId !== null && row.authorName !== null
         ? { id: row.authorId, name: row.authorName }
         : null,
-    sameAs: row.sameAs === null ? null : Number(row.sameAs),
   }));
+}
+
+/** A version's stored hash, with its document when it is at an older schema version. */
+export interface CustomApiDefinitionVersionHash {
+  version: number;
+  schemaVersion: number;
+  documentSha256: string;
+  /** Only for versions below `documentsBelowSchema`; null otherwise. */
+  document: unknown;
+}
+
+/**
+ * Every version up to `through`, oldest first, for comparing contents
+ * (#885): the stored hash of each, and the document of those stored at a
+ * schema version below `documentsBelowSchema`, whose hash was taken
+ * before an upgrade and is compared after upgrading the document again.
+ */
+export async function listCustomApiDefinitionVersionHashes(
+  tx: Transaction,
+  workspaceId: string,
+  definitionId: string,
+  options: { through: number; documentsBelowSchema: number },
+): Promise<CustomApiDefinitionVersionHash[]> {
+  return tx
+    .select({
+      version: versions.version,
+      schemaVersion: versions.schemaVersion,
+      documentSha256: versions.documentSha256,
+      document: sql<unknown>`case when ${versions.schemaVersion} < ${options.documentsBelowSchema} then ${versions.document} end`,
+    })
+    .from(versions)
+    .where(
+      and(
+        eq(versions.workspaceId, workspaceId),
+        eq(versions.definitionId, definitionId),
+        lte(versions.version, options.through),
+      ),
+    )
+    .orderBy(asc(versions.version));
 }
 
 export interface CustomApiDefinitionConnectionRow {

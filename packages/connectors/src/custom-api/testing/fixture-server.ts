@@ -882,6 +882,13 @@ export async function startCustomApiFixtureServer(
         if (request.method !== "POST") return send(405, { error: "POST" });
         return send(200, { items: [{ id: 1 }], echo: bodyText ?? "" });
       }
+      // Answers the request body it got parsed, as JSON (as httpbin's
+      // "json"), in the records and next to them (#885).
+      case "/query-echo-json": {
+        if (request.method !== "POST") return send(405, { error: "POST" });
+        const sent = JSON.parse(bodyText ?? "null") as unknown;
+        return send(200, { items: [{ id: 1, request: sent }], json: sent });
+      }
       case "/graphql/redirect":
         response.writeHead(307, {
           location: `${origin}/graphql/string-cursor`,

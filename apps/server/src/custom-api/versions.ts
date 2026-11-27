@@ -4,6 +4,7 @@
 // versions, limits, the stale check and the audit are the same as a save.
 
 import {
+  CUSTOM_API_SCHEMA_VERSION,
   CustomApiDefinitionError,
   readStoredCustomApiDefinition,
   upgradeCustomApiDefinition,
@@ -15,13 +16,16 @@ import {
 import {
   findCustomApiDefinition,
   findCustomApiDefinitionVersion,
+  listCustomApiDefinitionVersionHashes,
   listCustomApiDefinitionVersions,
   withWorkspace,
+  type CustomApiDefinitionVersionHash,
   type Database,
   rethrowWorkspaceGone,
 } from "@netrics/database";
 
 import type { CustomApiInstanceConfig } from "../env.js";
+import { canonicalSha256 } from "./canonical-json.js";
 import {
   createCustomApiService,
   type Actor,
@@ -36,6 +40,32 @@ const NOT_FOUND = {
   status: 404,
   error: "custom_api_definition_not_found",
 } as const;
+
+/**
+ * For each version, the nearest earlier version with the same content
+ * (#885). Contents compare at today's schema version, as a restore does:
+ * the stored hash of a version saved at an older schema version is that
+ * of the older document, so its document is upgraded and hashed again
+ * (the stored hash stays when the stored shape no longer reads).
+ */
+function sameAsOf(
+  rows: readonly CustomApiDefinitionVersionHash[],
+): Map<number, number | null> {
+  const latest = new Map<string, number>();
+  const sameAs = new Map<number, number | null>();
+  for (const row of rows) {
+    let hash = row.documentSha256;
+    if (row.schemaVersion < CUSTOM_API_SCHEMA_VERSION && row.document !== null)
+      try {
+        hash = canonicalSha256(readStoredCustomApiDefinition(row.document));
+      } catch (caught) {
+        rethrowWorkspaceGone(caught);
+      }
+    sameAs.set(row.version, latest.get(hash) ?? null);
+    latest.set(hash, row.version);
+  }
+  return sameAs;
+}
 
 /** Counts for the history list; zeros when the stored shape is unreadable. */
 function summaryOf(
@@ -97,6 +127,19 @@ export function createCustomApiVersionService(deps: {
           },
         );
         const page = rows.slice(0, CUSTOM_API_HISTORY_PAGE);
+        const sameAs = sameAsOf(
+          page.length === 0
+            ? []
+            : await listCustomApiDefinitionVersionHashes(
+                tx,
+                actor.workspaceId,
+                definitionId,
+                {
+                  through: page[0]!.version,
+                  documentsBelowSchema: CUSTOM_API_SCHEMA_VERSION,
+                },
+              ),
+        );
         return {
           ok: true,
           value: {
@@ -106,7 +149,7 @@ export function createCustomApiVersionService(deps: {
               createdAt: row.createdAt.toISOString(),
               author: row.author,
               current: row.version === found.definition.currentVersion,
-              sameAs: row.sameAs,
+              sameAs: sameAs.get(row.version) ?? null,
               summary: summaryOf(row.document),
             })),
             nextBefore:

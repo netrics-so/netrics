@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   boundedPreview,
   CUSTOM_API_TEST_LIMITS,
+  redactEchoes,
   redactText,
   redactUrl,
   secretSetOf,
@@ -50,6 +51,37 @@ describe("redaction of large values (ADR 0030 review)", () => {
     const text = `a ${huge[3]} b ${encodeURIComponent(huge[7]!)} c ${encodeURIComponent(huge[9]!).toLowerCase()} tok-123456`;
     expect(redactText(text, secrets!)).toBe(
       "a [redacted] b [redacted] c [redacted] [redacted]",
+    );
+  });
+
+  it("matches percent-escapes in mixed hex case when the pattern would be too large (#885)", () => {
+    const huge = Array.from(
+      { length: 20 },
+      (_, i) => `${i}-${"ü€/ +".repeat(1_600)}`,
+    );
+    const secrets = secretSetOf(
+      {},
+      Object.fromEntries(huge.map((value, i) => [`v${i}`, value])),
+    );
+    expect(secrets.pattern).toBeNull();
+    let escape = 0;
+    // `%c3%BC`, `%C3%bc`, `%e2%8A%AC`…: each escape in another case,
+    // and digits within one escape mixed too (`%cB`).
+    const mixed = (value: string) =>
+      encodeURIComponent(value).replace(/%[0-9A-F]{2}/g, (e) => {
+        escape += 1;
+        return escape % 3 === 0
+          ? e.toLowerCase()
+          : escape % 3 === 1
+            ? e
+            : `%${e[1]!.toLowerCase()}${e[2]}`;
+      });
+    const text = `a ${mixed(huge[4]!)} b ${mixed(huge[11]!)} c`;
+    expect(text).toMatch(/%c3%BC|%C3%bc|%c3%Bc|%C3%BC%e2/);
+    expect(redactText(text, secrets)).toBe("a [redacted] b [redacted] c");
+    // Nothing else changes: escapes outside a secret keep their case.
+    expect(redactText(`x%c3%BCy ${mixed(huge[0]!)}`, secrets)).toBe(
+      "x%c3%BCy [redacted]",
     );
   });
 });
@@ -302,5 +334,67 @@ describe("boundedPreview", () => {
       truncated: false,
       omitted: { arrays: 0, strings: 0, depth: 0, bytes: 0 },
     });
+  });
+});
+
+describe("structured echo of rendered bodies (#885)", () => {
+  const sent = {
+    kind: "ItemsQuery",
+    tenant: "acme-tenant",
+    page: { offset: 0, limit: 10 },
+    tags: ["a", "b"],
+  };
+  const secrets = secretSetOf({}, {}, [], [JSON.stringify(sent)]);
+  // The provider parsed the body and answers it as JSON, keys reordered.
+  const echoed = () => ({
+    tags: ["a", "b"],
+    page: { limit: 10, offset: 0 },
+    tenant: "acme-tenant",
+    kind: "ItemsQuery",
+  });
+
+  it("redacts the body echoed as an object or array, at any depth", () => {
+    const body = {
+      items: [{ id: 1, request: echoed() }],
+      json: echoed(),
+      list: [[echoed()]],
+      // Parts of the body and look-alikes stay.
+      page: { limit: 10, offset: 0 },
+      near: { ...echoed(), extra: true },
+      other: { ...echoed(), tags: ["b", "a"] },
+    };
+    const out = boundedPreview(body, secrets).body as Record<string, unknown>;
+    expect(out.items).toEqual([{ id: 1, request: "[redacted]" }]);
+    expect(out.json).toBe("[redacted]");
+    expect(out.list).toEqual([["[redacted]"]]);
+    expect(out.page).toEqual({ limit: 10, offset: 0 });
+    expect(out.near).toMatchObject({ kind: "ItemsQuery", extra: true });
+    expect(out.other).toMatchObject({ tags: ["b", "a"] });
+  });
+
+  it("redacts echoed bodies in a copy for the field suggestions, leaving the original", () => {
+    const records = [{ id: 1, request: echoed(), page: { limit: 10 } }];
+    const out = redactEchoes(records, secrets);
+    expect(out).toEqual([
+      { id: 1, request: "[redacted]", page: { limit: 10 } },
+    ]);
+    expect(records[0]!.request).toEqual(echoed());
+    // Nothing echoed: the same value back.
+    const plain = [{ id: 1 }];
+    expect(redactEchoes(plain, secrets)).toBe(plain);
+    expect(redactEchoes(echoed(), secrets)).toBe("[redacted]");
+    // Deeper than the stack would allow for recursion.
+    let deep: unknown = echoed();
+    for (let i = 0; i < 100_000; i++) deep = [deep];
+    let walked = redactEchoes(deep, secrets);
+    for (let i = 0; i < 100_000; i++) walked = (walked as unknown[])[0];
+    expect(walked).toBe("[redacted]");
+  });
+
+  it("never treats an empty or scalar body as an echo", () => {
+    const scalars = secretSetOf({}, {}, [], ["{}", "[]", "12345"]);
+    const body = { a: {}, b: [], c: 12345 };
+    expect(boundedPreview(body, scalars).body).toEqual(body);
+    expect(redactEchoes(body, scalars)).toBe(body);
   });
 });

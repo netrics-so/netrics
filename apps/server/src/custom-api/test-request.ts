@@ -65,6 +65,7 @@ import { customOAuthFailureMessage } from "../oauth/tokens.js";
 import {
   boundedPreview,
   CUSTOM_API_TEST_LIMITS,
+  redactEchoes,
   redactText,
   redactUrl,
   secretSetOf,
@@ -617,10 +618,12 @@ export function createCustomApiTestRequestService(
                   }
                 : null,
             recordArrays: first
-              ? findRecordArrays(firstBody).map(({ path, length }) => ({
-                  path: shortPath(redactText(path, secrets)),
-                  length,
-                }))
+              ? findRecordArrays(redactEchoes(firstBody, secrets)).map(
+                  ({ path, length }) => ({
+                    path: shortPath(redactText(path, secrets)),
+                    length,
+                  }),
+                )
               : [],
             records: {
               path: definition.stream.records,
@@ -628,7 +631,14 @@ export function createCustomApiTestRequestService(
               found: recordsAt.found,
             },
             suggestions: suggestFields(
-              records,
+              // A body echoed as JSON is one redacted value, not fields;
+              // records that are the echo itself suggest nothing.
+              [
+                redactEchoes(
+                  records.slice(0, CUSTOM_API_TEST_LIMITS.rows),
+                  secrets,
+                ),
+              ].flat(),
               CUSTOM_API_TEST_LIMITS.rows,
               (text) => redactText(text, secrets),
             ),

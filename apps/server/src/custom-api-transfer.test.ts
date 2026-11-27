@@ -410,6 +410,49 @@ describe("custom API import", () => {
     expect(res.statusCode).toBe(413);
   });
 
+  it("refuses deeply nested values under the upload limit as invalid, not with a 500 (#885)", async () => {
+    // 100,000 levels of arrays: 200 KB, under the upload limit, and far
+    // deeper than structuredClone can copy.
+    const levels = 100_000;
+    const deep = `${"[".repeat(levels)}${"]".repeat(levels)}`;
+    const json = fixtureDefinition("json_offset", fixture.origin).streams[0]!;
+    const definition = {
+      ...bearer(),
+      streams: [{ ...json, key: "query_items" }],
+    };
+    const text = JSON.stringify({
+      format: CUSTOM_API_EXPORT_FORMAT,
+      schemaVersion: 2,
+      exportedAt: new Date().toISOString(),
+      definition,
+    });
+    const files = [
+      // An unknown key at the top of the definition.
+      text.replace('"name":', `"padding":${deep},"name":`),
+      // Inside a JSON body the import touches.
+      text.replace('"kind":"json",', `"kind":"json","padding":${deep},`),
+      // Inside a stream.
+      text.replace('"key":"query_items",', `"key":"query_items","x":${deep},`),
+    ];
+    for (const file of files) {
+      expect(file.length).toBeGreaterThan(2 * levels);
+      expect(() => parseImport(JSON.parse(file), true)).not.toThrow();
+      const parsed = parseImport(JSON.parse(file), true);
+      expect(parsed).toMatchObject({
+        ok: false,
+        error: "custom_api_import_invalid",
+      });
+      const res = await t.app.inject({
+        method: "POST",
+        url: `${defs(otherWorkspaceId)}/import`,
+        headers: { cookie: other, "content-type": "application/json" },
+        payload: `{"readOnlyConfirmed":true,"file":${file}}`,
+      });
+      expect(res.statusCode, res.body.slice(0, 500)).toBe(400);
+      expect(res.json()).toMatchObject({ error: "custom_api_import_invalid" });
+    }
+  });
+
   it("names a duplicate import Shop API (2)", async () => {
     const definition = await create(bearer());
     const exported = (
