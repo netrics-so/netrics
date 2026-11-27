@@ -44,17 +44,24 @@ export type RailwayErrorKind =
   /** Any other answer Railway refused. */
   | "other";
 
+/** netrics' own notes on a refused answer; never Railway's text. */
+export const PAGE_WITHOUT_CURSOR =
+  "a page says more follow but names no cursor";
+export type RailwayErrorNote =
+  "" | "the answer was not JSON" | "no data" | typeof PAGE_WITHOUT_CURSOR;
+
 /**
- * A refused Railway request. Only Railway's own error text is kept (never
- * the request, its variables or headers), so the token cannot leak through
- * it; the text is cut short.
+ * A refused Railway request, with fixed text per kind and status: neither
+ * Railway's error text nor the request, its variables or headers, so no
+ * provider text or token can leak through it (#901 review). Only one of
+ * netrics' own notes may be added.
  */
 export class RailwayApiError extends Error {
   readonly status: number;
   readonly kind: RailwayErrorKind;
 
-  constructor(status: number, kind: RailwayErrorKind, detail: string) {
-    super(describe(status, kind, detail));
+  constructor(status: number, kind: RailwayErrorKind, note: RailwayErrorNote) {
+    super(describe(status, kind, note));
     this.name = "RailwayApiError";
     this.status = status;
     this.kind = kind;
@@ -68,7 +75,7 @@ export class RailwayApiError extends Error {
 function describe(
   status: number,
   kind: RailwayErrorKind,
-  detail: string,
+  note: RailwayErrorNote,
 ): string {
   if (kind === "auth") {
     return "Railway did not accept the token for this request (Not Authorized).";
@@ -79,13 +86,15 @@ function describe(
   if (status >= 500) {
     return `Railway is not answering right now (${status}). netrics tries again later.`;
   }
-  const text = detail.replace(/\s+/g, " ").trim().slice(0, 200);
   if (kind === "not_found") {
-    return `Railway did not find a workspace or project the token may read: ${text}`;
+    return "Railway did not find a workspace or project the token may read.";
   }
-  return kind === "schema"
-    ? `Railway's API no longer accepts netrics' query: ${text}`
-    : `Railway API answered ${status}: ${text || "no message"}`;
+  if (kind === "schema") {
+    return "Railway's API no longer accepts netrics' query.";
+  }
+  return note
+    ? `Railway API answered ${status}: ${note}`
+    : `Railway API refused the request (${status}).`;
 }
 
 /**
@@ -105,7 +114,10 @@ const graphQlErrorSchema = (value: unknown) =>
     ? (value as { message?: unknown; extensions?: { code?: unknown } })
     : {};
 
-/** Classifies the `errors` of a GraphQL answer. */
+/**
+ * Classifies the `errors` of a GraphQL answer. Their text decides the kind
+ * and is then dropped.
+ */
 export function graphQlError(
   status: number,
   errors: readonly unknown[],
@@ -118,16 +130,16 @@ export function graphQlError(
     return new RailwayApiError(status, "auth", "");
   }
   if (messages.some((message) => /\bnot found\b/i.test(message))) {
-    return new RailwayApiError(status, "not_found", messages[0] ?? "");
+    return new RailwayApiError(status, "not_found", "");
   }
   if (
     parsed.some(
       (error) => error.extensions?.code === "GRAPHQL_VALIDATION_FAILED",
     )
   ) {
-    return new RailwayApiError(status, "schema", messages[0] ?? "");
+    return new RailwayApiError(status, "schema", "");
   }
-  return new RailwayApiError(status, "other", messages[0] ?? "");
+  return new RailwayApiError(status, "other", "");
 }
 
 /**
@@ -189,6 +201,11 @@ export type RailwayQuery = <T = unknown>(
   variables?: Record<string, unknown>,
 ) => Promise<T>;
 
+/** A RailwayQuery that also tells the reset its next request waits for. */
+export type RailwayClient = RailwayQuery & {
+  pendingReset(): number | null;
+};
+
 /**
  * A GraphQL query against Railway through the runtime's allowlisted fetch,
  * with an account or workspace token (`Authorization: Bearer`). Retries
@@ -200,7 +217,7 @@ export function createRailwayClient(
   runtime: ConnectorRuntime,
   token: string,
   options: ClientOptions = {},
-): RailwayQuery {
+): RailwayClient {
   const sleep = options.sleep ?? abortableSleep;
   const now = options.now ?? Date.now;
   const deadline = options.deadline ?? Number.POSITIVE_INFINITY;
@@ -223,7 +240,19 @@ export function createRailwayClient(
     if (wait > 0) await sleep(wait, runtime.signal);
   }
 
-  return async function query<T>(
+  /**
+   * The reset the next request would wait for (ms since the epoch): the
+   * window reported fewer than MIN_REMAINING_REQUESTS left. Null when it
+   * would not wait.
+   */
+  function pendingReset(): number | null {
+    if (!window || window.remaining >= MIN_REMAINING_REQUESTS) return null;
+    return window.resetAt > now() ? window.resetAt : null;
+  }
+
+  return Object.assign(query, { pendingReset });
+
+  async function query<T>(
     document: string,
     variables: Record<string, unknown> = {},
   ): Promise<T> {
@@ -320,5 +349,5 @@ export function createRailwayClient(
       }
       return answer.data as T;
     }
-  };
+  }
 }

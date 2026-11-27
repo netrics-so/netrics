@@ -37,7 +37,11 @@ import {
 import { boundFreshness } from "../freshness.js";
 import { pendingHold, rateLimitHold } from "../rate-limit-hold.js";
 
-import { RailwayApiError, type RailwayQuery } from "./api.js";
+import {
+  RailwayApiError,
+  type RailwayClient,
+  type RailwayQuery,
+} from "./api.js";
 import {
   COST_MEASUREMENTS,
   addUsage,
@@ -365,7 +369,7 @@ function isRefused(error: unknown): boolean {
 }
 
 export async function syncPage(
-  query: RailwayQuery,
+  query: RailwayClient,
   context: ConnectionContext,
   request: SyncRequest,
   options: RailwaySyncOptions,
@@ -728,17 +732,21 @@ export async function syncPage(
       // A base stored before deleted projects were counted (a checkpoint
       // of the version before #899) lacks them: the first day after it
       // would report a deleted project's whole month as that day's cost.
-      // It is read again instead (#901 item 3).
+      // It is read again for them (#901 item 3); the cents it holds are
+      // what earlier days reported, and stay the base (#901 review).
       if (!monthStart && (cost.prev === undefined || !cost.withDeleted)) {
         // The day before the first day read, within its month: the base
         // of the first day's difference.
         const before = await monthToDate(workspaceId, cost.day);
-        cost.prev = Object.fromEntries(
-          costProjects(listed, before).map((id) => [
-            id,
-            cents(usageCostUsd(before.get(id) ?? {})),
-          ]),
-        );
+        cost.prev = {
+          ...Object.fromEntries(
+            costProjects(listed, before).map((id) => [
+              id,
+              cents(usageCostUsd(before.get(id) ?? {})),
+            ]),
+          ),
+          ...cost.prev,
+        };
         cost.withDeleted = true;
         return;
       }
@@ -880,13 +888,13 @@ export async function syncPage(
 
   // A step sends one request, a deployments step whose project may be gone
   // two (see deploymentsStep): a step starts only while two are left, and
-  // only early enough to end by the page's deadline (#901 item 1).
-  let steps = 0;
+  // only early enough to end by the page's deadline (#901 item 1). A fresh
+  // run's workspace listing is the page's first step (#901 review).
   let step = nextStep();
   while (
     step &&
     budget >= 2 &&
-    (steps === 0 || now() - pageStarted < PAGE_TIME_BUDGET_MS)
+    (!progressed || now() - pageStarted < PAGE_TIME_BUDGET_MS)
   ) {
     const checkpoint = JSON.stringify(run);
     const marks = [
@@ -917,8 +925,18 @@ export async function syncPage(
       break;
     }
     progressed = true;
-    steps += 1;
     step = nextStep();
+  }
+  // A page that yields with steps left while Railway's window is nearly
+  // used up: the reset lives only in this page's client, so the checkpoint
+  // carries it and the next page waits for it without a request (#901
+  // review).
+  if (step && run.retryAt === undefined) {
+    const reset = query.pendingReset();
+    if (reset !== null) {
+      const hold = rateLimitHold(iso(reset), now());
+      if (hold !== undefined) run.retryAt = hold;
+    }
   }
 
   const datasetPages: DatasetPage[] = [];

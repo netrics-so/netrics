@@ -668,6 +668,37 @@ describe("Railway answers", () => {
     expect(schema).toBeInstanceOf(RailwayApiError);
   });
 
+  it("keeps Railway's error text out of its errors (#901 review)", () => {
+    const answer = (message: string, code = "INTERNAL_SERVER_ERROR") => [
+      { message, extensions: { code } },
+    ];
+    const cases: Array<[RailwayApiError, string, string]> = [
+      [
+        graphQlError(200, answer("Project prj-secret-42 not found")),
+        "not_found",
+        "prj-secret-42",
+      ],
+      [
+        graphQlError(
+          200,
+          answer('Cannot query field "statuz"', "GRAPHQL_VALIDATION_FAILED"),
+        ),
+        "schema",
+        "statuz",
+      ],
+      [
+        graphQlError(400, answer("internal detail from upstream db-7")),
+        "other",
+        "db-7",
+      ],
+    ];
+    for (const [error, kind, providerText] of cases) {
+      expect(error.kind).toBe(kind);
+      expect(error.message).not.toContain(providerText);
+      expect(error.message).toMatch(/^Railway/);
+    }
+  });
+
   it("never sends anything but a query", () => {
     expect(() => assertReadOnly("query a { me { id } }")).not.toThrow();
     expect(() =>
@@ -1640,11 +1671,16 @@ describe("pages end before the host's deadline (#901 item 1)", () => {
     stallAt?: number;
     limitedAt?: number[];
     failingAt?: number[];
+    /** Railway's rate-limit window, counted down by every answer. */
+    window?: { remaining: number; resetInMs: number };
   }) {
-    const railway = fake();
     let t = clock();
+    const railway = fake(
+      options.window ? { window: { ...options.window, now: () => t } } : {},
+    );
     let count = 0;
     const timeouts: Array<number | undefined> = [];
+    const sleeps: number[] = [];
     const runtime: ConnectorRuntime = {
       ...railway.runtime,
       fetch: async (url, init) => {
@@ -1679,6 +1715,7 @@ describe("pages end before the host's deadline (#901 item 1)", () => {
     const railwayConnector = createRailwayConnector({
       now: () => t,
       sleep: async (ms) => {
+        sleeps.push(ms);
         t += ms;
       },
     });
@@ -1686,9 +1723,43 @@ describe("pages end before the host's deadline (#901 item 1)", () => {
       runtime,
       railway: railwayConnector,
       timeouts,
+      sleeps,
+      fetches: () => count,
       elapsed: () => t - started,
     };
   }
+
+  it("a fresh run's workspace listing counts as the page's first step (#901 review)", async () => {
+    // The listing meets a 503 and its retry ends after 30.5 s: no project
+    // step starts after it.
+    const { runtime, railway, fetches, elapsed } = timed({
+      stepMs: 15_000,
+      failingAt: [1],
+    });
+    const page = await railway.sync(context(), WINDOW, runtime);
+    expect(page.done).toBe(false);
+    expectHostAccepts(page);
+    expect(fetches()).toBe(2);
+    expect(elapsed()).toBe(30_500);
+  });
+
+  it("carries a nearly used-up window into the checkpoint when the page yields on time (#901 review)", async () => {
+    // Three answers take 21 s; the third leaves 4 requests in the window.
+    const { runtime, railway, fetches } = timed({
+      stepMs: 7_000,
+      window: { remaining: 7, resetInMs: 10 * 60 * 1000 },
+    });
+    const page = await railway.sync(context(), WINDOW, runtime);
+    expect(page.done).toBe(false);
+    expectHostAccepts(page);
+    expect(fetches()).toBe(3);
+    // Resumed before the reset: the host waits, nothing is sent.
+    const error = await railway
+      .sync(context(), { ...WINDOW, cursor: page.nextCursor! }, runtime)
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(RateLimitedError);
+    expect(fetches()).toBe(3);
+  });
 
   it("a request that stalls late in a page ends in time to return the checkpoint", async () => {
     const { runtime, railway, elapsed } = timed({ stallAt: 6 });
@@ -1741,16 +1812,19 @@ describe("pages end before the host's deadline (#901 item 1)", () => {
   });
 
   it("a server-error backoff that would pass the deadline ends the page", async () => {
-    // Answers take 9.5 s: the third request's retries would end after
-    // the deadline.
-    const { runtime, railway, elapsed } = timed({
-      stepMs: 9_500,
+    // Answers take 8.6 s: the third request's fifth answer (its third
+    // 503) arrives at 44.5 s, and its 2 s backoff would end after the
+    // deadline.
+    const { runtime, railway, elapsed, sleeps, fetches } = timed({
+      stepMs: 8_600,
       failingAt: [3, 4, 5],
     });
     const page = await railway.sync(context(), WINDOW, runtime);
     expect(page.done).toBe(false);
     expectHostAccepts(page);
-    expect(elapsed()).toBeLessThanOrEqual(45_000);
+    expect(fetches()).toBe(5);
+    expect(sleeps).toEqual([500, 1_000]);
+    expect(elapsed()).toBe(44_500);
   });
 
   it("bounds every request below the host's limit", async () => {
@@ -1828,5 +1902,50 @@ describe("a checkpoint written before deleted projects were counted (#901 item 3
     for (const [day, value] of deletedCost) {
       expect(value, day).toBe(siteCost.get(day));
     }
+  });
+
+  it("keeps the cents a legacy baseline already reported (#901 review)", async () => {
+    const costSum = (observations: Observation[], from = 0) =>
+      observations
+        .filter(
+          (item) =>
+            item.metricKey === METRICS.cost &&
+            item.dimensions.resource === "prj-site" &&
+            Date.parse(item.sourceTimestamp) >= from,
+        )
+        .reduce((sum, item) => sum + item.value, 0);
+    // The whole month as Railway bills it.
+    const whole = await syncAll(fake().runtime);
+    const monthTotal = costSum(whole.observations);
+
+    const railway = fake();
+    const after: Observation[] = [];
+    let cursor: string | undefined;
+    let reported: number | undefined;
+    for (let guard = 0; guard < 200; guard += 1) {
+      const page = await connector().sync(
+        context(),
+        { ...WINDOW, ...(cursor ? { cursor } : {}) },
+        railway.runtime,
+      );
+      expectHostAccepts(page);
+      if (reported !== undefined) after.push(...page.observations);
+      if (page.done) break;
+      cursor = page.nextCursor!;
+      const state = decode(cursor);
+      const prev = state.cost?.prev;
+      if (reported === undefined && prev?.["prj-site"] !== undefined) {
+        // A legacy baseline whose cents differ from what Railway answers
+        // when it is read again (Railway revised the day since).
+        reported = prev["prj-site"] - 5;
+        prev["prj-site"] = reported;
+        state.cost = { ws: state.cost!.ws, day: state.cost!.day, prev };
+        cursor = encode(state);
+      }
+    }
+    expect(reported).toBeDefined();
+    // The days after it add up to the month's total from what was
+    // reported, not from the value read again.
+    expect(costSum(after)).toBe(monthTotal - reported!);
   });
 });
