@@ -34,7 +34,8 @@ name with `key`, `token`, `secret`, `passw`, `pwd`, `auth`, `sig`,
 Google `X-Goog-*` parameters, as in signed URLs), or that has a fragment
 (the part after `#`, which never reaches the site and can carry a token,
 as an OAuth redirect's `#access_token=…` does; it is refused, not
-stripped, #898): everyone in the workspace sees a check's URL. A check of an endpoint that needs a credential is not
+stripped, #898; migration 0097 removed the fragments that saved URLs
+had, which the probe used to drop): everyone in the workspace sees a check's URL. A check of an endpoint that needs a credential is not
 supported yet (see "Not yet").
 
 The connection check validates the list and requests nothing: a site that
@@ -114,10 +115,11 @@ run, replaced by every run that requested every check.
 | `checked_at`      | timestamp | When the run requested it                                   |
 | `last_change_at`  | timestamp | Since when the state holds; null until a run sees it change |
 
-An answer whose body cannot be read (larger than 1 MiB, or not complete
-within the time limit; only read for expected text) keeps its status code
-(#898): with a status the check does not expect the reason is
-`unexpected_status`, otherwise `too_large` or `timeout`. Its response time
+An answer whose body cannot be read (larger than 1 MiB, not complete
+within the time limit, or broken off; only read for expected text) keeps
+its status code (#898): with a status the check does not expect the
+reason is `unexpected_status`, otherwise `too_large`, `timeout` or
+`connection`. Its response time
 is null.
 
 Reasons a check is down, fixed codes that never carry what the checked site
@@ -201,7 +203,8 @@ run every two minutes instead of every minute. Five seconds of slack
 absorb that jitter; a round still never starts less than 55 seconds
 after the last.
 
-A run checks that the configuration it read is still the saved one before
+A run of this connector (whose resources are its configuration) checks
+that the configuration it read is still the saved one before
 it publishes its snapshot and freshness, under the connection's row lock
 (#898): when the list was saved during the run, for example removing a
 check (whose freshness the save retires), the run publishes neither, and

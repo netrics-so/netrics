@@ -322,6 +322,17 @@ function route(request: IncomingMessage, response: ServerResponse) {
       timers.add(timer);
       return;
     }
+    case "/reset-body": {
+      // The answer and a first chunk, then the connection breaks.
+      response.writeHead(503, { "content-type": "text/plain" });
+      response.write("partial");
+      const timer = setTimeout(() => {
+        timers.delete(timer);
+        response.socket?.destroy();
+      }, 50);
+      timers.add(timer);
+      return;
+    }
     case "/drip": {
       response.writeHead(200, { "content-type": "text/plain" });
       response.flushHeaders();
@@ -917,6 +928,12 @@ describe("per-request limits, HEAD and refusal reasons (SDK 0.2.21, #874)", () =
     const dripping = await failure(guard(url("/drip"), { timeoutMs: 250 }));
     expect(dripping).toBeInstanceOf(EgressTimeoutError);
     expect((dripping as EgressTimeoutError).status).toBe(200);
+    // The stream broke after the answer: undici's error, its cause kept,
+    // with the answer's status.
+    const reset = await failure(guard(url("/reset-body")));
+    expect(reset).not.toBeInstanceOf(EgressDeniedError);
+    expect(reset.cause).toBeDefined();
+    expect((reset as Error & { status?: number }).status).toBe(503);
     // No answer yet: no status.
     const silent = await failure(
       guard(url("/slow-headers"), { timeoutMs: 100 }),

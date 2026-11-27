@@ -182,8 +182,8 @@ export interface ConnectorFetchInit {
    * bytes, applied only when it is below the host's own limit. A larger
    * body fails the fetch like the host's limit does (an
    * "EgressDeniedError" with reason "size"). Since SDK 0.2.23 (#898) an
-   * error raised while reading the body (too large, or too slow) carries
-   * the answer's `status`, which had already come.
+   * error raised while reading the body (too large, too slow, or the
+   * stream broke) carries the answer's `status`, which had already come.
    */
   maxResponseBytes?: number;
   /**

@@ -25,7 +25,11 @@ import {
   type FreshnessEntry,
   type SyncResult,
 } from "@netrics/connector-sdk";
-import { createDemoConnector, demoManifest } from "@netrics/connectors";
+import {
+  createDemoConnector,
+  demoManifest,
+  HTTP_CHECK_CONNECTOR_ID,
+} from "@netrics/connectors";
 import {
   createDatabase,
   createRawSqlClient,
@@ -62,7 +66,9 @@ let clockMs = START;
 const iso = (ms: number) => new Date(ms).toISOString();
 
 /** What the fixture's next sync returns, or throws. */
-let reply: { freshness?: FreshnessEntry[]; skipped?: true } | Error = {};
+let reply:
+  | { freshness?: FreshnessEntry[]; skipped?: true; nextCursor?: string }
+  | Error = {};
 /** Runs inside the connector call, e.g. a change saved meanwhile. */
 let during: (() => Promise<void>) | null = null;
 
@@ -128,12 +134,12 @@ const checksSnapshot = sourceDatasetSchema.parse({
   ],
 });
 
-function snapshotFixture(): Connector {
+function snapshotFixture(id: string): Connector {
   const demo = createDemoConnector();
   return {
     manifest: {
       ...fixtureManifest,
-      id: "snapshot-fixture",
+      id,
       translations: {},
       datasets: [checksSnapshot],
       freshnessStreams: [
@@ -198,7 +204,10 @@ function registry(): ConnectorRegistry {
   const registry = new ConnectorRegistry();
   registry.register(createDemoConnector());
   registry.register(fixture());
-  registry.register(snapshotFixture());
+  // As the HTTP check connector (its resources are its configuration,
+  // #898), and as any other connector.
+  registry.register(snapshotFixture(HTTP_CHECK_CONNECTOR_ID));
+  registry.register(snapshotFixture("snapshot-fixture"));
   return registry;
 }
 
@@ -519,7 +528,8 @@ describe("a succeeded run", () => {
 describe("a skipped run (SDK 0.2.23, #898)", () => {
   it("keeps a next due time that is still ahead", async () => {
     const id = await createConnection("freshness-fixture");
-    reply = { freshness: [{ stream: "reviews" }] };
+    // A skipped run continues from a cursor (SDK 0.2.23).
+    reply = { freshness: [{ stream: "reviews" }], nextCursor: "round-1" };
     await sync(id);
     expect(await nextDueAt(id)).toBe(iso(START + SIX_HOURS_S * 1000));
     // "Sync now" an hour later, inside the connector's floor.
@@ -538,7 +548,8 @@ describe("a skipped run (SDK 0.2.23, #898)", () => {
 
   it("schedules from now when the due time has passed", async () => {
     const id = await createConnection("freshness-fixture");
-    reply = { freshness: [{ stream: "reviews" }] };
+    // A skipped run continues from a cursor (SDK 0.2.23).
+    reply = { freshness: [{ stream: "reviews" }], nextCursor: "round-1" };
     await sync(id);
     clockMs = START + 7 * HOUR;
     reply = { skipped: true };
@@ -560,7 +571,7 @@ describe("a run whose configuration changed meanwhile (#898)", () => {
     where id = ${id}`;
 
   it("publishes its snapshot and freshness while the configuration stays", async () => {
-    const id = await createConnection("snapshot-fixture");
+    const id = await createConnection(HTTP_CHECK_CONNECTOR_ID);
     await config(id, ["site", "api"]);
     await sync(id);
     expect(await lastRun(id)).toMatchObject({ status: "succeeded" });
@@ -572,7 +583,7 @@ describe("a run whose configuration changed meanwhile (#898)", () => {
   });
 
   it("publishes neither when a change was saved during the run", async () => {
-    const id = await createConnection("snapshot-fixture");
+    const id = await createConnection(HTTP_CHECK_CONNECTOR_ID);
     await config(id, ["site", "api"]);
     // A PATCH removing "api": the list saved, its freshness retired.
     during = async () => {
@@ -592,6 +603,48 @@ describe("a run whose configuration changed meanwhile (#898)", () => {
     await sync(id);
     expect(await generations(id)).toBe(1);
     expect((await rows(id)).map((row) => row.resource)).toEqual(["site"]);
+  });
+
+  it("takes no workspace ingestion lock for a run of another connector", async () => {
+    const id = await createConnection("freshness-fixture");
+    reply = { freshness: [{ stream: "reviews" }] };
+    // Another transaction holds the workspace ingestion lock (440), as a
+    // retention change does: the run neither waits for it nor fails.
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    let held!: () => void;
+    const holding = new Promise<void>((resolve) => (held = resolve));
+    const holder = admin.begin(async (tx) => {
+      await tx`select pg_advisory_xact_lock(hashtextextended(${workspaceId}::uuid::text, 440))`;
+      held();
+      await released;
+    });
+    await holding;
+    try {
+      const outcome = await Promise.race([
+        sync(id).then(() => "ran"),
+        new Promise((resolve) => setTimeout(() => resolve("waited"), 5_000)),
+      ]);
+      expect(outcome).toBe("ran");
+    } finally {
+      release();
+      await holder;
+    }
+    expect(await rows(id)).toEqual([
+      expect.objectContaining({ stream: "reviews" }),
+    ]);
+  });
+
+  it("publishes both for a connector whose resources are not its configuration", async () => {
+    const id = await createConnection("snapshot-fixture");
+    await config(id, ["site", "api"]);
+    during = () => config(id, ["site"]).then(() => undefined);
+    await sync(id);
+    expect(await generations(id)).toBe(1);
+    expect((await rows(id)).map((row) => row.resource)).toEqual([
+      "api",
+      "site",
+    ]);
   });
 });
 

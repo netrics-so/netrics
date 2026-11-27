@@ -107,6 +107,7 @@ import {
   type SignedKeyTokenStore,
 } from "../signed-keys/token-store.js";
 
+import { RESOURCES_FROM_CONFIG } from "../connections/resources-from-config.js";
 import { recordFreshness, selectedResourcesOf } from "./freshness.js";
 import { createDatasetStaging } from "./staging.js";
 
@@ -1517,29 +1518,40 @@ async function runSync(
       const observationsWritten =
         progress.observationsWritten +
         (await ingestPage(tx, finalObservations));
-      // The configuration the run read is still the saved one (#898): a
-      // change saved meanwhile (a check removed, its freshness retired)
-      // is not undone by a run of the old one. Read under the connection
-      // row lock a change writes under, after the workspace ingestion
-      // lock, which comes first (lockWorkspaceIngestion).
-      await lockWorkspaceIngestion(tx, workspaceId);
-      const [saved] = await tx
-        .select({
-          same: sql<boolean>`${schema.connections.config} = ${JSON.stringify(connection.config)}::jsonb`,
-        })
-        .from(schema.connections)
-        .where(
-          and(
-            eq(schema.connections.id, connectionId),
-            eq(schema.connections.workspaceId, workspaceId),
-          ),
-        )
-        .for("share");
-      const configKept = saved?.same === true;
-      if (!configKept) {
-        log.info(
-          "snapshot and freshness not published: the configuration changed during the run",
-        );
+      // The configuration the run read is still the saved one (#898): for
+      // a connector whose resources are its configuration (HTTP checks), a
+      // change saved meanwhile (a check removed, its freshness retired) is
+      // not undone by a run of the old one. Read under the connection row
+      // lock a change writes under, after the workspace ingestion lock,
+      // which comes first (lockWorkspaceIngestion). Only such a run with
+      // something to publish takes either; other connectors publish as
+      // they always did.
+      const configBound =
+        RESOURCES_FROM_CONFIG.has(manifest.id) &&
+        ((finalDatasetPages.datasetPages?.length ?? 0) > 0 ||
+          (finalDatasetPages.receivedDatasets?.length ?? 0) > 0 ||
+          finalFreshness.length > 0);
+      let configKept = true;
+      if (configBound) {
+        await lockWorkspaceIngestion(tx, workspaceId);
+        const [saved] = await tx
+          .select({
+            same: sql<boolean>`${schema.connections.config} = ${JSON.stringify(connection.config)}::jsonb`,
+          })
+          .from(schema.connections)
+          .where(
+            and(
+              eq(schema.connections.id, connectionId),
+              eq(schema.connections.workspaceId, workspaceId),
+            ),
+          )
+          .for("share");
+        configKept = saved?.same === true;
+        if (!configKept) {
+          log.info(
+            "snapshot and freshness not published: the configuration changed during the run",
+          );
+        }
       }
       // Datasets before reviews: lock order as in the page transaction.
       if (configKept) {

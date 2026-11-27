@@ -50,7 +50,6 @@ import {
 import {
   ANALYTICS_METRIC_KEYS,
   ANALYTICS_STREAM,
-  HTTP_CHECK_CONNECTOR_ID,
   posthogManifest,
   vercelManifest,
 } from "@netrics/connectors";
@@ -195,6 +194,7 @@ import {
   presentSyncRun,
   toStateView,
 } from "./present.js";
+import { RESOURCES_FROM_CONFIG } from "./resources-from-config.js";
 
 /**
  * Connection use cases for the API: validation against the connector
@@ -342,13 +342,6 @@ const SELECTION_NEEDS_A_RESOURCE: ReadonlySet<string> = new Set([
   posthogManifest.id,
 ]);
 /**
- * Connectors whose resources are their configuration (#874 review: an HTTP
- * check connection's checks). Discovery reads the config only, so a saved
- * config change names its resources at once and retires the freshness of
- * those it no longer has; a resource selection, which the sync could not
- * honor, is refused (a check is removed from the list instead).
- */
-/**
  * A new connection's first job: the backfill of the connector's window,
  * or, for a connector without backfills (HTTP checks), its first sync
  * (#898), so no backfill waits in the workspace for it and another
@@ -371,9 +364,6 @@ async function enqueueFirstJob(
   });
 }
 
-const RESOURCES_FROM_CONFIG: ReadonlySet<string> = new Set([
-  HTTP_CHECK_CONNECTOR_ID,
-]);
 const RESOURCES_FROM_CONFIG_SELECTION =
   "This connector's resources are its settings: remove a check from the list instead of deselecting it.";
 /** Saving an empty selection for such a connector. */

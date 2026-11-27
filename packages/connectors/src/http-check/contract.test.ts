@@ -584,8 +584,21 @@ describe("a run", () => {
         named("EgressTimeoutError", "egress timeout: slow.example.com", {
           status: 200,
         }),
+      // The stream broke after the answer: the runtime's status on undici's
+      // error, its cause kept.
+      "https://reset-down.example.com/": () =>
+        Object.assign(network("ECONNRESET"), { status: 502 }),
+      "https://reset-up.example.com/": () =>
+        Object.assign(network("ECONNRESET"), { status: 200 }),
     };
-    const checks = ["down-big", "down-slow", "big", "slow"].map((host) => ({
+    const checks = [
+      "down-big",
+      "down-slow",
+      "big",
+      "slow",
+      "reset-down",
+      "reset-up",
+    ].map((host) => ({
       name: host,
       url: `https://${host}.example.com/`,
       expectedText: "healthy",
@@ -601,8 +614,17 @@ describe("a run", () => {
     expect(outcome("down-slow")).toEqual(["unexpected_status", 503, null]);
     expect(outcome("big")).toEqual(["too_large", 200, null]);
     expect(outcome("slow")).toEqual(["timeout", 200, null]);
-    // Only the runtime's egress errors carry a status worth reading.
-    expect(receivedStatus(named("TypeError", "x", { status: 503 }))).toBe(null);
+    expect(outcome("reset-down")).toEqual(["unexpected_status", 502, null]);
+    expect(outcome("reset-up")).toEqual(["connection", 200, null]);
+    // The thrown error's own status only, a valid one, never a cause's.
+    expect(receivedStatus(network("ECONNRESET"))).toBe(null);
+    expect(
+      receivedStatus(
+        new TypeError("terminated", {
+          cause: Object.assign(new Error("x"), { status: 503 }),
+        }),
+      ),
+    ).toBe(null);
     expect(
       receivedStatus(named("EgressTimeoutError", "x", { status: 42 })),
     ).toBe(null);

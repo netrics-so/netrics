@@ -369,10 +369,15 @@ function validateSyncResult(
     if (!manifest.datasets?.some((dataset) => dataset.key === key))
       throw new ContractViolationError("Undeclared source dataset");
   // A skipped run (SDK 0.2.23, #898) read nothing: it is final, carries
-  // nothing, and leaves the cursor as the request had it.
+  // nothing, and leaves the cursor as the request had it. Only an
+  // incremental run that continues from a cursor may skip: a backfill, or
+  // a first run, that skipped would leave its window (and the history a
+  // backfill records) unread while counting as done.
   if (
     result.skipped &&
-    (!result.done ||
+    (request.mode !== "incremental" ||
+      request.cursor === undefined ||
+      !result.done ||
       result.observations.length > 0 ||
       (result.datasetPages?.length ?? 0) > 0 ||
       (result.reviews?.length ?? 0) > 0 ||
@@ -383,7 +388,7 @@ function validateSyncResult(
       result.nextCursor !== request.cursor)
   )
     throw new ContractViolationError(
-      `connector "${manifest.id}" returned a skipped result that is not final, carries data or moves the cursor`,
+      `connector "${manifest.id}" returned a skipped result that is not final, carries data, moves the cursor, or answers a backfill or a request without a cursor`,
     );
   // Freshness counts only on the done result (ADR 0025 section 2); on
   // other pages it is ignored once it is well-formed.

@@ -79,7 +79,6 @@ function chain(error: unknown): Array<{
   code?: unknown;
   reason?: unknown;
   message?: unknown;
-  status?: unknown;
 }> {
   const links = [];
   let current: unknown = error;
@@ -94,7 +93,6 @@ function chain(error: unknown): Array<{
         code?: unknown;
         reason?: unknown;
         message?: unknown;
-        status?: unknown;
       },
     );
     current = (current as { cause?: unknown }).cause;
@@ -177,8 +175,8 @@ export async function probe(
     return { up: true, reason: null, status, responseMs };
   } catch (error) {
     if (runtime.signal.aborted) throw error;
-    // The answer came, but its body could not be read (too large, or too
-    // slow; #898): its status is known, and an unexpected one says more.
+    // The answer came, but its body could not be read (too large, too
+    // slow, or broken off; #898): its status is known, and an unexpected one says more.
     const status = receivedStatus(error);
     if (status !== null && !statusExpected(check, status)) {
       return {
@@ -198,21 +196,20 @@ export async function probe(
 }
 
 /**
- * The status of an answer whose body failed (SDK 0.2.23): the `status` of
- * the runtime's egress error, else null.
+ * The status of an answer whose body failed (SDK 0.2.23): the `status`
+ * runtime.fetch puts on the error it throws once the answer came (a body
+ * too large, too slow, or broken off), else null. Only the thrown error
+ * counts, never a cause.
  */
 export function receivedStatus(error: unknown): number | null {
-  for (const link of chain(error)) {
-    if (
-      (link.name === "EgressDeniedError" ||
-        link.name === "EgressTimeoutError") &&
-      typeof link.status === "number" &&
-      Number.isInteger(link.status) &&
-      link.status >= 100 &&
-      link.status <= 599
-    ) {
-      return link.status;
-    }
-  }
-  return null;
+  const status =
+    error && typeof error === "object"
+      ? (error as { status?: unknown }).status
+      : undefined;
+  return typeof status === "number" &&
+    Number.isInteger(status) &&
+    status >= 100 &&
+    status <= 599
+    ? status
+    : null;
 }

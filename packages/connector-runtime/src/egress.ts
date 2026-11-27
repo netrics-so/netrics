@@ -742,9 +742,15 @@ export function createEgressFetch(options: EgressOptions) {
           received,
         );
       }
-      // A body refused after its answer came keeps the answer's status.
-      if (error instanceof EgressDeniedError && received !== undefined) {
-        error.status = received;
+      // A body that failed after its answer came (refused, or the stream
+      // broke: a reset) keeps the answer's status (SDK 0.2.23, #898); the
+      // error itself, with its cause, is thrown as it is.
+      if (
+        received !== undefined &&
+        error instanceof Error &&
+        (error as { status?: unknown }).status === undefined
+      ) {
+        Object.assign(error, { status: received });
       }
       throw error;
     }

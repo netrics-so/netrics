@@ -1623,12 +1623,16 @@ describe("executeTrustedCall (#809)", () => {
 });
 
 describe("skipped (SDK 0.2.23, #898)", () => {
-  const withCursor = { ...request, cursor: "kept" };
-  const run = (result: object) =>
+  const withCursor: SyncRequest = {
+    ...request,
+    mode: "incremental",
+    cursor: "kept",
+  };
+  const run = (result: object, req: SyncRequest = withCursor) =>
     executeSync(
       connectorWith(demoManifest, () => ({ observations: [], ...result })),
       baseContext,
-      withCursor,
+      req,
     );
 
   it("passes a final result that read nothing and keeps the cursor", async () => {
@@ -1659,6 +1663,18 @@ describe("skipped (SDK 0.2.23, #898)", () => {
         /skipped result/,
       );
     }
+    // Never for a backfill, nor for a run without a cursor: their window
+    // (and a backfill's history) would count as read.
+    await expect(
+      run(
+        { skipped: true, nextCursor: "kept", done: true },
+        { ...withCursor, mode: "backfill" },
+      ),
+    ).rejects.toThrow(/skipped result/);
+    const { cursor: _cursor, ...first } = withCursor;
+    await expect(run({ skipped: true, done: true }, first)).rejects.toThrow(
+      /skipped result/,
+    );
     // Only `true`: a connector that did run says nothing.
     await expect(
       run({ skipped: false, nextCursor: "kept", done: true }),
