@@ -8,8 +8,8 @@ import {
 } from "./test-db.js";
 
 // Migration 0099 (#928): a cursor stored before it is marked as a page
-// checkpoint of an unfinished run only when the connection's latest run
-// left exactly that checkpoint behind.
+// checkpoint of an unfinished run unless the connection's latest succeeded
+// run stored it as its final cursor.
 
 let test: TestDatabase, owner: postgres.Sql, workspaceId: string;
 
@@ -44,12 +44,33 @@ beforeAll(async () => {
     await owner`insert into workspaces(name) values ('Existing') returning id`;
   workspaceId = workspace!.id as string;
   await owner`insert into connectors(id,version,manifest) values ('migration-mid-run','1.0.0','{}')`;
+  // Page 2 checkpointed, then the run failed.
   ids.failed = await seed("failed", "page-2", [
     { status: "succeeded", cursorAfter: "round-1", startedAt: "2026-11-01" },
     { status: "failed", cursorAfter: "page-2", startedAt: "2026-11-02" },
   ]);
+  // Attempt A checkpointed page 2 and failed; retry B failed before a page.
+  ids.retryChain = await seed("retry chain", "page-2", [
+    { status: "succeeded", cursorAfter: "round-1", startedAt: "2026-11-01" },
+    { status: "failed", cursorAfter: "page-2", startedAt: "2026-11-02" },
+    { status: "failed", cursorAfter: null, startedAt: "2026-11-03" },
+  ]);
+  // The first run ever committed a page and its worker died: no run row.
+  ids.deadWorker = await seed("dead worker", "page-2", []);
+  // A later run's worker died after a page: the last success is older.
+  ids.deadWorkerAfterSuccess = await seed(
+    "dead worker after a success",
+    "page-2",
+    [{ status: "succeeded", cursorAfter: "round-1", startedAt: "2026-11-01" }],
+  );
   ids.continued = await seed("continued", "page-3", [
     { status: "continued", cursorAfter: "page-3", startedAt: "2026-11-02" },
+  ]);
+  // Completed incremental connections: a succeeded run, skipped ones
+  // included, stores the same final cursor in both places.
+  ids.completed = await seed("completed", "round-2", [
+    { status: "succeeded", cursorAfter: "round-1", startedAt: "2026-11-01" },
+    { status: "succeeded", cursorAfter: "round-2", startedAt: "2026-11-02" },
   ]);
   ids.succeededSince = await seed("succeeded since", "round-2", [
     { status: "failed", cursorAfter: "page-2", startedAt: "2026-11-01" },
@@ -59,10 +80,11 @@ beforeAll(async () => {
     { status: "succeeded", cursorAfter: "round-1", startedAt: "2026-11-01" },
     { status: "failed", cursorAfter: null, startedAt: "2026-11-02" },
   ]);
+  // A run that ended with no cursor leaves nothing to resume.
   ids.noCursor = await seed("no cursor", null, [
+    { status: "succeeded", cursorAfter: null, startedAt: "2026-11-01" },
     { status: "failed", cursorAfter: null, startedAt: "2026-11-02" },
   ]);
-  ids.noRuns = await seed("no runs", "round-1", []);
 }, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 // The test applies the remaining migrations.
@@ -71,7 +93,7 @@ afterAll(async () => {
   await owner?.end({ timeout: 5 });
 });
 
-it("marks only cursors that the latest run left as its checkpoint", async () => {
+it("marks every cursor that is not the latest success's final cursor", async () => {
   const before =
     await owner`select connection_id, cursor from connection_state order by connection_id`;
   await test.migrate();
@@ -92,11 +114,14 @@ it("marks only cursors that the latest run left as its checkpoint", async () => 
     ),
   ).toEqual({
     failed: true,
+    retryChain: true,
+    deadWorker: true,
+    deadWorkerAfterSuccess: true,
     continued: true,
+    completed: false,
     succeededSince: false,
     failedWithoutPages: false,
     noCursor: false,
-    noRuns: false,
   });
   // New rows start without the marker.
   const [connection] =
