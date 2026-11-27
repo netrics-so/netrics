@@ -832,6 +832,43 @@ describe("Developer Portfolio installs", { timeout: TIMEOUT_MS }, () => {
     expect(apps.get(projectProduct(target.projects.api))).toEqual([
       `${target.connections.railway}:rw-1`,
     ]);
+    // Rows and defaults mixed, read afresh (no cache): a row overrides a
+    // default, a blank one unlinks, and a row of a resource no default
+    // names links it.
+    const prjNew = `${target.connections.vercel}:prj_new`;
+    const again = await data.readManual(
+      actor(target.id),
+      result.linksDatasetId,
+      { offset: 0, limit: 1000 },
+    );
+    await data.saveManual(
+      actor(target.id),
+      {
+        definition: again.definition,
+        records: [
+          { values: { app_key: prjA, product_id: "" } },
+          {
+            values: {
+              app_key: `${target.connections.railway}:rw-1`,
+              product_id: projectProduct(target.projects.web),
+            },
+          },
+          {
+            values: {
+              app_key: prjNew,
+              product_id: projectProduct(target.projects.api),
+            },
+          },
+        ],
+        generationId: again.generationId,
+      },
+      result.linksDatasetId,
+    );
+    apps = await resolve(deploys);
+    expect(apps.get(projectProduct(target.projects.web))).toEqual([
+      `${target.connections.railway}:rw-1`,
+    ]);
+    expect(apps.get(projectProduct(target.projects.api))).toEqual([prjNew]);
   });
 
   it("refuses an install or update whose project name lookup is past the JSON limit (#913)", async () => {
