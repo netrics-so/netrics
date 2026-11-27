@@ -360,7 +360,8 @@ export const customApiEn = {
           "The first request sends null at {path}: there is no cursor yet.",
         cursorOmitted:
           "The first request leaves out {path}: there is no cursor yet.",
-        laterOffset: "{path}: the next offset, counting up by {limit}",
+        laterOffset:
+          "{path}: the next offset, counting up by the number of records the previous page returned",
         laterLimit: "{path}: {limit} on every request",
         laterCursor: "Cursor at {path}: from the previous response",
         firstUrl: "Page values in the URL of the first request:",
@@ -369,7 +370,7 @@ export const customApiEn = {
           "URL parameter {param}: the next page number, counting up by 1",
         laterUrlFixed: "URL parameter {param}: {value} on every request",
         laterUrlOffset:
-          "URL parameter {param}: the next offset, counting up by {limit}",
+          "URL parameter {param}: the next offset, counting up by the number of records the previous page returned",
         laterUrlCursor:
           "URL parameter {param}: the cursor from the previous response",
       },

@@ -118,7 +118,7 @@ export function RequestPreview({
               {value === "cursor"
                 ? t("laterUrlCursor", { param })
                 : value === "offset"
-                  ? t("laterUrlOffset", { param, limit })
+                  ? t("laterUrlOffset", { param })
                   : value === "number"
                     ? t("laterUrlNumber", { param })
                     : t("laterUrlFixed", { param, value: first ?? "" })}
@@ -129,7 +129,7 @@ export function RequestPreview({
               {write.value === "cursor"
                 ? t("laterCursor", { path: write.path })
                 : write.value === "offset"
-                  ? t("laterOffset", { path: write.path, limit })
+                  ? t("laterOffset", { path: write.path })
                   : t("laterLimit", { path: write.path, limit })}
             </dd>
           ))}

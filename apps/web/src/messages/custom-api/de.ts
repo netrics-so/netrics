@@ -368,7 +368,8 @@ export const customApiDe: Catalog<typeof customApiEn> = {
           "Die erste Anfrage sendet null bei {path}: Es gibt noch keinen Cursor.",
         cursorOmitted:
           "Die erste Anfrage lässt {path} weg: Es gibt noch keinen Cursor.",
-        laterOffset: "{path}: der nächste Offset, jeweils um {limit} höher",
+        laterOffset:
+          "{path}: der nächste Offset, jeweils um die Zahl der Einträge höher, die die vorige Seite geliefert hat",
         laterLimit: "{path}: {limit} bei jeder Anfrage",
         laterCursor: "Cursor bei {path}: aus der vorigen Antwort",
         firstUrl: "Seitenwerte in der URL der ersten Anfrage:",
@@ -377,7 +378,7 @@ export const customApiDe: Catalog<typeof customApiEn> = {
           "URL-Parameter {param}: die nächste Seitennummer, jeweils um 1 höher",
         laterUrlFixed: "URL-Parameter {param}: {value} bei jeder Anfrage",
         laterUrlOffset:
-          "URL-Parameter {param}: der nächste Offset, jeweils um {limit} höher",
+          "URL-Parameter {param}: der nächste Offset, jeweils um die Zahl der Einträge höher, die die vorige Seite geliefert hat",
         laterUrlCursor:
           "URL-Parameter {param}: der Cursor aus der vorigen Antwort",
       },

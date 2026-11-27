@@ -6,7 +6,14 @@ import type {
 } from "@netrics/contracts";
 import type { Locale } from "@netrics/domain";
 
-import { confirmationAfterTest, reachable, stateAfterTest } from "./builder";
+import {
+  confirmationAfterTest,
+  reachable,
+  secretInputsAfterTest,
+  stateAfterTest,
+  watchEdit,
+  watchTest,
+} from "./builder";
 import { testReady } from "./builder-actions";
 import { RequestPreview } from "./read-only-confirm";
 import { placeholdersFor } from "./step-request";
@@ -172,9 +179,11 @@ describe("2. confirmations show URL pagination", () => {
       const out = html(offset, locale);
       expect(out).toContain(t.firstUrl);
       expect(out).toContain("skip=0");
-      expect(out).toContain(
-        t.laterUrlOffset.replace("{param}", "skip").replace("{limit}", "25"),
-      );
+      // The offset grows by the records the previous page returned
+      // (the connector's nextPage), not by the limit.
+      expect(out).toContain(t.laterUrlOffset.replace("{param}", "skip"));
+      expect(t.laterUrlOffset).not.toContain("{limit}");
+      expect(t.laterOffset).not.toContain("{limit}");
       // The body value too.
       expect(out).toContain(
         t.laterLimit.replace("{path}", "page.limit").replace("{limit}", "25"),
@@ -218,11 +227,20 @@ describe("3. a test's result after edits made while it ran", () => {
     lastTest: TEST_RESPONSE,
   };
 
+  const hash = "a".repeat(64);
+
   it("is the test's state when nothing changed", () => {
     expect(stateAfterTest(sent, sent, result)).toBe(result);
-    expect(confirmationAfterTest("a".repeat(64), sent, sent)).toMatchObject({
-      hash: "a".repeat(64),
+    expect(confirmationAfterTest(hash, sent, watchTest(sent))).toMatchObject({
+      hash,
     });
+  });
+
+  it("keeps the confirmation after an edit that doesn't shape the request", () => {
+    const renamed = { ...sent, name: "Renamed API" };
+    const watch = watchEdit(watchTest(sent), renamed);
+    expect(confirmationAfterTest(hash, sent, watch)).toMatchObject({ hash });
+    expect(stateAfterTest(renamed, sent, result).name).toBe("Renamed API");
   });
 
   it("keeps newer edits and never revives a dropped confirmation", () => {
@@ -239,11 +257,27 @@ describe("3. a test's result after edits made while it ran", () => {
     expect(after.readOnly).toEqual({});
     expect(after.secretsSet).toEqual(["token"]);
     expect(after.lastTest).toBe(TEST_RESPONSE);
-    // Undone edit: still a different state, so nothing is remembered.
+    // Edited, then undone: the request is the one sent again, but the
+    // edit in between dropped the confirmation for good.
     const undone = withReadOnlyChecked({ ...edited, stream: sent.stream });
     expect(stateAfterTest(undone, sent, result).readOnly).toEqual({});
-    expect(confirmationAfterTest("a".repeat(64), undone, sent)).toBeNull();
-    expect(confirmationAfterTest(undefined, sent, sent)).toBeNull();
+    const watch = watchEdit(watchEdit(watchTest(sent), edited), undone);
+    expect(confirmationAfterTest(hash, sent, watch)).toBeNull();
+    expect(confirmationAfterTest(undefined, sent, watchTest(sent))).toBeNull();
+  });
+
+  it("keeps a secret typed while the test ran (delayed response)", () => {
+    // The test sent "old"; while it waited, "new" was typed for token and
+    // a value for password, which the test never sent.
+    const sentInputs = { token: "old", apiKey: "k" };
+    const typedSince = { token: "new", apiKey: "k", password: "p" };
+    expect(secretInputsAfterTest(typedSince, sentInputs)).toEqual({
+      token: "new",
+      password: "p",
+    });
+    // Nothing typed since: everything sent is cleared.
+    expect(secretInputsAfterTest(sentInputs, sentInputs)).toEqual({});
+    expect(secretInputsAfterTest(sentInputs, null)).toBe(sentInputs);
   });
 });
 
