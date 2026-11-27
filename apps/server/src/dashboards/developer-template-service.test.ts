@@ -288,11 +288,54 @@ describe("Developer Portfolio installs", { timeout: TIMEOUT_MS }, () => {
       join data_generations g on g.id = r.generation_id
       join data_datasets d on d.id = g.dataset_id
       where d.workspace_id = ${target.id} and d.key like 'developer_links_%'`;
-    expect(links!.rows).toEqual([
-      {
-        app_key: `${target.connections.railway}:rw-project`,
-        product_id: projectProduct(target.projects.api),
+    // The connection's project is a default of the inputs, not a row:
+    // the table holds the customer's own links only.
+    expect(links!.rows).toEqual([]);
+    const [install] = await owner<{ inputs: { defaults: unknown } }[]>`
+      select inputs from data_template_installs
+      where workspace_id = ${target.id}`;
+    expect(install!.inputs.defaults).toEqual({
+      links: {
+        [`${target.connections.railway}:rw-project`]: projectProduct(
+          target.projects.api,
+        ),
       },
+      names: { [projectProduct(target.projects.api)]: "Public API" },
+    });
+  });
+
+  it("leaves resources a connection's selection drops out of the defaults and options", async () => {
+    const target = await workspace(["vercel"], { assign: { vercel: "web" } });
+    await owner`update connections
+      set config = ${owner.json({ resourceSelection: ["prj_kept"] })}
+      where id = ${target.connections.vercel}`;
+    await withWorkspace(db, { workspaceId: target.id }, (tx) =>
+      upsertConnectionResources(tx, {
+        workspaceId: target.id,
+        connectionId: target.connections.vercel,
+        resources: [
+          { id: "prj_kept", name: "kept", kind: "project" },
+          { id: "prj_dropped", name: "dropped", kind: "project" },
+        ],
+        now: new Date(NOW),
+      }),
+    );
+    const options = await service().options(actor(target.id));
+    expect(
+      options.connections[0]!.resources.map((resource) => resource.id),
+    ).toEqual(["prj_kept"]);
+    await service().install(actor(target.id), {
+      requestId: randomUUID(),
+      name: "Web",
+      connections: [target.connections.vercel],
+      links: [],
+    });
+    const [install] = await owner<
+      { inputs: { defaults: { links: Record<string, string> } } }[]
+    >`select inputs from data_template_installs
+      where workspace_id = ${target.id}`;
+    expect(Object.keys(install!.inputs.defaults.links)).toEqual([
+      `${target.connections.vercel}:prj_kept`,
     ]);
   });
 
@@ -361,7 +404,14 @@ describe("Developer Portfolio data", { timeout: TIMEOUT_MS }, () => {
     result: DeveloperTemplateResult;
   beforeAll(async () => {
     target = await workspace(
-      ["railway", "vercel", "hetzner-cloud", "http-check", "posthog"],
+      [
+        "railway",
+        "vercel",
+        "hetzner-cloud",
+        "http-check",
+        "posthog",
+        "google-search-console",
+      ],
       { assign: { railway: "api" } },
     );
     const c = target.connections;
@@ -596,6 +646,20 @@ describe("Developer Portfolio data", { timeout: TIMEOUT_MS }, () => {
       { resource: "prj_web", day: "2026-11-22", value: 10 },
       { resource: "prj_web", day: "2026-11-23", value: 15 },
     ]);
+    // Search Console finalizes days late: its newest day is the 21st.
+    await observe(
+      target.id,
+      c["google-search-console"],
+      "google-search-console",
+      "google-search-console.clicks",
+      [
+        { resource: "sc-web", day: "2026-11-20", value: 25 },
+        { resource: "sc-web", day: "2026-11-21", value: 30 },
+      ],
+    );
+    await observe(target.id, c.posthog, "posthog", "posthog.wau", [
+      { resource: "ph-1", day: "2026-11-23", value: 300 },
+    ]);
     const web = target.projects.web;
     result = await service().install(actor(target.id), {
       requestId: randomUUID(),
@@ -606,6 +670,11 @@ describe("Developer Portfolio data", { timeout: TIMEOUT_MS }, () => {
         { connectionId: c["hetzner-cloud"], resourceId: "42", projectId: web },
         { connectionId: c["hetzner-cloud"], resourceId: "43", projectId: web },
         { connectionId: c.posthog, resourceId: "ph-3", projectId: web },
+        {
+          connectionId: c["google-search-console"],
+          resourceId: "sc-web",
+          projectId: web,
+        },
         { connectionId: c["http-check"], resourceId: "chk1", projectId: web },
         { connectionId: c.posthog, resourceId: "ph-1", projectId: web },
         {
@@ -767,6 +836,7 @@ describe("Developer Portfolio data", { timeout: TIMEOUT_MS }, () => {
         `${target.connections["http-check"]}:chk1`,
         `${target.connections.posthog}:ph-1`,
         `${target.connections.posthog}:ph-3`,
+        `${target.connections["google-search-console"]}:sc-web`,
       ].sort(),
     );
   });
@@ -815,6 +885,7 @@ describe("Developer Portfolio data", { timeout: TIMEOUT_MS }, () => {
     ]);
     const web = dashboard.slides.find((slide) => slide.name === "Web shop")!;
     expect(web.widgets.map((widget) => widget.type).sort()).toEqual([
+      "measure",
       "measure",
       "measure",
       "measure",
@@ -913,10 +984,12 @@ describe("Developer Portfolio data", { timeout: TIMEOUT_MS }, () => {
       overview.widgets
         .filter((widget) => widget.metadata?.modelId === modelId)
         .flatMap((widget) =>
-          widget.result!.rows.map((row) => [
-            row.dimensionLabels?.[dimension] ?? row.dimensions[dimension],
-            Number(row.measures[measure]!.value),
-          ]),
+          widget
+            .result!.rows.filter((row) => row.measures[measure])
+            .map((row) => [
+              row.dimensionLabels?.[dimension] ?? row.dimensions[dimension],
+              Number(row.measures[measure]!.value),
+            ]),
         )
         .sort();
     expect(cells(result.models.deploys!, "deploys", "provider")).toEqual([
@@ -927,6 +1000,25 @@ describe("Developer Portfolio data", { timeout: TIMEOUT_MS }, () => {
       ["Public API", 5],
       ["Web shop", 76],
     ]);
+    expect(cells(result.models.audience!, "wau", "project")).toContainEqual([
+      "Web shop",
+      300,
+    ]);
+    // Search Console's clicks of its newest finalized day, dated.
+    const clicks = overview.widgets
+      .filter(
+        (widget) =>
+          widget.metadata?.modelId === result.models.audience &&
+          widget.result!.rows.some((row) => row.measures.clicks_newest),
+      )
+      .flatMap((widget) =>
+        widget.result!.rows.map((row) => [
+          row.dimensionLabels?.project ?? row.dimensions.project,
+          Number(row.measures.clicks_newest!.value),
+          row.measures.clicks_day!.value,
+        ]),
+      );
+    expect(clicks).toEqual([["Web shop", 30, "2026-11-21"]]);
     const shown = await withWorkspace(db, { workspaceId: target.id }, (tx) =>
       presentDashboard(tx, target.id, dashboard, "en", {}),
     );

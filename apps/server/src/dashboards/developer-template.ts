@@ -16,6 +16,7 @@ import {
   isStoreSource,
   type DeveloperFamily,
   type DeveloperPortfolio,
+  type DeveloperDefaults,
   type DeveloperProjectIdentity,
   type DeveloperSource,
 } from "./developer-portfolio.js";
@@ -70,6 +71,16 @@ export const developerTemplateInputsSchema = z.object({
    * Named `apps` like the App Portfolio's slide items, so the shared update
    * engine compares and stores them alike.
    */
+  /**
+   * What the workspace links by default (developer-template-service,
+   * developerDefaults): read fresh for every plan, stored as built.
+   */
+  defaults: z
+    .object({
+      links: z.record(z.string(), z.string()),
+      names: z.record(z.string(), z.string()),
+    })
+    .optional(),
   apps: z
     .array(
       z.object({
@@ -88,6 +99,8 @@ export interface DeveloperTemplateInputs {
   fixedProduct: null;
   groups: null;
   apps?: DeveloperProjectIdentity[];
+  /** The workspace's default links (developerDefaults); none before them. */
+  defaults?: DeveloperDefaults;
 }
 
 export const opsSourceKey = (family: DeveloperFamily, connectionId: string) =>
@@ -220,6 +233,7 @@ const defineDeveloperTemplate = (version: 1): StoreTemplateDefinition => ({
               family,
               datasets,
               inputs.locale,
+              inputs.defaults,
             ),
           };
       }

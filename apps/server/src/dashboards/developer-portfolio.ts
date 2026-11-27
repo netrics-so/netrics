@@ -71,12 +71,25 @@ export interface DeveloperSource {
   datasets: Record<string, string>;
 }
 
+/**
+ * The workspace's default links (developerDefaults): each selected
+ * resource of a connection in a project belongs to that project unless
+ * the links table says otherwise.
+ */
+export interface DeveloperDefaults {
+  /** `<connectionId>:<resourceId>` → `product:<projectId>`. */
+  links: Record<string, string>;
+  /** `product:<projectId>` → the project's name. */
+  names: Record<string, string>;
+}
+
 /** The widgets a project's slide can show, in reading order. */
 export const DEVELOPER_PROJECT_WIDGETS = [
   "downloads",
   "revenue",
   "ratings",
   "audience",
+  "clicks",
   "deploys",
   "costs",
   "state",
@@ -156,6 +169,10 @@ export const developerTemplateCopy = (locale: Locale) =>
         spend: "Kosten diesen Monat",
         activeUsers: "Aktive Nutzer gestern",
         usage: "Nutzung gestern",
+        searchClicks: "Suchklicks, neuester Tag",
+        newestDay: "Neuester Tag",
+        ownNewestDay:
+          "Zeigt den neuesten abgeschlossenen Tag der Search Console.",
         stateSummary: "Alle Dienste",
         latestDeploys: "Letzte Deploys",
         services: "Status",
@@ -217,6 +234,9 @@ export const developerTemplateCopy = (locale: Locale) =>
         spend: "Spend this month",
         activeUsers: "Active users yesterday",
         usage: "Usage yesterday",
+        searchClicks: "Search clicks, newest day",
+        newestDay: "Newest day",
+        ownNewestDay: "Shows Search Console's newest finalized day.",
         stateSummary: "All services",
         latestDeploys: "Latest deploys",
         services: "State",
@@ -575,12 +595,56 @@ function costsSpec(source: DeveloperSource, t: Copy): FamilySpec | null {
   }
 }
 
+/**
+ * The defaults of one source: its own resources' links and their
+ * projects' names, so a source's preparation changes only when its own
+ * defaults do.
+ */
+function sourceDefaults(
+  source: DeveloperSource,
+  defaults: DeveloperDefaults | undefined,
+): DeveloperDefaults | undefined {
+  if (!defaults) return undefined;
+  const links = Object.fromEntries(
+    Object.entries(defaults.links)
+      .filter(([key]) => key.startsWith(source.id + ":"))
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+  );
+  const names = Object.fromEntries(
+    [...new Set(Object.values(links))]
+      .sort()
+      .flatMap((product) =>
+        defaults.names[product] !== undefined
+          ? [[product, defaults.names[product]!]]
+          : [],
+      ),
+  );
+  return { links, names };
+}
+
+/** `map[key]` as text (a JSON literal looked up), else `otherwise`. */
+function defaultsOf(
+  map: Record<string, string> | undefined,
+  key: DataExpression,
+  otherwise: DataExpression,
+): DataExpression {
+  if (!map || !Object.keys(map).length) return otherwise;
+  return call(
+    "coalesce",
+    call(
+      "to_string",
+      call("json_get", { kind: "literal", type: "json", value: map }, key),
+    ),
+    otherwise,
+  );
+}
+
 /** The nodes that relate rows to projects, after the family's columns. */
 function projectNodes(
   source: DeveloperSource,
   input: string,
   resourceName: DataExpression | null,
-  ids: { links: string; projects: string },
+  ids: { links: string; projects: string; defaults?: DeveloperDefaults },
   t: Copy,
 ): { nodes: PreparationNode[]; output: string } {
   const nodes: PreparationNode[] = [
@@ -650,7 +714,19 @@ function projectNodes(
   calculate(
     "product_id",
     t.project + " ID",
-    call("coalesce", field("link.product_id"), field("app_key")),
+    // The customer's link wins; an empty one unlinks the resource for
+    // good. Without one: the workspace's default, else the resource.
+    call(
+      "if",
+      call("is_null", field("link.product_id")),
+      defaultsOf(ids.defaults?.links, field("app_key"), field("app_key")),
+      call(
+        "if",
+        call("eq", field("link.product_id"), text("")),
+        field("app_key"),
+        field("link.product_id"),
+      ),
+    ),
   );
   nodes.push({
     id: "join_projects",
@@ -669,6 +745,7 @@ function projectNodes(
     call(
       "coalesce",
       field("project.product_name"),
+      defaultsOf(ids.defaults?.names, field("product_id"), nullOf("string")),
       resourceName ? field("link_resource_name") : field("resource.name"),
       field("link_resource"),
     ),
@@ -720,7 +797,7 @@ export function familyColumns(family: DeveloperFamily): string[] {
         ...PROJECT_COLUMNS,
       ];
     case "audience":
-      return ["day", "metric", "quantity", ...PROJECT_COLUMNS];
+      return ["day", "metric", "quantity", "newest", ...PROJECT_COLUMNS];
   }
 }
 
@@ -732,11 +809,16 @@ export function familyColumns(family: DeveloperFamily): string[] {
 export function buildDeveloperPreparation(
   source: DeveloperSource,
   family: DeveloperFamily,
-  ids: { links: string; projects: string },
+  ids: { links: string; projects: string; defaults?: DeveloperDefaults },
   locale: Locale,
+  /** The workspace's default links; none: the links table alone. */
+  defaults?: DeveloperDefaults,
 ): PreparationGraph {
   const t = developerTemplateCopy(locale);
-  if (family === "audience") return audiencePreparation(source, ids, t);
+  const own = sourceDefaults(source, defaults);
+  if (family === "audience")
+    return audiencePreparation(source, { ...ids, defaults: own }, t);
+  ids = { ...ids, defaults: own };
   const spec =
     family === "state"
       ? stateSpec(source, t)
@@ -825,7 +907,7 @@ export function buildDeveloperPreparation(
  */
 function audiencePreparation(
   source: DeveloperSource,
-  ids: { links: string; projects: string },
+  ids: { links: string; projects: string; defaults?: DeveloperDefaults },
   t: Copy,
 ): PreparationGraph {
   const metrics = DEVELOPER_AUDIENCE_METRICS[source.connectorId];
@@ -875,6 +957,43 @@ function audiencePreparation(
     nodes.push({ id: "metrics", type: "append", inputs: tagged });
     current = "metrics";
   }
+  // The connection's newest reported day per metric: Search Console
+  // finalizes its days two to three days late, so its clicks are read for
+  // that day, not for yesterday (#876 review).
+  nodes.push(
+    {
+      id: "newest",
+      type: "group",
+      input: current,
+      keys: ["metric"],
+      aggregates: [
+        { id: "newest_day", name: t.day, op: "max", fieldId: "day" },
+      ],
+    },
+    {
+      id: "join_newest",
+      type: "join",
+      left: current,
+      right: "newest",
+      keys: [{ left: "metric", right: "metric" }],
+      mode: "left",
+      cardinality: "many_to_one",
+      rightPrefix: "newest.",
+    },
+    {
+      id: "column_newest",
+      type: "calculate",
+      input: "join_newest",
+      fieldId: "newest",
+      name: t.newestDay,
+      expression: call(
+        "coalesce",
+        call("eq", field("day"), field("newest.newest_day")),
+        bool(false),
+      ),
+    },
+  );
+  current = "column_newest";
   const related = projectNodes(source, current, null, ids, t);
   nodes.push(...related.nodes, {
     id: "output",
@@ -982,11 +1101,24 @@ export function buildDeveloperModel(
     // Per metric, the sum over the query's days: the widgets read one
     // complete UTC day (yesterday, owner decision #876), so active users
     // are summed over projects, never over days.
-    measures = AUDIENCE_METRICS.map((metric) =>
-      aggregate(metric, t[metric], "sum", "quantity", {
-        filter: call("eq", field("metric"), text(metric)),
+    measures = [
+      ...AUDIENCE_METRICS.map((metric) =>
+        aggregate(metric, t[metric], "sum", "quantity", {
+          filter: call("eq", field("metric"), text(metric)),
+        }),
+      ),
+      // Search Console's newest reported day, and that day's clicks.
+      aggregate("clicks_newest", t.clicks, "sum", "quantity", {
+        filter: call(
+          "and",
+          call("eq", field("metric"), text("clicks")),
+          call("eq", field("newest"), bool(true)),
+        ),
       }),
-    );
+      aggregate("clicks_day", t.newestDay, "max", "day", {
+        filter: call("eq", field("metric"), text("clicks")),
+      }),
+    ];
   }
   return {
     version: 1,
@@ -1015,27 +1147,84 @@ export const projectSlideKey = (productId: string) =>
 /** The widgets a project's slide shows: those its models can fill. */
 export function projectSlideWidgets(
   project: DeveloperProjectIdentity,
-  models: DeveloperPortfolio["models"],
+  portfolio: Pick<DeveloperPortfolio, "models" | "audience">,
 ): DeveloperProjectWidget[] {
+  const { models } = portfolio;
   const model: Record<DeveloperProjectWidget, DeveloperFamily | StoreMetric> = {
     downloads: "downloads",
     revenue: "proceeds",
     ratings: "ratings",
     audience: "audience",
+    clicks: "audience",
     deploys: "deploys",
     costs: "costs",
     state: "state",
   };
-  return DEVELOPER_PROJECT_WIDGETS.filter(
-    (widget) => project.widgets.includes(widget) && models[model[widget]],
+  const fills = (widget: DeveloperProjectWidget) =>
+    widget === "audience"
+      ? USAGE_METRICS.some((metric) => portfolio.audience.includes(metric))
+      : widget === "clicks"
+        ? portfolio.audience.includes("clicks")
+        : true;
+  const widgets = DEVELOPER_PROJECT_WIDGETS.filter(
+    (widget) =>
+      project.widgets.includes(widget) &&
+      models[model[widget]] &&
+      fills(widget),
   );
+  // Two rows of three numbers fit beside the state list: past them, the
+  // newest clicks (on the overview too), then the ratings stay out.
+  for (const dropped of ["clicks", "ratings"] as const)
+    if (widgets.filter((widget) => widget !== "state").length > 6)
+      widgets.splice(
+        widgets.indexOf(dropped),
+        widgets.includes(dropped) ? 1 : 0,
+      );
+  return widgets;
 }
 
-/** The overview's widgets: those whose model the install has. */
-function overviewWidgets(models: DeveloperPortfolio["models"]) {
-  return (
-    ["state", "state", "deploys", "costs", "audience", "downloads"] as const
-  ).filter((family) => models[family]);
+/** Yesterday's usage the usage widgets show, as the sources fill them. */
+const USAGE_METRICS: readonly AudienceMetric[] = [
+  "dau",
+  "wau",
+  "mau",
+  "visitors",
+];
+
+/**
+ * The overview's numbers beside the state widgets, in reading order: four
+ * fit beside them (two rows of two), six without them (two rows of
+ * three); past that, downloads, then the newest clicks stay out.
+ */
+function overviewNumbers(
+  portfolio: Pick<DeveloperPortfolio, "models" | "audience">,
+): ("deploys" | "costs" | "audience" | "clicks" | "downloads")[] {
+  const { models } = portfolio;
+  const numbers = (
+    ["deploys", "costs", "audience", "clicks", "downloads"] as const
+  ).filter((kind) =>
+    kind === "audience"
+      ? models.audience &&
+        USAGE_METRICS.some((metric) => portfolio.audience.includes(metric))
+      : kind === "clicks"
+        ? models.audience && portfolio.audience.includes("clicks")
+        : models[kind],
+  );
+  const room = models.state ? 4 : 6;
+  for (const dropped of ["downloads", "clicks"] as const)
+    if (numbers.length > room && numbers.includes(dropped))
+      numbers.splice(numbers.indexOf(dropped), 1);
+  return numbers;
+}
+
+/** The overview's widgets: the two state widgets and its numbers. */
+function overviewWidgets(
+  portfolio: Pick<DeveloperPortfolio, "models" | "audience">,
+) {
+  return [
+    ...(portfolio.models.state ? ["summary", "list"] : []),
+    ...overviewNumbers(portfolio),
+  ];
 }
 
 /**
@@ -1048,11 +1237,11 @@ export function developerProjectSlides(portfolio: DeveloperPortfolio): {
   shown: DeveloperProjectIdentity[];
   omitted: DeveloperProjectIdentity[];
 } {
-  let cost = Math.max(1, overviewWidgets(portfolio.models).length);
+  let cost = Math.max(1, overviewWidgets(portfolio).length);
   const shown: DeveloperProjectIdentity[] = [],
     omitted: DeveloperProjectIdentity[] = [];
   for (const project of portfolio.projects) {
-    const widgets = projectSlideWidgets(project, portfolio.models).length;
+    const widgets = projectSlideWidgets(project, portfolio).length;
     if (!widgets) continue;
     if (
       omitted.length === 0 &&
@@ -1199,6 +1388,8 @@ export function buildDeveloperDashboard(
       order?: { measureId: string; direction: "asc" | "desc" };
     },
     filter?: DataExpression,
+    /** A window of its own without a period (Search Console's newest day). */
+    own?: { filterId: string; reason: string },
   ): Unplaced => ({
     type: "measure",
     title,
@@ -1207,10 +1398,54 @@ export function buildDeveloperDashboard(
       groupBy,
       measureIds,
       ...(filter ? { filter } : {}),
-      exclusions: options.period ? [ownPeriod] : [],
+      exclusions: options.period ? [ownPeriod] : own ? [own] : [],
     },
     options,
   });
+  const newestDay = { filterId: "day", reason: t.ownNewestDay };
+  // Yesterday's usage the sources fill (UTC), and Search Console's
+  // clicks of its newest finalized day with that day beside them.
+  const usage = USAGE_METRICS.filter((metric) =>
+    portfolio.audience.includes(metric),
+  );
+  const usageWidget = (groupBy: string[], limit: number): Unplaced =>
+    measure(
+      models.audience!,
+      groupBy.length
+        ? usage.includes("dau")
+          ? t.activeUsers
+          : t.usage
+        : t.audience,
+      groupBy,
+      usage,
+      {
+        view: "table",
+        limit,
+        period: "today",
+        periodWindow: "previous",
+        periodTimeZone: "UTC",
+        ...(groupBy.length
+          ? { order: { measureId: usage[0]!, direction: "desc" as const } }
+          : {}),
+      },
+      // The usage metrics' rows only: clicks are a widget of their own.
+      call("in", field("metric"), {
+        kind: "literal",
+        type: "json",
+        value: usage,
+      }),
+    );
+  const clicksWidget = (groupBy: string[], limit: number): Unplaced =>
+    measure(
+      models.audience!,
+      t.searchClicks,
+      groupBy,
+      ["clicks_newest", "clicks_day"],
+      { view: "table", limit },
+      // Search Console's rows only: a project without them has no row.
+      call("eq", field("metric"), text("clicks")),
+      newestDay,
+    );
   const state = (
     dimension: "item" | "item_full",
     limit: number,
@@ -1242,11 +1477,8 @@ export function buildDeveloperDashboard(
 
   // ── Overview ──────────────────────────────────────────────────────────
   const overview: Entry[] = [];
-  // The audience measures the install's sources fill (yesterday, UTC).
-  const audienceOf = (wanted: readonly AudienceMetric[]) =>
-    wanted.filter((metric) => portfolio.audience.includes(metric));
-  const overviewAudience = audienceOf(["dau", "mau", "visitors", "clicks"]);
-  if (models.deploys)
+  const numbers = overviewNumbers(portfolio);
+  if (numbers.includes("deploys") && models.deploys)
     overview.push({
       key: "widget:deploys",
       widget: measure(
@@ -1257,7 +1489,7 @@ export function buildDeveloperDashboard(
         { view: "table", limit: 5, period: "today", periodTimeZone: "UTC" },
       ),
     });
-  if (models.costs)
+  if (numbers.includes("costs") && models.costs)
     overview.push({
       key: "widget:costs",
       widget: measure(
@@ -1273,25 +1505,17 @@ export function buildDeveloperDashboard(
         },
       ),
     });
-  if (models.audience && overviewAudience.length)
+  if (numbers.includes("audience"))
     overview.push({
       key: "widget:audience",
-      widget: measure(
-        models.audience,
-        overviewAudience.includes("dau") ? t.activeUsers : t.usage,
-        ["project"],
-        overviewAudience,
-        {
-          view: "table",
-          limit: 6,
-          period: "today",
-          periodWindow: "previous",
-          periodTimeZone: "UTC",
-          order: { measureId: overviewAudience[0]!, direction: "desc" },
-        },
-      ),
+      widget: usageWidget(["project"], 6),
     });
-  if (models.downloads)
+  if (numbers.includes("clicks"))
+    overview.push({
+      key: "widget:clicks",
+      widget: clicksWidget(["project"], 6),
+    });
+  if (numbers.includes("downloads") && models.downloads)
     // The stores' numbers per project, where the install reads a store.
     overview.push({
       key: "widget:downloads",
@@ -1355,11 +1579,10 @@ export function buildDeveloperDashboard(
 
   // ── Project slides ────────────────────────────────────────────────────
   const shown = developerProjectSlides(portfolio).shown;
-  const projectAudience = audienceOf(["dau", "visitors", "clicks"]);
   const projectSlide = (project: DeveloperProjectIdentity) => {
     const slideKey = projectSlideKey(project.productId);
     const key = (kind: string) => `widget:${slideKey}:${kind}`;
-    const widgets = projectSlideWidgets(project, models);
+    const widgets = projectSlideWidgets(project, portfolio);
     const entry = (kind: DeveloperProjectWidget): Entry => {
       switch (kind) {
         case "downloads":
@@ -1404,16 +1627,9 @@ export function buildDeveloperDashboard(
             ),
           };
         case "audience":
-          return {
-            key: key(kind),
-            widget: measure(models.audience!, t.audience, [], projectAudience, {
-              view: "table",
-              limit: 1,
-              period: "today",
-              periodWindow: "previous",
-              periodTimeZone: "UTC",
-            }),
-          };
+          return { key: key(kind), widget: usageWidget([], 1) };
+        case "clicks":
+          return { key: key(kind), widget: clicksWidget([], 1) };
         case "deploys":
           return {
             key: key(kind),
@@ -1449,14 +1665,12 @@ export function buildDeveloperDashboard(
           return { key: key(kind), widget: state("item", 6) };
       }
     };
-    const product = widgets
-      .filter((kind) => ["downloads", "revenue", "ratings"].includes(kind))
-      .map(entry);
-    const operations = widgets
-      .filter((kind) => ["audience", "deploys", "costs"].includes(kind))
-      .map(entry);
+    // The numbers in reading order, three a row (at most two rows).
+    const numbered = widgets.filter((kind) => kind !== "state").map(entry);
     const states = widgets.filter((kind) => kind === "state").map(entry);
-    const groups = [product, operations].filter((group) => group.length);
+    const groups = [numbered.slice(0, 3), numbered.slice(3, 6)].filter(
+      (group) => group.length,
+    );
     // The numbers in rows of up to three; the state list below them (a
     // two-row list beside two rows of numbers), or the whole slide.
     const placed = states.length

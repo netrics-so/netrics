@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   createDatabase,
   createRawSqlClient,
+  adminSetDataPolicy,
   createWorkspace,
   findDashboard,
   schema,
@@ -159,6 +160,31 @@ const decisions = (
     ),
   );
 
+/** The rows of an install's links table, as the customer sees them. */
+async function linkRows(
+  target: Awaited<ReturnType<typeof setup>>,
+  datasetId: string,
+) {
+  const table = await createDataService(db, at).readManual(
+    target.actor,
+    datasetId,
+    { offset: 0, limit: 1000 },
+  );
+  return table.records.map((record) => record.values);
+}
+
+/** A resource a connection's discovery found. */
+async function addResource(
+  target: Awaited<ReturnType<typeof setup>>,
+  connectionId: string,
+  resourceId: string,
+) {
+  await owner`insert into connection_resources
+      (connection_id, workspace_id, resource_id, name, kind)
+    values (${connectionId}, ${target.workspaceId}, ${resourceId},
+      ${resourceId}, 'project')`;
+}
+
 /** Applies the offered update, publishes its drafts, copies and swaps. */
 async function applyUpdate(
   target: Awaited<ReturnType<typeof setup>>,
@@ -180,6 +206,9 @@ async function applyUpdate(
         draft.version,
       );
     else await data.publishModel(target.actor, draft.recordId, draft.version);
+  // A data-only update (a default link of a slide the dashboard already
+  // has) has no dashboard to copy: done once its drafts are published.
+  if (!update.dashboards.length) return { plan, update, copy: null! };
   const copied = await service.createCopy(
     target.actor,
     update.id,
@@ -323,6 +352,7 @@ describe("Developer Portfolio updates", { timeout: TIMEOUT_MS }, () => {
   it("offers a new workspace project and its connection's resources as an update (owner decision C)", async () => {
     const target = await setup();
     const { requestId, result } = await install(target, developerTemplate);
+    const linksBefore = await linkRows(target, result.linksDatasetId);
     // After the install: a new project, and the Vercel connection moved
     // into it with a project it has discovered.
     const [gamma] = await owner<{ id: string }[]>`
@@ -355,28 +385,108 @@ describe("Developer Portfolio updates", { timeout: TIMEOUT_MS }, () => {
       "Alpha",
       "Gamma",
     ]);
-    // Applying wrote the rows the slide was reviewed with.
-    const data = createDataService(db, at);
-    const links = await data.readManual(target.actor, result.linksDatasetId, {
-      offset: 0,
-      limit: 1000,
-    });
-    expect(links.records.map((record) => record.values)).toContainEqual({
-      app_key: `${target.connections[1]}:prj_gamma`,
-      product_id: projectProduct(gamma!.id),
-    });
-    const projects = await data.readManual(
-      target.actor,
-      result.projectsDatasetId,
-      { offset: 0, limit: 1000 },
-    );
-    expect(projects.records.map((record) => record.values)).toContainEqual({
-      product_id: projectProduct(gamma!.id),
-      product_name: "Gamma",
-    });
+    // Applying wrote the reviewed drafts only: the customer's links table
+    // is as it was; the default link is in the Vercel preparations.
+    expect(await linkRows(target, result.linksDatasetId)).toEqual(linksBefore);
     expect((await updates().list(target.actor)).installs[0]).toMatchObject({
       updateAvailable: false,
     });
+  });
+
+  it("offers a new resource of a project that has its slide, and the review guards it", async () => {
+    const target = await setup();
+    const { requestId, result } = await install(target, developerTemplate);
+    const linksBefore = await linkRows(target, result.linksDatasetId);
+    // Railway's connection moves into Alpha, whose slide already shows
+    // Railway (the explicit link): its other project is a new default.
+    await owner`update connections set project_id = ${target.projects[0]!}
+      where id = ${target.connections[0]!}`;
+    await addResource(target, target.connections[0]!, "rw-alpha-2");
+    const listed = await updates().list(target.actor);
+    expect(listed.installs[0]).toMatchObject({ updateAvailable: true });
+    const plan = await updates().plan(target.actor, requestId);
+    const refs = plan.records.flatMap((record) =>
+      record.items.map((item) => item.ref),
+    );
+    expect(
+      refs.some((ref) =>
+        ref.startsWith(`preparation:ops:state:${target.connections[0]}#`),
+      ),
+    ).toBe(true);
+    // A resource found after the review: the reviewed plan is stale.
+    await addResource(target, target.connections[0]!, "rw-alpha-3");
+    await expect(
+      updates().apply(target.actor, requestId, {
+        basis: plan.basis,
+        decisions: decisions(plan),
+      }),
+    ).rejects.toMatchObject({ code: "store_update_stale" });
+    await applyUpdate(target, requestId);
+    // Nothing but the reviewed drafts: no rows added to the table.
+    expect(await linkRows(target, result.linksDatasetId)).toEqual(linksBefore);
+    expect((await updates().list(target.actor)).installs[0]).toMatchObject({
+      updateAvailable: false,
+    });
+  });
+
+  it("never proposes a link the customer removed again", async () => {
+    const target = await setup();
+    // Vercel's connection in Beta: its project is linked by default.
+    await owner`update connections set project_id = ${target.projects[1]!}
+      where id = ${target.connections[1]!}`;
+    await addResource(target, target.connections[1]!, "prj_beta");
+    const { requestId, result } = await install(target, developerTemplate);
+    const slides = async () =>
+      (await withWorkspace(db, { workspaceId: target.workspaceId }, (tx) =>
+        findDashboard(tx, target.workspaceId, result.dashboardId),
+      ))!.slides.map((slide) => slide.name);
+    expect(await slides()).toEqual(["Overview", "Alpha", "Beta"]);
+    // The customer unlinks it: a row with an empty project.
+    const data = createDataService(db, at);
+    const table = await data.readManual(target.actor, result.linksDatasetId, {
+      offset: 0,
+      limit: 1000,
+    });
+    await data.saveManual(
+      target.actor,
+      {
+        definition: table.definition,
+        records: [
+          ...table.records.map((record) => ({ values: record.values })),
+          {
+            values: {
+              app_key: `${target.connections[1]}:prj_beta`,
+              product_id: "",
+            },
+          },
+        ],
+        generationId: table.generationId,
+      },
+      result.linksDatasetId,
+    );
+    // The update removes Beta's slide; once applied, nothing re-proposes it.
+    const { copy } = await applyUpdate(target, requestId);
+    expect(copy.slides.map((slide) => slide.name)).toEqual([
+      "Overview",
+      "Alpha",
+    ]);
+    expect((await updates().list(target.actor)).installs[0]).toMatchObject({
+      updateAvailable: false,
+    });
+  });
+
+  it("reads the update's tables and defaults under the workspace's data policy", async () => {
+    const target = await setup();
+    const { requestId } = await install(target, older);
+    await owner`update connections set project_id = ${target.projects[1]!}
+      where id = ${target.connections[1]!}`;
+    for (const id of ["prj_one", "prj_two", "prj_three"])
+      await addResource(target, target.connections[1]!, id);
+    // A workspace allowed two rows a read: its three resources are over.
+    await adminSetDataPolicy(db, target.workspaceId, { queryRows: 2 });
+    await expect(
+      updates(newer).plan(target.actor, requestId),
+    ).rejects.toMatchObject({ code: "data_source_row_limit", status: 413 });
   });
 
   it("refuses the App Portfolio's routes on a Developer Portfolio update", async () => {

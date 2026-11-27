@@ -64,6 +64,11 @@ const inputs = (
   fixedProduct: null,
   groups: null,
   apps,
+  // The Railway source's project is Alpha's by default.
+  defaults: {
+    links: { [`${ALL[0]!.id}:rw-1`]: project("Alpha").productId },
+    names: { [project("Alpha").productId]: "Alpha" },
+  },
 });
 
 function buildAll(input: DeveloperTemplateInputs) {
@@ -90,7 +95,7 @@ const dashboardOf = (records: StoreTemplateRecord[]) => {
  * remember the version they were made from, and updates compare with it.
  */
 const VERSION_HASHES: Record<number, string> = {
-  1: "3ef98dff7fb433cb90efb796c9a34fa8f4c79b412a4dfcbdae77600660f117f8",
+  1: "20c220f4266efc7eaabbf0678a7916e42757411d71fb384150a77a1c9df25a9f",
 };
 
 describe("Developer Portfolio template", () => {
@@ -209,7 +214,7 @@ describe("Developer Portfolio template", () => {
       "Deploys today",
       "Spend this month",
       "Active users yesterday",
-      "Downloads (30 days)",
+      "Search clicks, newest day",
     ]);
     expect(titles(de)).toEqual([
       "Alle Dienste",
@@ -217,7 +222,7 @@ describe("Developer Portfolio template", () => {
       "Deploys heute",
       "Kosten diesen Monat",
       "Aktive Nutzer gestern",
-      "Downloads (30 Tage)",
+      "Suchklicks, neuester Tag",
     ]);
   });
 
@@ -267,14 +272,20 @@ describe("Developer Portfolio template", () => {
   it("shows the usage the installed sources fill", () => {
     const measures = (connections: DeveloperSource[], title: string) =>
       byTitle(overviewOf(connections), title)?.binding.measureIds;
-    // Search Console only: its clicks, not users nobody reads.
-    expect(measures([ALL[5]!], "Usage yesterday")).toEqual(["clicks"]);
+    // Search Console only: its clicks of its newest finalized day, dated;
+    // no usage of yesterday, which it has not reported yet.
+    expect(measures([ALL[5]!], "Search clicks, newest day")).toEqual([
+      "clicks_newest",
+      "clicks_day",
+    ]);
+    expect(measures([ALL[5]!], "Usage yesterday")).toBeUndefined();
     // An unlinked Vercel project: its visitors.
     expect(measures([ALL[1]!], "Usage yesterday")).toEqual(["visitors"]);
+    // PostHog: daily, weekly and monthly active users of yesterday.
     expect(measures([ALL[4]!, ALL[5]!], "Active users yesterday")).toEqual([
       "dau",
+      "wau",
       "mau",
-      "clicks",
     ]);
   });
 });

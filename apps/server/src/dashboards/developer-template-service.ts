@@ -18,6 +18,7 @@ import {
   resolveDataPolicy,
   retryOnSerializationFailure,
   rethrowWorkspaceGone,
+  resourceIsSelected,
   schema,
   withWorkspace,
   DatasetStoreError,
@@ -46,6 +47,7 @@ import {
   developerSourceDatasets,
   developerTemplateCopy,
   isStoreSource,
+  type DeveloperDefaults,
   type DeveloperProjectIdentity,
   type DeveloperProjectWidget,
   type DeveloperSource,
@@ -98,7 +100,7 @@ const CONNECTOR_WIDGETS: Record<
   "hetzner-cloud": ["costs", "state"],
   "http-check": ["state"],
   posthog: ["audience"],
-  "google-search-console": ["audience"],
+  "google-search-console": ["clicks"],
 };
 
 const isTemplateConnector = (id: string): id is DeveloperTemplateConnector =>
@@ -115,6 +117,12 @@ const RESOURCE_KIND = sql`not exists (
     and r.kind <> 'resource'
     and m.dimensions ? r.kind
 )`;
+/** A resource the connection's selection keeps (resources.ts), as syncs do. */
+const SELECTED = resourceIsSelected(
+  sql`c.config`,
+  sql`c.connector_id`,
+  sql`r.resource_id`,
+);
 
 /**
  * The sources of `connectionIds` (all of the workspace, set up, of a
@@ -316,43 +324,45 @@ export const projectProduct = (projectId: string) => "product:" + projectId;
 type TableRow = Record<string, unknown>;
 
 /**
- * The rows the projects and links tables lack (owner decision C, #876):
- * every workspace project (not archived) the projects table does not
- * name, and every resource of the install's connections that is in a
- * project, which no link names yet (the connection's project). Applied by
- * an install, and by a template update, which offers them for review like
- * changed apps; never written behind the customer's back.
+ * What the workspace links by default (owner decision C, #876): every
+ * selected resource of the install's operations and analytics connections
+ * that is in a project (not archived) belongs to that project, and those
+ * projects' names. They are template inputs, read fresh for every plan:
+ * a workspace project created since, a connection moved into a project or
+ * a resource discovered later changes the source preparations, which a
+ * template update offers for review (and its basis guards); applying it
+ * writes nothing but those reviewed drafts. The links table holds the
+ * customer's own links over them; a row with an empty project unlinks a
+ * resource for good (it is never proposed again).
+ *
+ * Store connections have no defaults: their records are the App
+ * Portfolio's, whose preparations read the links table only (an install
+ * seeds it, storeDefaultLinks).
  */
-export async function pendingDeveloperRows(
+/** The selected resources of connections in a project, by connection. */
+async function projectResources(
   tx: Transaction,
   workspaceId: string,
   connectionIds: readonly string[],
-  tables: { projects: TableRow[]; links: TableRow[] },
   policy: DataPolicy,
-): Promise<{ projects: TableRow[]; links: TableRow[] }> {
-  const projects = await tx
-    .select({ id: schema.projects.id, name: schema.projects.name })
-    .from(schema.projects)
-    .where(
-      and(
-        eq(schema.projects.workspaceId, workspaceId),
-        isNull(schema.projects.archivedAt),
-      ),
-    )
-    .orderBy(asc(schema.projects.name), asc(schema.projects.id));
-  const named = new Set(tables.projects.map((row) => row.product_id));
-  const linked = new Set(tables.links.map((row) => row.app_key));
-  const added = {
-    projects: projects
-      .filter((project) => !named.has(projectProduct(project.id)))
-      .map((project) => ({
-        product_id: projectProduct(project.id),
-        product_name: project.name,
-      })),
-    links: [] as TableRow[],
-  };
-  if (!connectionIds.length) return added;
-  const active = new Set(projects.map((project) => project.id));
+): Promise<{
+  projects: Map<string, string>;
+  resources: { connectionId: string; resourceId: string; projectId: string }[];
+}> {
+  const projects = new Map(
+    (
+      await tx
+        .select({ id: schema.projects.id, name: schema.projects.name })
+        .from(schema.projects)
+        .where(
+          and(
+            eq(schema.projects.workspaceId, workspaceId),
+            isNull(schema.projects.archivedAt),
+          ),
+        )
+    ).map((project) => [project.id, project.name]),
+  );
+  if (!connectionIds.length) return { projects, resources: [] };
   const assigned = (
     await tx
       .select({
@@ -369,10 +379,10 @@ export async function pendingDeveloperRows(
       )
   ).filter(
     (row): row is { id: string; projectId: string } =>
-      row.projectId !== null && active.has(row.projectId),
+      row.projectId !== null && projects.has(row.projectId),
   );
-  if (!assigned.length) return added;
-  const resources = await tx.execute<{
+  if (!assigned.length) return { projects, resources: [] };
+  const rows = await tx.execute<{
     connection_id: string;
     resource_id: string;
   }>(sql`select distinct r.connection_id, r.resource_id
@@ -385,101 +395,75 @@ export async function pendingDeveloperRows(
         sql`, `,
       )})
       and ${RESOURCE_KIND}
+      and ${SELECTED}
     order by r.connection_id, r.resource_id
     ${policy.queryRows === null ? sql`` : sql`limit ${policy.queryRows + 1}`}`);
-  if (exceedsDataPolicy(resources.length, policy.queryRows))
+  if (exceedsDataPolicy(rows.length, policy.queryRows))
     reject("data_source_row_limit", 413);
   const projectOf = new Map(assigned.map((row) => [row.id, row.projectId]));
-  for (const resource of resources) {
-    const key = resource.connection_id + ":" + resource.resource_id;
-    if (linked.has(key)) continue;
-    linked.add(key);
-    added.links.push({
-      app_key: key,
-      product_id: projectProduct(projectOf.get(resource.connection_id)!),
-    });
-  }
-  return added;
+  return {
+    projects,
+    resources: rows.map((row) => ({
+      connectionId: row.connection_id,
+      resourceId: row.resource_id,
+      projectId: projectOf.get(row.connection_id)!,
+    })),
+  };
 }
 
-/** Reads a manual table whole (the data service pages it). */
-async function readTable(
-  data: ReturnType<typeof createDataService>,
-  actor: { workspaceId: string; callerId: string },
-  datasetId: string,
-) {
-  const first = await data.readManual(actor, datasetId, {
-    offset: 0,
-    limit: 1000,
-  });
-  const records = [...first.records];
-  while (records.length < first.total) {
-    const page = await data.readManual(actor, datasetId, {
-      generationId: first.generationId ?? undefined,
-      offset: records.length,
-      limit: 1000,
-    });
-    if (!page.records.length) break;
-    records.push(...page.records);
-  }
-  return { ...first, records };
-}
-
-/**
- * Applying a reviewed update (decision C): the rows pendingDeveloperRows
- * finds are appended to the projects and links tables, so the new slides'
- * data relates to their projects. The customer's rows stay as they are.
- */
-export async function writePendingDeveloperRows(
+/** The workspace's default links of the install's non-store sources. */
+export async function developerDefaults(
   tx: Transaction,
-  data: ReturnType<typeof createDataService>,
-  actor: { workspaceId: string; callerId: string },
-  input: {
-    result: { projectsDatasetId: string; linksDatasetId: string };
-    connectionIds: readonly string[];
-  },
+  workspaceId: string,
+  connections: readonly Pick<DeveloperSource, "id" | "connectorId">[],
   policy: DataPolicy,
-) {
-  const projects = await readTable(data, actor, input.result.projectsDatasetId);
-  const links = await readTable(data, actor, input.result.linksDatasetId);
-  const added = await pendingDeveloperRows(
+): Promise<DeveloperDefaults> {
+  const { projects, resources } = await projectResources(
     tx,
-    actor.workspaceId,
-    input.connectionIds,
-    {
-      projects: projects.records.map((record) => record.values),
-      links: links.records.map((record) => record.values),
-    },
+    workspaceId,
+    connections
+      .filter((connection) => !isStoreSource(connection))
+      .map((connection) => connection.id),
     policy,
   );
-  for (const [table, rows] of [
-    [projects, added.projects],
-    [links, added.links],
-  ] as const)
-    if (rows.length)
-      await data.saveManual(
-        actor,
-        {
-          definition: table.definition,
-          records: [
-            ...table.records.map((record) => ({ values: record.values })),
-            ...rows.map((values) => ({ values })),
-          ],
-          generationId: table.generationId,
-        },
-        table === projects
-          ? input.result.projectsDatasetId
-          : input.result.linksDatasetId,
-      );
+  const defaults: DeveloperDefaults = { links: {}, names: {} };
+  for (const resource of resources) {
+    const product = projectProduct(resource.projectId);
+    defaults.links[`${resource.connectionId}:${resource.resourceId}`] = product;
+    defaults.names[product] = projects.get(resource.projectId)!;
+  }
+  return defaults;
 }
 
 /**
- * The projects an install's slides are built from, read in tx from its
- * projects and links tables (or as the caller just wrote them) with the
- * rows they lack (pendingDeveloperRows): each project with the widgets its
- * linked resources of the install's connections fill, by name; a project
- * nothing links has no slide. The data policy's statement timeout the
- * read sets is restored after it.
+ * The links an install seeds for its store connections: their selected
+ * apps that are in a project, unless the request links them itself.
+ */
+async function storeDefaultLinks(
+  tx: Transaction,
+  workspaceId: string,
+  connections: readonly Pick<DeveloperSource, "id" | "connectorId">[],
+  policy: DataPolicy,
+): Promise<TableRow[]> {
+  const { resources } = await projectResources(
+    tx,
+    workspaceId,
+    connections.filter(isStoreSource).map((connection) => connection.id),
+    policy,
+  );
+  return resources.map((resource) => ({
+    app_key: `${resource.connectionId}:${resource.resourceId}`,
+    product_id: projectProduct(resource.projectId),
+  }));
+}
+
+/**
+ * The projects an install's slides are built from: read in tx from its
+ * projects and links tables (or as the caller just wrote them) over the
+ * workspace's defaults, each project with the widgets its linked resources
+ * of the install's connections fill, by name; a project nothing links has
+ * no slide. The data policy's statement timeout the read sets is restored
+ * after it.
  */
 export async function readDeveloperProjects(
   tx: Transaction,
@@ -487,10 +471,8 @@ export async function readDeveloperProjects(
   input: {
     result: { projectsDatasetId: string; linksDatasetId: string };
     connections: Pick<DeveloperSource, "id" | "connectorId">[];
-    tables?: {
-      projects: Record<string, unknown>[];
-      links: Record<string, unknown>[];
-    };
+    defaults: DeveloperDefaults;
+    tables?: { projects: TableRow[]; links: TableRow[] };
   },
   now: Date,
   policy: DataPolicy,
@@ -524,64 +506,67 @@ export async function readDeveloperProjects(
     await tx.execute(
       sql`select set_config('statement_timeout', ${String(timeout!.value)}, true)`,
     );
-    const pending = await pendingDeveloperRows(
-      tx,
-      workspaceId,
-      input.connections.map((connection) => connection.id),
-      tables,
-      policy,
-    );
-    tables = {
-      projects: [...tables.projects, ...pending.projects],
-      links: [...tables.links, ...pending.links],
-    };
   }
-  return developerProjectIdentities(tables, input.connections);
+  return developerProjectIdentities(tables, input.connections, input.defaults);
 }
 
-/** The projects with the widgets their links fill (readDeveloperProjects). */
+/**
+ * The projects with the widgets their links fill (readDeveloperProjects),
+ * resolved as the preparations resolve each row: a links-table row wins
+ * (an empty project unlinks), else the default link.
+ */
 export function developerProjectIdentities(
-  tables: {
-    projects: Record<string, unknown>[];
-    links: Record<string, unknown>[];
-  },
+  tables: { projects: TableRow[]; links: TableRow[] },
   connections: Pick<DeveloperSource, "id" | "connectorId">[],
+  defaults: DeveloperDefaults = { links: {}, names: {} },
 ): DeveloperProjectIdentity[] {
   const connectors = new Map(
     connections.map((connection) => [connection.id, connection.connectorId]),
   );
-  const widgets = new Map<string, Set<DeveloperProjectWidget>>();
+  // As the preparations join the table: an app key's first row decides.
+  const effective = new Map<string, string>(Object.entries(defaults.links));
+  const seen = new Set<string>();
   for (const link of tables.links) {
-    const key = typeof link.app_key === "string" ? link.app_key : "",
-      project = typeof link.product_id === "string" ? link.product_id : "";
+    const key = typeof link.app_key === "string" ? link.app_key : "";
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    effective.set(
+      key,
+      typeof link.product_id === "string" ? link.product_id : "",
+    );
+  }
+  const widgets = new Map<string, Set<DeveloperProjectWidget>>();
+  for (const [key, project] of effective) {
     const connectorId = connectors.get(key.slice(0, key.indexOf(":")));
     if (!connectorId || !project || key.indexOf(":") < 0) continue;
     const set = widgets.get(project) ?? new Set();
     for (const widget of CONNECTOR_WIDGETS[connectorId]) set.add(widget);
     widgets.set(project, set);
   }
-  const seen = new Set<string>();
-  const projects: DeveloperProjectIdentity[] = [];
-  for (const row of tables.projects) {
-    const productId = typeof row.product_id === "string" ? row.product_id : "";
-    if (!productId || seen.has(productId) || !widgets.has(productId)) continue;
-    seen.add(productId);
-    const name =
-      typeof row.product_name === "string" && row.product_name.trim()
-        ? row.product_name
-        : productId;
-    projects.push({
+  const names = new Map<string, string>(Object.entries(defaults.names));
+  for (const row of tables.projects)
+    if (
+      typeof row.product_id === "string" &&
+      typeof row.product_name === "string" &&
+      row.product_name.trim()
+    )
+      names.set(row.product_id, row.product_name);
+  const projects: DeveloperProjectIdentity[] = [...widgets].map(
+    ([productId, set]) => ({
       productId,
-      name,
-      widgets: [...widgets.get(productId)!].sort(),
-    });
-  }
-  // By name: a table reads back in key order, not in the order written.
-  return projects.sort(
-    (a, b) =>
-      a.name.localeCompare(b.name, "en") ||
-      (a.productId < b.productId ? -1 : a.productId > b.productId ? 1 : 0),
+      name: names.get(productId) ?? productId,
+      widgets: [...set].sort(),
+    }),
   );
+  // Projects the projects table and the defaults do not name are not
+  // projects (an app key a customer typed): no slide.
+  return projects
+    .filter((project) => names.has(project.productId))
+    .sort(
+      (a, b) =>
+        a.name.localeCompare(b.name, "en") ||
+        (a.productId < b.productId ? -1 : a.productId > b.productId ? 1 : 0),
+    );
 }
 
 function normalize(input: DeveloperTemplateRequest) {
@@ -670,6 +655,7 @@ export function createDeveloperTemplateService(deps: {
                     sql`, `,
                   )})
                   and ${RESOURCE_KIND}
+                  and ${SELECTED}
                 order by r.name, r.resource_id
                 ${policy.queryRows === null ? sql`` : sql`limit ${policy.queryRows + 1}`}`)
             : [];
@@ -795,11 +781,19 @@ export function createDeveloperTemplateService(deps: {
                   app_key: link.connectionId + ":" + link.resourceId,
                   product_id: projectProduct(link.projectId),
                 }));
-                const pending = await pendingDeveloperRows(
+                const linked = new Set(explicit.map((row) => row.app_key));
+                const storeLinks = (
+                  await storeDefaultLinks(
+                    tx,
+                    actor.workspaceId,
+                    sources,
+                    policy,
+                  )
+                ).filter((row) => !linked.has(String(row.app_key)));
+                const workspaceDefaults = await developerDefaults(
                   tx,
                   actor.workspaceId,
-                  input.connections,
-                  { projects: [], links: explicit },
+                  sources,
                   policy,
                 );
                 // One batch service for the whole install (#668).
@@ -807,10 +801,29 @@ export function createDeveloperTemplateService(deps: {
                     batch: true,
                   }),
                   t = developerTemplateCopy(actor.locale);
-                const projectRows = pending.projects.map((values) => ({
-                  values,
+                const projectRows = (
+                  await tx
+                    .select({
+                      id: schema.projects.id,
+                      name: schema.projects.name,
+                    })
+                    .from(schema.projects)
+                    .where(
+                      and(
+                        eq(schema.projects.workspaceId, actor.workspaceId),
+                        isNull(schema.projects.archivedAt),
+                      ),
+                    )
+                    .orderBy(asc(schema.projects.id))
+                ).map((project) => ({
+                  values: {
+                    product_id: projectProduct(project.id),
+                    product_name: project.name,
+                  },
                 }));
-                const linkRows = [...explicit, ...pending.links]
+                // The request's links and the store apps' projects; the
+                // other sources' projects are the defaults (inputs).
+                const linkRows = [...explicit, ...storeLinks]
                   .sort((a, b) =>
                     String(a.app_key).localeCompare(String(b.app_key)),
                   )
@@ -880,6 +893,7 @@ export function createDeveloperTemplateService(deps: {
                   fixedProduct: null,
                   groups: null,
                   // As just written: not read back.
+                  defaults: workspaceDefaults,
                   apps: await readDeveloperProjects(
                     tx,
                     actor.workspaceId,
@@ -889,13 +903,14 @@ export function createDeveloperTemplateService(deps: {
                         linksDatasetId: linksTable.datasetId,
                       },
                       connections: sources,
+                      defaults: workspaceDefaults,
                       tables: {
                         projects: projectRows.map((row) => row.values),
                         links: linkRows.map((row) => row.values),
                       },
                     },
                     now(),
-                    defaults,
+                    policy,
                   ),
                 };
                 const ids = {

@@ -358,7 +358,8 @@ const dashboardWidgetRef = (key: string, widgetKey: string) =>
  * Another template the update engine plans, merges and applies like the
  * App Portfolio (the Developer Portfolio, #876): its id, how its stored
  * inputs parse, the source datasets a newer version reads and the items
- * its per-item slides are built from (`inputs.apps`, from version 1). It
+ * its per-item slides are built from (`inputs.apps`, from version 1), read
+ * with whatever else it reads fresh for a plan (readItems). It
  * has no app scope, no icons and no installs made before versions.
  */
 export interface TemplateFamily {
@@ -375,18 +376,7 @@ export interface TemplateFamily {
     workspaceId: string,
     install: InstallRow,
     inputs: StoreTemplateInputs,
-  ): Promise<StoreTemplateInputs["apps"]>;
-  /**
-   * Applying an update: writes the table rows its slide items were read
-   * with but the install's tables lack (rows readItems adds).
-   */
-  writeItems?(
-    tx: Transaction,
-    data: ReturnType<typeof createDataService>,
-    actor: Actor,
-    install: InstallRow,
-    inputs: StoreTemplateInputs,
-  ): Promise<void>;
+  ): Promise<StoreTemplateInputs>;
 }
 
 export function createStoreTemplateUpdateService(deps: {
@@ -465,10 +455,7 @@ export function createStoreTemplateUpdateService(deps: {
     if (!install) return inputs;
     try {
       if (family)
-        return {
-          ...inputs,
-          apps: await family.readItems(tx, workspaceId, install, inputs),
-        };
+        return await family.readItems(tx, workspaceId, install, inputs);
       const apps = await readStoreApps(
         tx,
         workspaceId,
@@ -512,7 +499,13 @@ export function createStoreTemplateUpdateService(deps: {
       return false;
     }
     const fresh = await withApps(tx, workspaceId, requestId, inputs, "lenient");
-    return !same(builtApps(rows) ?? inputs.apps ?? [], fresh.apps ?? []);
+    if (!same(builtApps(rows) ?? inputs.apps ?? [], fresh.apps ?? []))
+      return true;
+    // Another template's other fresh inputs (the Developer Portfolio's
+    // default links): a change rebuilds its records, which the plan shows.
+    const { apps: _stored, ...stored } = inputs,
+      { apps: _fresh, ...current } = fresh;
+    return family !== undefined && !same(stored, current);
   }
 
   /**
@@ -1904,9 +1897,6 @@ export function createStoreTemplateUpdateService(deps: {
         ),
         plan.inputs.locale,
       );
-    // Another template's rows its reviewed slide items were read with.
-    if (!scope && family?.writeItems)
-      await family.writeItems(tx, data, actor, plan.install, plan.inputs);
     await tx
       .update(schema.dataTemplateInstalls)
       .set({

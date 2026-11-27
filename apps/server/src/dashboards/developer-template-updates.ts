@@ -1,6 +1,6 @@
 import type { ConnectorRegistry } from "@netrics/connector-runtime";
 import { developerTemplateResultSchema } from "@netrics/contracts";
-import type { Database } from "@netrics/database";
+import { resolveDataPolicy, type Database } from "@netrics/database";
 import { DEFAULT_DATA_POLICY, type DataPolicy } from "@netrics/domain";
 
 import {
@@ -13,7 +13,7 @@ import {
 } from "./developer-template.js";
 import {
   readDeveloperProjects,
-  writePendingDeveloperRows,
+  developerDefaults,
   withDeveloperSourceDatasets,
 } from "./developer-template-service.js";
 import type { StoreTemplateDefinition } from "./store-template.js";
@@ -54,28 +54,34 @@ export function developerTemplateFamily(deps: {
           register,
         ),
       ),
-    readItems: (tx, workspaceId, install, inputs) =>
-      readDeveloperProjects(
+    // The workspace's defaults and the projects as they are now, under the
+    // workspace's effective data policy (as the install reads them).
+    readItems: async (tx, workspaceId, install, raw) => {
+      const inputs = asDeveloperInputs(raw);
+      const { policy: effective } = await resolveDataPolicy(
+        tx,
+        workspaceId,
+        policy,
+      );
+      const defaults = await developerDefaults(
+        tx,
+        workspaceId,
+        inputs.connections,
+        effective,
+      );
+      const apps = await readDeveloperProjects(
         tx,
         workspaceId,
         {
           result: developerTemplateResultSchema.parse(install.result),
-          connections: asDeveloperInputs(inputs).connections,
+          connections: inputs.connections,
+          defaults,
         },
         now(),
-        policy,
-      ) as unknown as ReturnType<TemplateFamily["readItems"]>,
-    writeItems: (tx, data, actor, install, inputs) =>
-      writePendingDeveloperRows(
-        tx,
-        data,
-        actor,
-        {
-          result: developerTemplateResultSchema.parse(install.result),
-          connectionIds: inputs.connections.map((connection) => connection.id),
-        },
-        policy,
-      ),
+        effective,
+      );
+      return asStoreInputs({ ...inputs, defaults, apps });
+    },
   };
 }
 

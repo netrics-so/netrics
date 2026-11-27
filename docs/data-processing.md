@@ -1077,19 +1077,29 @@ read the same tables and a project slide's freshness resolves its
 resources through the links table as an app slide's does (`linksDatasetId`
 beside `mappingDatasetId`, ADR 0025). The install seeds the projects table
 with the workspace's projects (not archived) and the links table with the
-request's explicit links, then every resource of a connection that is in a
-project (the connection's project). A resource without a link is its own
+request's explicit links and, for App Store and Google Play connections in
+a project, their selected apps (the App Portfolio's preparations read the
+table alone).
+
+Every other source's resources default to their connection's project: each
+selected resource (the connection's resource selection, as syncs read it)
+of a connection in a project, with that project's name, is a template
+input (`defaults`), read fresh for every plan and written into that
+source's preparations (a JSON lookup, after the links table). The links
+table is the customer's over them: a row links a resource elsewhere, and a
+row with an empty project unlinks it for good, so a default the customer
+removed is never proposed again. A resource without either is its own
 entry, as an app without a product is.
 
-The tables are the customer's: a link added, changed or removed, or a
-project renamed, is offered as a template update (as changed apps are),
-whose plan shows the slide changes. So is what the tables lack (owner
-decision C): a workspace project created since, and a resource of a
-connection in a project that no link names yet (a connection moved into a
-project, a resource discovered later). Nothing is linked behind the
-customer's back: the update reads those rows for its plan and writes them
-to the tables when it is applied. A one-flow "add a product" (#879) will
-apply such updates.
+A link added, changed or removed, or a project renamed, is offered as a
+template update (as changed apps are), whose plan shows the slide changes.
+So are new defaults (owner decision C): a workspace project created since,
+a connection moved into a project, a resource discovered later, also of a
+project that has its slide already. They change the source preparations,
+so the plan lists them, its basis turns stale when they change after the
+review, and applying writes nothing but the reviewed drafts. A one-flow
+"add a product" (#879) will apply such updates. The update reads the
+tables and defaults under the workspace's effective data policy.
 
 **Families.** Four families of ordinary preparations, each a preparation per
 source (its rows in common columns, joined to the links and projects
@@ -1121,7 +1131,10 @@ included. A Vercel project whose production points at an older build than
 the newest ready one is "up · rolled back" (the state widget's flag).
 Active users are yesterday's complete UTC day (owner decision B): DAU, and
 WAU and MAU as PostHog reports them for that day, summed over projects,
-never over days.
+never over days. Search Console finalizes its days two to three days late:
+its clicks are read for each connection's newest reported day
+(`clicks_newest`), shown with that day (`clicks_day`) in a widget of their
+own ("Search clicks, newest day"), not for yesterday.
 
 Two measure-widget options read these UTC days (`measureWidgetOptionsSchema`,
 #876): `periodTimeZone: "UTC"` makes `period` read UTC days instead of the
@@ -1133,11 +1146,15 @@ yesterday). Widgets without them read as before.
 23 up", "2 of 23 down", owner decision A) over the list of every item
 named with its project (problems first), deploys today per provider (UTC),
 spend this month per provider and currency (UTC), yesterday's usage per
-project (the measures its sources fill: users, visitors, clicks) and,
-with a store, downloads per project. Then one slide per project with a
-linked resource, scoped to it (`project`), in name order: downloads,
-revenue and ratings (stores), yesterday's usage, latest deploys, spend
-this month, and the state list, as far as its links fill them. The dashboard's filters (project, provider,
+project (the measures its sources fill: daily, weekly and monthly users,
+visitors), Search Console's clicks of its newest day per project and,
+with a store, downloads per project (four numbers fit beside the state
+widgets: downloads, then clicks stay out past them). Then one slide per
+project with a linked resource, scoped to it (`project`), in name order:
+downloads, revenue and ratings (stores), yesterday's usage, the newest
+day's clicks, latest deploys, spend this month, and the state list, as far
+as its links fill them (two rows of three numbers: past them, clicks, then
+ratings stay out). The dashboard's filters (project, provider,
 day) map to every model; widgets with a period of their own exclude the
 day filter, the state lists exclude it too. Projects past the Studio's
 limits (12 slides, 48 data widgets) show in the overview only and are
