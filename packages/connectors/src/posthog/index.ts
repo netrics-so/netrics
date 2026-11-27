@@ -410,14 +410,22 @@ export function createPostHogConnector(
                 selection.includes(canonicalProjectId(id)),
               )
             : projectIds.ids;
-          // With none of them selected, the first named project still
-          // checks the key; only a wrong key or a missing scope fails it.
-          const probes = read.length > 0 ? read : projectIds.ids.slice(0, 1);
+          // An explicitly empty selection reads nothing: the first named
+          // project still checks the key, and only a wrong key or a missing
+          // scope fails it. A selection that names none of the Project IDs
+          // (they changed since) checks them all, as without a selection,
+          // so a project the key cannot read is reported (#888 review).
+          const empty = selection?.length === 0;
+          const probes = empty
+            ? projectIds.ids.slice(0, 1)
+            : read.length > 0
+              ? read
+              : projectIds.ids;
           for (const id of probes.slice(0, CHECK_PROBES)) {
             try {
               await api.query(canonicalProjectId(id), PROBE_BODY);
             } catch (error) {
-              if (read.length === 0 && isRefused(error)) break;
+              if (empty && isRefused(error)) break;
               if (isRefused(error)) {
                 return {
                   ok: false,

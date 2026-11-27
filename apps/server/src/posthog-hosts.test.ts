@@ -437,3 +437,33 @@ describe("the project picker of a key limited to projects (#888 review)", () => 
     }
   });
 });
+
+describe("the picker names projects as a sync does (#888 review)", () => {
+  it("discovers a project under the spelling its stored selection uses", async () => {
+    const created = await call(
+      "POST",
+      `/v1/workspaces/${workspaceId}/connections`,
+      {
+        connectorId: "posthog",
+        name: "Two spellings",
+        config: { host: "posthog.fifth.example", projects: "01000, 1000" },
+        credentials: { token: KEY },
+      },
+    );
+    expect(created.statusCode, created.body).toBe(200);
+    const id = connectionResponseSchema.parse(created.json()).connection.id;
+    await owner`
+      update connections
+      set config = config || ${owner.json({ resourceSelection: ["1000"] })}
+      where id = ${id}`;
+    const preview = await call(
+      "POST",
+      `/v1/workspaces/${workspaceId}/connections/${id}/preview`,
+      { config: { host: "posthog.fifth.example", projects: "01000, 1000" } },
+    );
+    expect(preview.statusCode, preview.body).toBe(200);
+    const parsed = storedConnectionPreviewResponseSchema.parse(preview.json());
+    expect(parsed.check).toEqual({ ok: true });
+    expect(parsed.resources.map((resource) => resource.id)).toEqual(["1000"]);
+  });
+});

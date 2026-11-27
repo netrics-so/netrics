@@ -67,8 +67,9 @@ first one's projects, and runs the query `SELECT 1` (which needs
 `query:read`) in the first project that answers; a project the key may not
 query (403, 404) is skipped there and shows as stale after the sync. With
 Project IDs it runs `SELECT 1` in the first three of them the connection
-syncs (with none selected, in the first one, where only a wrong key or a
-missing scope fails). Discovery skips an organization whose projects
+syncs (with an empty selection, in the first one, where only a wrong key
+or a missing scope fails; with a selection that names none of them, in the
+first three, as without a selection). Discovery skips an organization whose projects
 PostHog refuses (403, 404), as a sync does, so the readable projects can be
 connected; a wrong key or a missing scope still fails it. When insights are
 configured, it lists one insight. It fails with a reason:

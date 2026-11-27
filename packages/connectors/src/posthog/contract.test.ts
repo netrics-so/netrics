@@ -1528,6 +1528,28 @@ describe("review follow-ups (#888)", () => {
     });
   });
 
+  it("3. checks the Project IDs when the stored selection names none of them (#888 review)", async () => {
+    // Project IDs changed from 1000 to 2000, which the key cannot read;
+    // the selection still names 1000.
+    const posthog = fake({
+      scopedProjects: [1000],
+      projects: [{ id: 1000 }, { id: 2000 }],
+    });
+    expect(
+      await connector().check(
+        context({ projects: "2000", resourceSelection: ["1000"] }),
+        posthog.runtime,
+      ),
+    ).toMatchObject({ ok: false, code: "posthog.projects_invalid" });
+    // An explicitly empty selection reads nothing: a refusal is no failure.
+    expect(
+      await connector().check(
+        context({ projects: "2000", resourceSelection: [] }),
+        posthog.runtime,
+      ),
+    ).toEqual({ ok: true });
+  });
+
   it("4. reads a single-number formula insight whose data is null", async () => {
     const posthog = fake({
       insights: [

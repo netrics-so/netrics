@@ -985,22 +985,30 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     const selection = resourceSelectionOf(
       existing.row.config as Record<string, unknown>,
     );
+    // The selection the connector sees: one about to be saved, else the
+    // stored one, as a sync does, so a connector probes and names the
+    // resources the connection reads (#888 review).
+    const seen = candidateSelection ?? selection;
+    const withSelection = seen
+      ? { ...validated.value, resourceSelection: [...seen] }
+      : validated.value;
     try {
-      const checked = await callStoredConnection(
-        actor,
-        connectionId,
-        (connector, context, options) =>
-          executeCheck(connector, context, options),
-        // Without a selection about to be saved, the check sees the stored
-        // one, as a sync does: a connector probes what the connection
-        // reads, not resources it leaves out (#888 review).
-        candidateSelection
-          ? { ...validated.value, resourceSelection: [...candidateSelection] }
-          : selection
-            ? { ...validated.value, resourceSelection: [...selection] }
-            : validated.value,
-        (result) => !result.ok,
-      );
+      const check = (config: Record<string, unknown>) =>
+        callStoredConnection(
+          actor,
+          connectionId,
+          (connector, context, options) =>
+            executeCheck(connector, context, options),
+          config,
+          (result) => !result.ok,
+        );
+      let checked = await check(withSelection);
+      // A stored selection may name a resource the credentials lost: the
+      // picker still offers what they read, so a check refused with it is
+      // made again without it (#888 review).
+      if (!candidateSelection && selection && checked.ok && !checked.value.ok) {
+        checked = await check(validated.value);
+      }
       if (!checked.ok) return checked;
       if (!checked.value.ok)
         return ok({ check: checked.value, resources: [], selection });
@@ -1009,7 +1017,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         connectionId,
         (connector, context, options) =>
           executeDiscover(connector, context, options),
-        validated.value,
+        withSelection,
       );
       if (!discovered.ok) return discovered;
       // A connector that cannot name an app right now (Google Play without
