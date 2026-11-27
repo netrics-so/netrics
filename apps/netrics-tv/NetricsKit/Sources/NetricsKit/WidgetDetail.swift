@@ -320,9 +320,13 @@ public struct WidgetDetail: Sendable, Equatable, Identifiable {
                     ItemsText.count(data.total, language: language),
                     attention > 0 ? KitStrings.text(.statusFailing, language, attention) : nil,
                 ].compactMap { $0 }.joined(separator: " · ")
+            // An old "Up" never reads as current (#900): the warning follows the
+            // widget's status, with or without freshness metadata.
+            let stale = data.status == .stale ? Row(.source, KitStrings.text(.stateStale, language)) : nil
             let freshness = data.freshness.map { updated(nil, freshness: $0, status: data.status) }
             return detail(
-                [Row(.value, summary), freshness], items: items, fallbackTitle: KitStrings.text(.stateLabel, language))
+                [Row(.value, summary), stale, freshness], items: items,
+                fallbackTitle: KitStrings.text(.stateLabel, language))
         case .image, .text, .clock, .countdown, .unsupported:
             return nil
         }

@@ -39,10 +39,11 @@ export function stateFlagDimensions(model: CatalogModel) {
 /**
  * A new binding over `model` (#875): the state is the first dimension
  * named like a state ("state", "status", "health"), else the first yes/no
- * field; the name the first other text field no shared filter picks values
- * of (a project is a category, not an item's name); a changed-at and a
- * rolled-back flag only when a field is named like one. Null when the
- * model cannot back a state widget.
+ * field, else the last text field, the first of them that leaves a text
+ * field for the name (#900); the name the first other text field no
+ * shared filter picks values of (a project is a category, not an item's
+ * name); a changed-at and a rolled-back flag only when a field is named
+ * like one. Null when the model cannot back a state widget.
  */
 export function stateBindingFor(
   model: CatalogModel,
@@ -59,10 +60,7 @@ export function stateBindingFor(
   // Names rank the defaults, they never exclude a model (review): a field
   // named like a state, else a yes/no field, else a text field the name
   // does not take.
-  const named =
-    values.find((dimension) => matches(dimension, STATE_NAME)) ??
-    stateFlagDimensions(model)[0];
-  const pickName = (except: string | undefined) => {
+  const pickName = (except: string) => {
     const names = stateNameDimensions(model).filter(
       (dimension) => dimension.id !== except,
     );
@@ -77,12 +75,31 @@ export function stateBindingFor(
       names[0]
     );
   };
-  const name = pickName(named?.id);
-  if (!name) return null;
-  const state =
-    named ??
-    [...values].reverse().find((dimension) => dimension.id !== name.id);
-  if (!state || state.id === name.id) return null;
+  const candidates = [
+    ...new Set([
+      ...values.filter((dimension) => matches(dimension, STATE_NAME)),
+      ...stateFlagDimensions(model),
+    ]),
+  ];
+  let state: CatalogDimension | undefined;
+  let name: CatalogDimension | undefined;
+  for (const candidate of candidates) {
+    name = pickName(candidate.id);
+    if (name) {
+      state = candidate;
+      break;
+    }
+  }
+  if (!state) {
+    // Only text fields left (#900): the preferred name first, the state
+    // the last other one, so an ID never names the items when a plain
+    // field can.
+    name = pickName("");
+    state = [...values]
+      .reverse()
+      .find((dimension) => dimension.id !== name?.id);
+  }
+  if (!state || !name) return null;
   const changed = stateChangedDimensions(model).find((dimension) =>
     matches(dimension, CHANGED_NAME),
   );
@@ -101,10 +118,26 @@ export function stateBindingFor(
 }
 
 /**
+ * The name after the state takes the name's field `taken` (a swap): the
+ * freed state field when it is text, else another text field of `model`,
+ * else none (a yes/no field is never a name).
+ */
+function swappedName(
+  model: CatalogModel,
+  freed: string,
+  taken: string,
+): string | undefined {
+  const type = model.dimensions.find((d) => d.id === freed)?.type;
+  if (type === undefined || type === "string") return freed;
+  return stateNameDimensions(model).find((d) => d.id !== taken)?.id;
+}
+
+/**
  * The fields each role of a binding may take: every text field for the
  * name and every text or yes/no field for the state, the other role's
- * included (picking it swaps the two, `withStateField`), and the yes/no
- * fields but the state for the rollback flag.
+ * included (picking it swaps the two, `withStateField`) unless the swap
+ * would leave no text field for the name (#900), and the yes/no fields
+ * but the state for the rollback flag.
  */
 export function stateFieldChoices(
   model: CatalogModel,
@@ -112,7 +145,12 @@ export function stateFieldChoices(
 ) {
   return {
     names: stateNameDimensions(model),
-    states: stateValueDimensions(model),
+    states: stateValueDimensions(model).filter(
+      (dimension) =>
+        dimension.id !== binding.nameDimensionId ||
+        swappedName(model, binding.stateDimensionId, dimension.id) !==
+          undefined,
+    ),
     changed: stateChangedDimensions(model),
     flags: stateFlagDimensions(model).filter(
       (dimension) => dimension.id !== binding.stateDimensionId,
@@ -125,7 +163,8 @@ export function stateFieldChoices(
  * picking the field the other role holds swaps name and state, so one
  * field never takes two roles and two text fields can trade places. A
  * yes/no state is never a name: then the name falls to another text field
- * of `model`. A rollback flag that became the state is dropped.
+ * of `model`, and without one the binding stays as it is (#900). A
+ * rollback flag that became the state is dropped.
  */
 export function withStateField<B extends StateWidgetBinding>(
   binding: B,
@@ -139,15 +178,12 @@ export function withStateField<B extends StateWidgetBinding>(
   let next = { ...binding, [role]: value };
   if (binding[other] === value) {
     const freed = binding[role];
-    const freedType = model?.dimensions.find((d) => d.id === freed)?.type;
-    next = {
-      ...next,
-      [other]:
-        other === "nameDimensionId" && freedType && freedType !== "string"
-          ? (stateNameDimensions(model!).find((d) => d.id !== value)?.id ??
-            freed)
-          : freed,
-    };
+    const swapped =
+      other === "nameDimensionId" && model
+        ? swappedName(model, freed, value)
+        : freed;
+    if (swapped === undefined) return binding;
+    next = { ...next, [other]: swapped };
   }
   if (next.rolledBackDimensionId === next.stateDimensionId) {
     const { rolledBackDimensionId: _flag, ...rest } = next;

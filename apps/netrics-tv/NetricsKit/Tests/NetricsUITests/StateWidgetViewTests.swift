@@ -68,6 +68,57 @@ import Testing
         #expect(roomy.word > tight.word && roomy.word <= 160)
     }
 
+    @Test func compactSingleTileKeepsTheRollback() {
+        let sizes = StudioLayout.typeScale(
+            .state, placement: StudioPlacement(x: 0, y: 0, w: 3, h: 2), fontScale: 1, showHeader: true)
+        let item = StateWidgetItem(name: "site", state: .up, rolledBack: true, changedAt: "2026-11-21T08:00:00.000Z")
+        let tight = StateWidgetView.singlePlan(
+            height: 60, sizes: sizes, hasName: true, hasQualifier: true, rolledBack: true)
+        // No room for the line: the time goes, the rollback joins the word.
+        #expect(!tight.showQualifier && tight.rollbackInWord)
+        #expect(StateWidgetView.singleWord(item, plan: tight, language: .en) == "Up · rolled back")
+        #expect(StateWidgetView.singleWord(item, plan: tight, language: .de) == "Online · zurückgesetzt")
+        let roomy = StateWidgetView.singlePlan(
+            height: 400, sizes: sizes, hasName: true, hasQualifier: true, rolledBack: true)
+        #expect(roomy.showQualifier && !roomy.rollbackInWord)
+        #expect(StateWidgetView.singleWord(item, plan: roomy, language: .en) == "Up")
+        // Without a rollback, the word stays alone.
+        let plain = StateWidgetView.singlePlan(height: 60, sizes: sizes, hasName: true, hasQualifier: true)
+        #expect(!plain.rollbackInWord)
+    }
+
+    @Test(arguments: [ScreenLanguage.en, .de])
+    func aFoldedRollbackFitsItsWidthElseKeepsItsLine(language: ScreenLanguage) {
+        let item = StateWidgetItem(name: "site", state: .up, rolledBack: true, changedAt: "2026-11-21T08:00:00.000Z")
+        let folded = StateBoard.stateText(item, language: language)
+        for format in ScreenFormat.allCases {
+            for fontScale in [1.0, 1.3] {
+                let cells = StudioPlacement(x: 0, y: 0, w: 3, h: 2)
+                let placement = ScreenPlacement(cells: cells, format: format)
+                let box = StudioRender.contentBox(cells, showHeader: true, unitBox: placement.unitBox)
+                let sizes = StudioLayout.typeScale(.state, placement: cells, fontScale: fontScale, showHeader: true)
+                let cell = sizes[.cell] ?? StudioLayout.Minimum.cell
+                for height in [40.0, 60.0, box.height] {
+                    let plan = StateWidgetView.singlePlan(
+                        height: height, sizes: sizes, hasName: true, hasQualifier: true, rolledBack: true,
+                        width: box.width, folded: folded)
+                    let context = "\(language) \(format) ×\(fontScale) h\(height)"
+                    // The rollback is always told: on its own line, or in the word.
+                    #expect(plan.showQualifier || plan.rollbackInWord, "\(context)")
+                    if plan.rollbackInWord {
+                        // Icon, gap and the folded text at the word's size, unshrunk.
+                        let text = StudioLayout.estimateTextWidth(folded, fontSize: plan.word, weight: .semibold)
+                        let fits = plan.word * 1.1 + text <= box.width + 1e-6
+                        // Too wide only as the last resort, at the smallest size.
+                        #expect(
+                            fits || plan.word <= cell,
+                            "\(context): \(plan.word * 1.1 + text) > \(box.width)")
+                    }
+                }
+            }
+        }
+    }
+
     @Test(arguments: [ScreenLanguage.en, .de])
     func bothFormsDrawInsideTheirBox(language: ScreenLanguage) {
         let forms = [StateWidgetOptions(), StateWidgetOptions(layout: .single)]

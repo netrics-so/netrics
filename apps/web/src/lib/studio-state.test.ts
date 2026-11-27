@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { PublishedModelCatalog } from "@netrics/contracts";
+import { statusLayout } from "@netrics/domain";
 
 import {
   commitStateItem,
@@ -9,6 +10,7 @@ import {
 import { scrollStatePlacement } from "@/components/scroll/scroll-widgets";
 
 import { newWidget } from "./studio-new-widget";
+import { contentBox } from "./studio-render";
 import {
   stateBindingFor,
   stateFieldChoices,
@@ -203,17 +205,94 @@ describe("review fixes (#875)", () => {
     ).toEqual(["web"]);
   });
 
-  it("keeps inner spaces of an item name, trimming only on commit", () => {
+  it("keeps an item name exactly as written (#900)", () => {
     expect(commitStateItem("Billing API")).toBe("Billing API");
-    expect(commitStateItem("  Billing API ")).toBe("Billing API");
+    expect(commitStateItem(" Billing API ")).toBe(" Billing API ");
     expect(commitStateItem("   ")).toBeNull();
+    expect(commitStateItem("")).toBeNull();
   });
 
   it("grows the scroll card with the rows a list shows", () => {
-    const { rowCapacity } = scrollStatePlacement(20, 1);
+    const { rowCapacity } = scrollStatePlacement(20, 1, "Status");
     expect(rowCapacity).toBeGreaterThanOrEqual(20);
-    expect(scrollStatePlacement(3, 1).placement.unitBox.height).toBeLessThan(
-      scrollStatePlacement(20, 1).placement.unitBox.height,
+    expect(
+      scrollStatePlacement(3, 1, "Status").placement.unitBox.height,
+    ).toBeLessThan(
+      scrollStatePlacement(20, 1, "Status").placement.unitBox.height,
     );
+  });
+});
+
+describe("follow-ups of the final review (#900)", () => {
+  it("sizes the scroll card for its own title, wrapped", () => {
+    const title =
+      "Production services across every project and environment we deploy to";
+    const { placement } = scrollStatePlacement(5, 1, title);
+    const box = contentBox(placement, false);
+    expect(
+      statusLayout({
+        label: title,
+        width: box.width,
+        height: box.height,
+        fontScale: 1,
+      }).rowCapacity,
+    ).toBeGreaterThanOrEqual(5);
+  });
+
+  const checks = model("checks", [
+    ["url", "URL", "string"],
+    ["healthy", "Healthy", "boolean"],
+  ]);
+  const binding = {
+    modelId: "checks",
+    nameDimensionId: "url",
+    stateDimensionId: "healthy",
+    exclusions: [],
+  };
+
+  it("never offers a swap that would make a yes/no field the name", () => {
+    expect(stateFieldChoices(checks, binding).states.map((d) => d.id)).toEqual([
+      "healthy",
+    ]);
+    expect(withStateField(binding, "stateDimensionId", "url", checks)).toBe(
+      binding,
+    );
+    // With another text field, the swap names the item by it.
+    const more = model("more", [
+      ["url", "URL", "string"],
+      ["region", "Region", "string"],
+      ["healthy", "Healthy", "boolean"],
+    ]);
+    expect(stateFieldChoices(more, binding).states.map((d) => d.id)).toEqual([
+      "url",
+      "region",
+      "healthy",
+    ]);
+    expect(
+      withStateField(binding, "stateDimensionId", "url", more),
+    ).toMatchObject({ nameDimensionId: "region", stateDimensionId: "url" });
+  });
+
+  it("picks a default state that leaves a text field for the name", () => {
+    const flagged = model("flagged", [
+      ["status", "Status", "string"],
+      ["healthy", "Healthy", "boolean"],
+    ]);
+    expect(stateBindingFor(flagged)).toMatchObject({
+      nameDimensionId: "status",
+      stateDimensionId: "healthy",
+    });
+    expect(stateModels([flagged]).map((m) => m.modelId)).toEqual(["flagged"]);
+  });
+
+  it("keeps the preferred name when only text fields can be the state", () => {
+    const plain = model("plain", [
+      ["condition_id", "Condition ID", "string"],
+      ["host", "Host", "string"],
+    ]);
+    expect(stateBindingFor(plain)).toMatchObject({
+      nameDimensionId: "host",
+      stateDimensionId: "condition_id",
+    });
   });
 });

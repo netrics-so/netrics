@@ -9,7 +9,7 @@ import {
   type SemanticModelDefinition,
 } from "./data-model.js";
 import { type DataTable } from "./data-preparation.js";
-import { type DataExpression } from "./data-expression.js";
+import { ProcessingBudget, type DataExpression } from "./data-expression.js";
 const field = (fieldId: string): DataExpression => ({ kind: "field", fieldId });
 const literal = (value: string): DataExpression => ({
   kind: "literal",
@@ -1312,6 +1312,81 @@ describe("ordering groups by a measure (#768)", () => {
         measureIds: ["apple-downloads"],
         groupBy: ["app"],
         orderBy: { measureId: "play-downloads", direction: "desc" },
+      }),
+    ).toThrow("model_result_order_invalid");
+  });
+
+  it("ranks 150,000 groups without spreading them into one call (#900)", () => {
+    const rows = Array.from({ length: 150_000 }, (_, index) => ({
+      id: `g${index}`,
+    }));
+    const result = querySemanticModel(
+      {
+        version: 1,
+        datasets: ["many"],
+        relationships: [],
+        dimensions: [
+          { id: "id", name: "id", datasetId: "many", fieldId: "id" },
+        ],
+        measures: [
+          {
+            id: "rows",
+            name: "rows",
+            kind: "aggregate",
+            datasetId: "many",
+            aggregate: { id: "rows", name: "rows", op: "count" },
+          },
+        ],
+      },
+      new Map([
+        [
+          "many",
+          {
+            fields: [{ id: "id", name: "id", type: "string", nullable: false }],
+            rows,
+          },
+        ],
+      ]),
+      {
+        measureIds: ["rows"],
+        groupBy: ["id"],
+        limit: 2,
+        rank: {
+          key: "r",
+          ranker: () => (values) => (values.id === "g149999" ? 0 : 1),
+        },
+      },
+      new ProcessingBudget(null, { rows: null }),
+    );
+    expect(result.totalRows).toBe(150_000);
+    expect(result.rows.map((row) => row.dimensions.id)).toEqual([
+      "g149999",
+      "g0",
+    ]);
+  });
+
+  it("refuses an internal rank beside an order, or ties by an ungrouped dimension (#900)", () => {
+    const rank = { key: "r", ranker: () => () => 0 };
+    expect(() =>
+      querySemanticModel(model, sources, {
+        measureIds: ["apple-downloads"],
+        groupBy: ["app"],
+        orderBy: { measureId: "apple-downloads", direction: "desc" },
+        rank,
+      }),
+    ).toThrow("model_result_order_invalid");
+    expect(() =>
+      querySemanticModel(model, sources, {
+        measureIds: ["apple-downloads"],
+        groupBy: ["app"],
+        rank: { ...rank, tieBreak: "nope" },
+      }),
+    ).toThrow("model_result_order_invalid");
+    expect(() =>
+      querySemanticModel(model, sources, {
+        measureIds: ["apple-downloads"],
+        groupBy: ["app"],
+        rank: { key: "r", ranker: () => () => 0.5 },
       }),
     ).toThrow("model_result_order_invalid");
   });

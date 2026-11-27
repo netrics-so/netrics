@@ -806,13 +806,17 @@ nothing else.
 
 **Where the mapping lives: in the widget, at read time.** The source value
 stays in the dataset and in prepared data; the server normalizes it when
-it answers the widget (`normalizeServiceState`): first the widget's own
+it answers the widget (`normalizeServiceState`, one classifier,
+`serviceStateClassifier`, for ranking, counts and the Studio's discovery
+alike, #900): first the widget's own
 overrides (`options.states`, at most 30 source values, compared
-case-insensitively with spaces and dashes as underscores), then built-in
+case-insensitively with runs of spaces and dashes as one underscore,
+`serviceStateKey`, so "in progress" and "IN - PROGRESS" are building),
+then built-in
 words (`running`, `SUCCESS`, `READY`, `healthy` → up; `stopped`, `offline`
 → down; `ERROR`, `CRASHED` → failed; `QUEUED`, `deploying`, `in progress`
-→ building; `paused`, `idle` → sleeping; booleans true → up, false → down),
-else `unknown`. The native connectors already write the normalized words.
+→ building; `paused`, `idle` → sleeping; a yes/no field's true → up, false
+→ down, while the text "true" is no built-in word), else `unknown`. The native connectors already write the normalized words.
 A preparation step could map values too (a calculated column), and still
 can, but the widget needs the fixed set whatever the preparation did, and
 a mapping per widget keeps one dataset usable by widgets that read it
@@ -825,28 +829,40 @@ unknown), and offers a state for each. No new concept, so no new ADR.
 up after a rollback, up; then by name (case-insensitive, then exact;
 nameless last), `sortServiceStateItems`.
 
-**Ranked and counted inside the query** (final review): no cap ever applies
-before ranking. The state query adds internal measures to the model
-(`stateModelWithRank`): per tier of `SERVICE_STATE_TIERS` (down, failed,
-unknown, building, sleeping, up after a rollback, up) a count of the
-state dataset's rows in it, an aggregate filter that compares the value,
-lower-cased and trimmed, with every spelling of the built-in words and the
-widget's overrides (`serviceStateSpellings`: as written with underscores,
-spaces or dashes; null and unlisted values are unknown; a rollback only on
-up, when its field is in the state's dataset); and a formula measure, the
-rank, the first tier with rows. The item query orders its groups by the
-rank (the semantic layer's existing `orderBy` on a measure, ties in name
-order) before its limit, so the list's first `limit` items, or the single
-item, are the most urgent of every match, and each item's state is read
-from its rank, never re-derived. A second read groups nothing and returns
-the tier counts over every match (`counts`, in rows: one row per item in
-a snapshot dataset); a third lists the distinct values in the unknown tier
-for the Studio. `total` is the item query's group count. The semantic
-layer needed no new capability: aggregate filters, formulas and
-`orderBy` express it.
+**Ranked and counted inside the query** (final review; amended by #900):
+no cap ever applies before ranking. An item is one group of the query:
+its name, state, changed-at and rollback flag (in a snapshot dataset one
+row per item); identical rows are one item, and the items, `total` and
+`counts` all count these groups. The semantic layer has an internal
+`rank` for this (`ModelQueryRank`, not part of the public query
+contract): every group is ranked once by its own grouped values, lowest
+first, ties by the name as shown (its label, else its value),
+case-insensitively, then exactly, nameless last, before `limit` and
+`offset` cut the page; each row carries its rank and the result counts
+every group per rank (`rankCounts`). The state widget's rank
+(`stateItemRank`) is the index in `SERVICE_STATE_TIERS` (down, failed,
+unknown, building, sleeping, up after a rollback, up) of the item's state
+read by the widget's one normalization (`serviceStateClassifier`, below)
+and its rollback flag, a qualifier on up only. The flag is a grouped
+value, so it may come from the state's own dataset or one it joins (a
+deployment's project, say). The query model (`stateQueryModel`) keeps the
+published dimensions, leaves the model's own measures out (they would
+count toward its 100) and adds one internal count, which the page alone
+reads. So the list's first `limit` items, or the single item, are the
+most urgent of every match, each item's state is read from its rank, never
+re-derived, and `counts` is the rank counts. A second read groups the
+distinct state values, those the Studio can map ranked first
+(unknown, text or a number, a key of at most 60 characters,
+`isMappableServiceStateValue`), one spelling of each `serviceStateKey`
+(its other spellings rank after), before its limit of 100, so the limit
+counts distinct values, and lists at most 30 of them (`sourceValues`). Classification runs once per group in
+code, never per row in an aggregate filter, so 30,000 healthy services
+stay well inside the processing budget (#900; the former per-tier
+filters exceeded it).
 
 **Options.** `layout`: `list` (default) or `single`; `item`: the single
-form's item by name (null: a summary of every item, owner decision
+form's item by name, exactly as written, spaces included (#900; null: a
+summary of every item, owner decision
 2026-11-24: "All 5 up", else the most urgent state and its count, "2 of 5
 down" / "2 von 5 offline", `serviceStateSummary`); `limit` 1–20 (8): the
 most rows a list
@@ -888,8 +904,14 @@ urgent item it hides, also one the server left out
 silently; with room for that row only, it is the list. The single form shows the label, the
 item's name in the resource role, the state word with its icon as large
 as fits (at least the cell role) and a line "Rolled back · Changed 3 h
-ago" (change role), then the freshness footer. Screen readers read
-"name: state".
+ago" (change role), then the freshness footer. A rollback is never
+dropped (#900): on a tile too small for that line, the time of the change
+goes and "rolled back" joins the word ("Up · rolled back"), no larger
+than its icon and text fit the width; where even that would not fit, the
+line stays and the optional name goes. Screen readers
+read "name: state". netrics TV's detail sheet warns with the same "Last
+known state" text whenever the status is stale, with or without
+freshness metadata (#900).
 
 **Minimum 3 × 2.** One item's state, or a list of two rows (one item and
 "+N more") at 16:9. Studio's default size is 4 × 4. `formatWarnings`
@@ -897,18 +919,21 @@ reports `rows_cut` (info) when a list's `limit` exceeds the rows that fit,
 as for the status board. The type scale (`widgetTypeScale`) has title,
 resource, cell and change; the vectors and the Swift port carry it. In the
 scroll view the widget takes one column and grows with its rows (web and
-netrics TV), nothing cut.
+netrics TV), nothing cut; the card is sized for its own title as it wraps
+(#900).
 
-**Limits.** Three small model reads per widget (ranked items, tier counts,
-unknown values); it counts once toward the 48 data widgets.
+**Limits.** Two small model reads per widget (ranked and counted items,
+mappable values); it counts once toward the 48 data widgets.
 
 **Studio.** "Service status" in the add menu; any published model with two
 text (or text and yes/no) fields can back it. Field names only rank the
 defaults: the state is a field named like a state, else a yes/no field,
-else another text field; the name its first text field no shared filter
+else another text field, the first of them that leaves a text field for
+the name (#900); the name its first text field no shared filter
 maps; a changed-at or rolled-back field when one is named like it. One
 field never takes two roles: picking the other role's field swaps the
-two at once. The single form offers only item names the server did not
+two at once, and a swap that would make a yes/no field the name is not
+offered (#900). The single form offers only item names the server did not
 cut. netrics TV's scroll card follows the canvas: the summary, the hidden
 tone of "+N more" and the stale warning. The inspector picks model,
 name, state, changed-at, rolled-back, list or one item, the item (with the
