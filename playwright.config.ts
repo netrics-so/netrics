@@ -4,6 +4,10 @@ import {
   CUSTOM_API_TLS,
   ensureCustomApiCertificate,
 } from "./e2e/support/custom-api-origin.ts";
+import {
+  JOURNEY_TIMEOUT_MS,
+  WEB_KEEP_ALIVE_MS,
+} from "./e2e/support/keep-alive.ts";
 import { API, API_PORT, ORIGIN, WEB_PORT } from "./e2e/support/origin.ts";
 
 // The custom API builder journey (#807) reads a local https fixture server
@@ -38,7 +42,7 @@ export default defineConfig({
   reporter: process.env.CI
     ? [["list"], ["html", { open: "never" }]]
     : [["list"]],
-  timeout: 180_000,
+  timeout: JOURNEY_TIMEOUT_MS,
   expect: { timeout: 15_000 },
   use: {
     baseURL: ORIGIN,
@@ -70,7 +74,9 @@ export default defineConfig({
       timeout: 120_000,
     },
     {
-      command: `pnpm --filter @netrics/web start --port ${WEB_PORT}`,
+      // Idle connections stay open longer than a journey (#897, see
+      // e2e/support/keep-alive.ts); a reused `pnpm dev` keeps Node's 5 s.
+      command: `pnpm --filter @netrics/web start --port ${WEB_PORT} --keepAliveTimeout ${WEB_KEEP_ALIVE_MS}`,
       url: `${ORIGIN}/healthz`,
       env: { NETRICS_API_URL: process.env.NETRICS_API_URL ?? API },
       reuseExistingServer: !process.env.CI,
