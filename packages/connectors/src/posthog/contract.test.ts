@@ -29,6 +29,7 @@ import {
   KEY_REJECTED_CODE,
   KEY_REJECTED_MESSAGE,
   MAX_INSIGHT_ROWS,
+  MAX_RATE_LIMIT_HOLD_MS,
   MAX_REQUESTS_PER_PAGE,
   METRICS,
   SCOPE_MISSING_CODE,
@@ -199,7 +200,7 @@ describe("PostHog manifest", () => {
     ]);
     expect(posthogManifest.configuredHosts).toEqual(["host"]);
     expect(posthogManifest.supportsResourceSelection).toBe(true);
-    expect(posthogManifest.sdkVersion).toBe("^0.2.20");
+    expect(posthogManifest.sdkVersion).toBe("^0.2.21");
     // The connect form sends a token strategy's secret as `token`.
     const [strategy] = posthogManifest.authStrategies;
     expect(
@@ -1577,21 +1578,85 @@ describe("review follow-ups (#888)", () => {
       scopedProjects: [1000],
       insights: [{ project: 1000, shortId: "Ab1" }],
     });
-    const ctx = context({ projects: "01000, 1000", insights: "01000/Ab1" });
+    // The first spelling names the project; PostHog's paths get its
+    // canonical ID, and it is read once.
+    const ctx = context({ projects: "01000, 1000", insights: "1000/Ab1" });
     expect(await connector().check(ctx, posthog.runtime)).toEqual({ ok: true });
     expect(
       (await connector().discover(ctx, posthog.runtime)).map(
         (resource) => resource.id,
       ),
-    ).toEqual(["1000"]);
+    ).toEqual(["01000"]);
     const run = await syncAll(posthog.runtime, WINDOW, ctx);
-    expect(freshnessEntry(run.last, ANALYTICS_STREAM, "1000")).toBeDefined();
+    expect(freshnessEntry(run.last, ANALYTICS_STREAM, "01000")).toBeDefined();
+    expect(
+      new Set(run.observations.map((entry) => entry.dimensions.resource)),
+    ).toEqual(new Set(["01000"]));
     expect(rowsOf(run.datasetPages, "insights")).toEqual([
-      expect.objectContaining({ project_id: "1000", status: "ok" }),
+      expect.objectContaining({ project_id: "01000", status: "ok" }),
     ]);
     expect(
       posthog.requests.every((request) => !request.path.includes("/01000/")),
     ).toBe(true);
+    expect(
+      posthog.requests.filter(
+        (request) =>
+          request.path.endsWith("/query/") &&
+          (request.body?.query as { kind?: string }).kind === "TrendsQuery",
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("5. keeps the resource ID an existing connection stores (#888 review)", async () => {
+    // A selection stored as 01000, of a project PostHog lists as 1000.
+    const posthog = fake({ projects: [{ id: 1000 }, { id: 1001 }] });
+    const stored = context({ resourceSelection: ["01000"] });
+    expect(
+      (await connector().discover(stored, posthog.runtime)).map(
+        (resource) => resource.id,
+      ),
+    ).toEqual(["01000", "1001"]);
+    const run = await syncAll(
+      posthog.runtime,
+      { ...WINDOW, resources: ["01000"] },
+      context({ insights: "1000/Ab1" }),
+    );
+    expect(
+      new Set(run.observations.map((entry) => entry.dimensions.resource)),
+    ).toEqual(new Set(["01000"]));
+    expect(freshnessEntry(run.last, ANALYTICS_STREAM, "01000")).toBeDefined();
+    expect(freshnessEntry(run.last, ANALYTICS_STREAM, "1000")).toBeUndefined();
+    expect(
+      new Set(
+        rowsOf(run.datasetPages, "top_events").map((row) => row.project_id),
+      ),
+    ).toEqual(new Set(["01000"]));
+
+    // A selection holding both spellings: one project, read once, under
+    // the first spelling the selection stores.
+    const both = fake({ scopedProjects: [1000] });
+    const ctx = context({ projects: "1000" });
+    const twice = await syncAll(
+      both.runtime,
+      { ...WINDOW, resources: ["01000", "1000"] },
+      ctx,
+    );
+    expect(
+      new Set(twice.observations.map((entry) => entry.dimensions.resource)),
+    ).toEqual(new Set(["01000"]));
+    expect(
+      both.requests.filter(
+        (request) =>
+          request.path.endsWith("/query/") &&
+          (request.body?.query as { kind?: string }).kind === "TrendsQuery",
+      ),
+    ).toHaveLength(1);
+    expect(
+      await connector().check(
+        context({ projects: "1000", resourceSelection: ["01000", "1000"] }),
+        both.runtime,
+      ),
+    ).toEqual({ ok: true });
   });
 });
 
@@ -1690,6 +1755,22 @@ describe("pages end before the host's deadline (#888, #901 item 1)", () => {
       clock() + 36_000 + 9_000,
     );
     expect(requests()).toBe(sent);
+  });
+
+  it("holds a far-off reset no longer than the host defers a run (#888 review)", async () => {
+    // A reset 30 days away, met by the third step.
+    const { runtime, connector: posthog } = timed({
+      limitedAt: { request: 3, retryAfter: String(30 * 24 * 60 * 60) },
+    });
+    const page = await posthog.sync(context(), WINDOW, runtime);
+    expect(page.done).toBe(false);
+    const error = await posthog
+      .sync(context(), { ...WINDOW, cursor: page.nextCursor! }, runtime)
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(RateLimitedError);
+    expect(Date.parse((error as RateLimitedError).retryAt)).toBe(
+      clock() + 3_000 + MAX_RATE_LIMIT_HOLD_MS,
+    );
   });
 
   it("bounds every request below the host's limit", async () => {

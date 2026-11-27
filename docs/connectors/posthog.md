@@ -48,8 +48,11 @@ no project endpoint names a project for such a key), and a sync reads them
 through project endpoints only. A named project the key cannot read is
 logged by the sync and shows as stale. Without Project IDs, such a key
 fails the check with `posthog.projects_required`. Project IDs are numbers:
-`01000` and `1000` name the same project, in Project IDs and in insight
-links alike.
+`01000` and `1000` name the same project, in Project IDs, the selection
+and insight links alike: it is read once, PostHog is asked for `1000`, and
+its numbers keep the spelling the connection already stores (the first
+one in the selection, else in Project IDs), so its selection, workspace
+project links and history stay with it.
 
 After connecting, choose the projects to sync (all of them, or some). Each
 project is a resource that can be linked to a workspace project, like a
@@ -186,8 +189,8 @@ checkpoints the next step in its cursor:
   that step (or waits for a rate limit's reset);
 - a step that fails after others succeeded ends the page with what they
   read, so the next page repeats that step only; a rate limit it met stays
-  in the checkpoint, and the next page hands its reset to the host before
-  sending anything;
+  in the checkpoint (for at most a day, the longest the host defers a run),
+  and the next page hands its reset to the host before sending anything;
 - a missing key or scope fails at once.
 
 The cursor belongs to the connection, the host, the project selection, the

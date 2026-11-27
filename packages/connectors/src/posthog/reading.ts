@@ -75,10 +75,39 @@ export function hostOf(context: ConnectionContext): string | null {
 
 /**
  * A numeric project ID as PostHog names it: without leading zeros, so
- * `01000` and `1000` are the same project (#888 item 5).
+ * `01000` and `1000` are the same project (#888 item 5). It compares and
+ * deduplicates IDs, and goes into request paths; anything else passes
+ * through unchanged.
  */
-export function projectId(digits: string): string {
-  return digits.replace(/^0+(?=\d)/, "");
+export function canonicalProjectId(id: string): string {
+  return /^\d+$/.test(id) ? id.replace(/^0+(?=\d)/, "") : id;
+}
+
+/**
+ * The resource ID a project is reported under: the first of `spellings`
+ * (the stored selection, then the configured Project IDs) that names it,
+ * so a connection keeps the identity its selection, project links and
+ * history are stored under; the canonical ID for a project the connection
+ * never named (#888 review).
+ */
+export function resourceIdOf(
+  canonical: string,
+  spellings: readonly string[],
+): string {
+  return (
+    spellings.find((id) => canonicalProjectId(id) === canonical) ?? canonical
+  );
+}
+
+/** The saved resource selection the host passes in `resourceSelection`. */
+export function storedSelectionOf(
+  context: ConnectionContext,
+): string[] | undefined {
+  const selection = context.config.resourceSelection;
+  return Array.isArray(selection) &&
+    selection.every((id) => typeof id === "string")
+    ? (selection as string[])
+    : undefined;
 }
 
 /**
@@ -86,6 +115,8 @@ export function projectId(digits: string): string {
  * (PostHog's `scoped_teams`): then netrics reads those projects through
  * project endpoints and lists no organization. `undefined` when none are
  * configured; `invalid` counts what is no ID, or above MAX_PROJECT_IDS.
+ * IDs keep the spelling they were first written with; a later spelling of
+ * the same project (`1000` after `01000`) is a duplicate.
  */
 export function projectIdsOf(context: ConnectionContext): {
   ids: string[] | undefined;
@@ -99,7 +130,11 @@ export function projectIdsOf(context: ConnectionContext): {
   let invalid = 0;
   for (const token of raw.split(/[\s,]+/).filter((entry) => entry !== "")) {
     if (!/^\d{1,20}$/.test(token)) invalid += 1;
-    else if (!ids.includes(projectId(token))) ids.push(projectId(token));
+    else if (
+      !ids.some((id) => canonicalProjectId(id) === canonicalProjectId(token))
+    ) {
+      ids.push(token);
+    }
   }
   if (ids.length > MAX_PROJECT_IDS) {
     invalid += ids.length - MAX_PROJECT_IDS;
@@ -140,7 +175,7 @@ export function insightsOf(context: ConnectionContext): {
       invalid += 1;
       continue;
     }
-    const ref = { project: projectId(match[1]!), shortId: match[2]! };
+    const ref = { project: canonicalProjectId(match[1]!), shortId: match[2]! };
     if (
       !insights.some(
         (entry) =>
@@ -246,9 +281,14 @@ export async function projectsPage(
 export async function listProjects(
   client: PostHogClient,
   projectIds?: readonly string[],
+  selection: readonly string[] = [],
 ): Promise<Project[]> {
+  const spellings = [...selection, ...(projectIds ?? [])];
   if (projectIds) {
-    return projectIds.map((id) => ({ id, name: id, organizationId: "" }));
+    return projectIds.map((configured) => {
+      const id = resourceIdOf(canonicalProjectId(configured), spellings);
+      return { id, name: id, organizationId: "" };
+    });
   }
   const organizations: Organization[] = [];
   for (
@@ -277,7 +317,12 @@ export async function listProjects(
         if (!isRefused(error)) throw error;
         break;
       }
-      projects.push(...page.projects);
+      projects.push(
+        ...page.projects.map((project) => ({
+          ...project,
+          id: resourceIdOf(project.id, spellings),
+        })),
+      );
       offset = page.next;
     }
   }

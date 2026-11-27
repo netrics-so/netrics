@@ -43,8 +43,9 @@ import {
   isRefused,
   listProjects,
   organizationsPage,
-  projectId,
+  canonicalProjectId,
   projectIdsOf,
+  storedSelectionOf,
   projectsPage,
   rethrow,
 } from "./reading.js";
@@ -76,6 +77,7 @@ export {
   ANALYTICS_STREAM,
   INSIGHTS_STREAM,
   MAX_INSIGHT_ROWS,
+  MAX_RATE_LIMIT_HOLD_MS,
   MAX_REQUESTS_PER_PAGE,
   METRICS,
 } from "./sync.js";
@@ -168,7 +170,8 @@ const ACTIVE_USERS = {
 export const posthogManifest: ConnectorManifest = {
   id: "posthog",
   version: "0.1.0",
-  sdkVersion: "^0.2.20",
+  // 0.2.21: per-request `timeoutMs` (#888, #901 item 1).
+  sdkVersion: "^0.2.21",
   category: "web",
   brandColor: "#1d4aff",
   name: "PostHog",
@@ -328,23 +331,6 @@ function isProjectRefusal(error: unknown): boolean {
   );
 }
 
-/**
- * The saved resource selection the host passes in the configuration
- * (`resourceSelection`), numeric IDs without leading zeros; undefined when
- * every project is selected.
- */
-function selectionOf(
-  context: Parameters<Connector["check"]>[0],
-): string[] | undefined {
-  const selection = context.config.resourceSelection;
-  return Array.isArray(selection) &&
-    selection.every((id) => typeof id === "string")
-    ? (selection as string[]).map((id) =>
-        /^\d+$/.test(id) ? projectId(id) : id,
-      )
-    : undefined;
-}
-
 export interface PostHogConnectorOptions extends ClientOptions {
   /** The clock of the sync windows; replaced in tests. */
   now?: () => number;
@@ -418,16 +404,18 @@ export function createPostHogConnector(
           // saved selection is not probed (#888 item 3). The check stays
           // within its deadline; a sync reports any other named project it
           // cannot read (logged, and stale).
-          const selection = selectionOf(context);
+          const selection = storedSelectionOf(context)?.map(canonicalProjectId);
           const read = selection
-            ? projectIds.ids.filter((id) => selection.includes(id))
+            ? projectIds.ids.filter((id) =>
+                selection.includes(canonicalProjectId(id)),
+              )
             : projectIds.ids;
           // With none of them selected, the first named project still
           // checks the key; only a wrong key or a missing scope fails it.
           const probes = read.length > 0 ? read : projectIds.ids.slice(0, 1);
           for (const id of probes.slice(0, CHECK_PROBES)) {
             try {
-              await api.query(id, PROBE_BODY);
+              await api.query(canonicalProjectId(id), PROBE_BODY);
             } catch (error) {
               if (read.length === 0 && isRefused(error)) break;
               if (isRefused(error)) {
@@ -518,6 +506,7 @@ export function createPostHogConnector(
           await listProjects(
             client(context, runtime),
             projectIdsOf(context).ids,
+            storedSelectionOf(context),
           )
         ).map((project) => ({
           id: project.id,

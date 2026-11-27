@@ -991,9 +991,14 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         connectionId,
         (connector, context, options) =>
           executeCheck(connector, context, options),
+        // Without a selection about to be saved, the check sees the stored
+        // one, as a sync does: a connector probes what the connection
+        // reads, not resources it leaves out (#888 review).
         candidateSelection
           ? { ...validated.value, resourceSelection: [...candidateSelection] }
-          : validated.value,
+          : selection
+            ? { ...validated.value, resourceSelection: [...selection] }
+            : validated.value,
         (result) => !result.ok,
       );
       if (!checked.ok) return checked;
