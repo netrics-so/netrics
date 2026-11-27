@@ -67,6 +67,35 @@ function route(request: IncomingMessage, response: ServerResponse) {
       response.setHeader("content-type", "text/plain");
       response.end(Buffer.alloc(HTTP_CHECK_LIMITS.responseBytes + 10, 0x61));
       return;
+    case "/down-big":
+      response.statusCode = 503;
+      response.setHeader("content-type", "text/plain");
+      response.end(Buffer.alloc(HTTP_CHECK_LIMITS.responseBytes + 10, 0x61));
+      return;
+    case "/down-reset": {
+      response.statusCode = 503;
+      response.setHeader("content-type", "text/plain");
+      response.write("partial ");
+      const timer = setTimeout(() => {
+        timers.delete(timer);
+        response.socket?.destroy();
+      }, 50);
+      timers.add(timer);
+      return;
+    }
+    case "/down-stall":
+    case "/ok-stall": {
+      // The status and a first chunk come at once, the rest never in time.
+      response.statusCode = request.url === "/down-stall" ? 503 : 200;
+      response.setHeader("content-type", "text/plain");
+      response.write("partial ");
+      const timer = setTimeout(() => {
+        timers.delete(timer);
+        if (!response.destroyed) response.end("late");
+      }, 3_000);
+      timers.add(timer);
+      return;
+    }
     case "/to-self":
       response.statusCode = 302;
       response.setHeader("location", "/ok");
@@ -287,7 +316,8 @@ describe("HTTP check sync through the host (#874)", () => {
     expect(outcome("Agent")).toEqual(["up", null, 204]);
     expect(outcome("Down")).toEqual(["down", "unexpected_status", 503]);
     expect(outcome("Text")).toEqual(["down", "text_missing", 200]);
-    expect(outcome("Big")).toEqual(["down", "too_large", null]);
+    // The answer's status stays when its body cannot be read (#898).
+    expect(outcome("Big")).toEqual(["down", "too_large", 200]);
     expect(outcome("Big unread")).toEqual(["up", null, 200]);
     expect(outcome("Same host")).toEqual(["up", null, 200]);
     expect(outcome("Other host")).toEqual(["down", "redirect", null]);
@@ -307,6 +337,37 @@ describe("HTTP check sync through the host (#874)", () => {
     expect(last.freshness).toHaveLength(checks.length);
     // Nothing a checked site answered reaches the results.
     expect(JSON.stringify([first, last])).not.toContain(SECRET);
+  }, 20_000);
+
+  it("keeps the status of an answer whose body is too large or too slow (#898)", async () => {
+    const { first } = await run(
+      context([
+        { name: "Down big", url: at("/down-big"), expectedText: "healthy" },
+        {
+          name: "Down stall",
+          url: at("/down-stall"),
+          expectedText: "healthy",
+          timeoutSeconds: 1,
+        },
+        { name: "Down reset", url: at("/down-reset"), expectedText: "healthy" },
+        {
+          name: "Ok stall",
+          url: at("/ok-stall"),
+          expectedText: "healthy",
+          timeoutSeconds: 1,
+        },
+      ]),
+    );
+    const snapshot = rows(first.datasetPages![0]!);
+    const outcome = (name: string) => [
+      snapshot[name]?.state,
+      snapshot[name]?.reason,
+      snapshot[name]?.status_code,
+    ];
+    expect(outcome("Down big")).toEqual(["down", "unexpected_status", 503]);
+    expect(outcome("Down stall")).toEqual(["down", "unexpected_status", 503]);
+    expect(outcome("Ok stall")).toEqual(["down", "timeout", 200]);
+    expect(outcome("Down reset")).toEqual(["down", "unexpected_status", 503]);
   }, 20_000);
 
   it("keeps redirects on the same host even when a caller passes other options", async () => {

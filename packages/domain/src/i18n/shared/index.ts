@@ -193,6 +193,7 @@ export const PROVIDER_MESSAGE_CODES = {
   "http_check.no_checks": "providerMessages.httpCheck.noChecks",
   "http_check.url_invalid": "providerMessages.httpCheck.urlInvalid",
   "http_check.url_secret": "providerMessages.httpCheck.urlSecret",
+  "http_check.url_fragment": "providerMessages.httpCheck.urlFragment",
   "http_check.name_duplicate": "providerMessages.httpCheck.nameDuplicate",
   "http_check.status_invalid": "providerMessages.httpCheck.statusInvalid",
   "http_check.text_invalid": "providerMessages.httpCheck.textInvalid",

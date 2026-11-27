@@ -63,7 +63,9 @@ export const RUN_MAX_AGE_MS = 2 * 60 * 1000;
  * starts within this of the last finished round's start requests nothing,
  * so "Sync now" or a quick config edit cannot probe a site more than about
  * once a minute. Five seconds under the 60 s interval, so the scheduler's
- * own jitter never makes a regular round wait a whole extra minute.
+ * own jitter never makes a regular round wait a whole extra minute: the
+ * next sync is due 60 s after the last job started, and a round's `at` is
+ * taken a moment later, when its requests go out (kept at 55 s, #898).
  */
 export const MIN_ROUND_GAP_MS = 55 * 1000;
 
@@ -231,7 +233,9 @@ export async function syncPage(
   const done = decode<DoneState>(request.cursor, DONE_PREFIX);
   // Too soon after the last round of this connection, whatever its
   // configuration: nothing is requested, nothing completed or claimed
-  // fresh, and the cursor stays as it is.
+  // fresh, and the cursor stays as it is. Marked as skipped (SDK 0.2.23,
+  // #898), so the host keeps the next due time: a "Sync now" inside the
+  // floor does not push the next scheduled round a whole interval on.
   if (
     done &&
     done.v === 1 &&
@@ -244,6 +248,7 @@ export async function syncPage(
       observations: [],
       datasetPages: [],
       nextCursor: request.cursor!,
+      skipped: true,
       done: true,
     };
   }

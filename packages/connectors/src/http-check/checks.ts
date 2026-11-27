@@ -51,6 +51,9 @@ export const URL_INVALID_MESSAGE =
 export const URL_SECRET_CODE = "http_check.url_secret";
 export const URL_SECRET_MESSAGE =
   "A check URL cannot carry a secret in its query (a key, token, signature, password or similar parameter, as in a signed URL): the configuration is not encrypted and everyone in the workspace sees it. Checks that need a credential are not supported yet.";
+export const URL_FRAGMENT_CODE = "http_check.url_fragment";
+export const URL_FRAGMENT_MESSAGE =
+  "A check URL cannot have a fragment (the part after #): it is never sent to the site, and it can carry a token, which everyone in the workspace would see. Remove it from the URL.";
 export const NAME_DUPLICATE_CODE = "http_check.name_duplicate";
 export const NAME_DUPLICATE_MESSAGE =
   "Every check needs a name, and a name of its own: two checks in a connection cannot share one.";
@@ -210,6 +213,13 @@ export function readChecks(config: Record<string, unknown>): HttpCheck[] {
     if (querySecret(new URL(url))) {
       throw new HttpCheckConfigError(URL_SECRET_MESSAGE, URL_SECRET_CODE);
     }
+    // A fragment never reaches the site, and one may carry a token (an
+    // OAuth redirect's "#access_token=…", #898): refused, never stripped,
+    // so the stored configuration holds none. Any "#" counts, an empty
+    // fragment too (the URL parser drops that one from `hash`).
+    if (url.includes("#")) {
+      throw new HttpCheckConfigError(URL_FRAGMENT_MESSAGE, URL_FRAGMENT_CODE);
+    }
     const id = checkId(name);
     if (ids.has(id)) {
       throw new HttpCheckConfigError(
@@ -250,13 +260,10 @@ export function readChecks(config: Record<string, unknown>): HttpCheck[] {
       entry.timeoutSeconds >= 1
         ? Math.min(entry.timeoutSeconds, MAX_TIMEOUT_SECONDS)
         : MAX_TIMEOUT_SECONDS;
-    // The fragment never leaves the client; dropping it keeps one URL one check.
-    const parsed = new URL(url);
-    parsed.hash = "";
     checks.push({
       id,
       name,
-      url: parsed.toString(),
+      url: new URL(url).toString(),
       host,
       method,
       expectedStatus,

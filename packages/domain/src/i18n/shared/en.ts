@@ -211,6 +211,8 @@ export const sharedEn = {
         "Every check needs an https URL whose host is a full domain name or an IP address, without a user name or password, of at most 2,048 characters.",
       urlSecret:
         "A check URL cannot carry a secret in its query (a key, token, signature, password or similar parameter, as in a signed URL): the configuration is not encrypted and everyone in the workspace sees it. Checks that need a credential are not supported yet.",
+      urlFragment:
+        "A check URL cannot have a fragment (the part after #): it is never sent to the site, and it can carry a token, which everyone in the workspace would see. Remove it from the URL.",
       nameDuplicate:
         "Every check needs a name, and a name of its own: two checks in a connection cannot share one.",
       statusInvalid:

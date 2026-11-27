@@ -42,6 +42,7 @@ import {
   RUN_MAX_AGE_MS,
   STATUS_INVALID_CODE,
   TEXT_INVALID_CODE,
+  URL_FRAGMENT_CODE,
   URL_INVALID_CODE,
   URL_SECRET_CODE,
   USER_AGENT,
@@ -50,7 +51,7 @@ import {
   httpCheckManifest,
   type DownReason,
 } from "./index.js";
-import { failureReason } from "./probe.js";
+import { failureReason, receivedStatus } from "./probe.js";
 
 // Offline: a fake runtime.fetch answers per URL the way the host's egress
 // guard does (SDK 0.2.21): a response, or an error named and shaped like
@@ -294,7 +295,7 @@ describe("HTTP check manifest", () => {
 describe("configuration", () => {
   it("reads checks with defaults and a stable id per name", () => {
     const [check] = readChecks({
-      checks: [{ name: " Site ", url: "https://Up.example.com/health#top" }],
+      checks: [{ name: " Site ", url: "https://Up.example.com/health" }],
     });
     expect(check).toEqual({
       id: checkId("site"),
@@ -377,6 +378,27 @@ describe("configuration", () => {
       { checks: [{ name: "a", url: "https://a.example.com/?Password=p" }] },
       URL_SECRET_CODE,
     ],
+    // A fragment never reaches the site and may carry a token (#898):
+    // refused, never stripped.
+    [
+      {
+        checks: [
+          {
+            name: "a",
+            url: "https://a.example.com/callback#access_token=FRAGMENT-TOKEN",
+          },
+        ],
+      },
+      URL_FRAGMENT_CODE,
+    ],
+    [
+      { checks: [{ name: "a", url: "https://a.example.com/health#top" }] },
+      URL_FRAGMENT_CODE,
+    ],
+    [
+      { checks: [{ name: "a", url: "https://a.example.com/health#" }] },
+      URL_FRAGMENT_CODE,
+    ],
     [{}, NO_CHECKS_CODE],
     [
       {
@@ -445,6 +467,7 @@ describe("configuration", () => {
     );
     expect(result).toEqual({ ok: false, message: expect.any(String), code });
     expect(result.message).not.toContain("Bearer");
+    expect(result.message).not.toContain("FRAGMENT-TOKEN");
     await expect(
       connector().sync(
         { connectionId: "c", config, credentials: {} },
@@ -537,6 +560,74 @@ describe("a run", () => {
         checkId("Head"),
       ].sort(),
     );
+  });
+
+  it("keeps the status of an answer whose body could not be read (#898)", async () => {
+    const answers: Record<string, Answer> = {
+      // A 503 whose body is too large, or stalls: down for its status.
+      "https://down-big.example.com/": () =>
+        named("EgressDeniedError", "egress denied: response exceeds", {
+          reason: "size",
+          status: 503,
+        }),
+      "https://down-slow.example.com/": () =>
+        named("EgressTimeoutError", "egress timeout: down-slow.example.com", {
+          status: 503,
+        }),
+      // An expected status whose body fails: down for the body, with it.
+      "https://big.example.com/": () =>
+        named("EgressDeniedError", "egress denied: response exceeds", {
+          reason: "size",
+          status: 200,
+        }),
+      "https://slow.example.com/": () =>
+        named("EgressTimeoutError", "egress timeout: slow.example.com", {
+          status: 200,
+        }),
+      // The stream broke after the answer: the runtime's status on undici's
+      // error, its cause kept.
+      "https://reset-down.example.com/": () =>
+        Object.assign(network("ECONNRESET"), { status: 502 }),
+      "https://reset-up.example.com/": () =>
+        Object.assign(network("ECONNRESET"), { status: 200 }),
+    };
+    const checks = [
+      "down-big",
+      "down-slow",
+      "big",
+      "slow",
+      "reset-down",
+      "reset-up",
+    ].map((host) => ({
+      name: host,
+      url: `https://${host}.example.com/`,
+      expectedText: "healthy",
+    }));
+    const { first } = await run(context(checks), undefined, NOW, answers);
+    const snapshot = rows(first.datasetPages![0]!);
+    const outcome = (name: string) => [
+      snapshot[name]?.reason,
+      snapshot[name]?.status_code,
+      snapshot[name]?.response_ms,
+    ];
+    expect(outcome("down-big")).toEqual(["unexpected_status", 503, null]);
+    expect(outcome("down-slow")).toEqual(["unexpected_status", 503, null]);
+    expect(outcome("big")).toEqual(["too_large", 200, null]);
+    expect(outcome("slow")).toEqual(["timeout", 200, null]);
+    expect(outcome("reset-down")).toEqual(["unexpected_status", 502, null]);
+    expect(outcome("reset-up")).toEqual(["connection", 200, null]);
+    // The thrown error's own status only, a valid one, never a cause's.
+    expect(receivedStatus(network("ECONNRESET"))).toBe(null);
+    expect(
+      receivedStatus(
+        new TypeError("terminated", {
+          cause: Object.assign(new Error("x"), { status: 503 }),
+        }),
+      ),
+    ).toBe(null);
+    expect(
+      receivedStatus(named("EgressTimeoutError", "x", { status: 42 })),
+    ).toBe(null);
   });
 
   it("measures the time until the answer", async () => {
@@ -740,10 +831,13 @@ describe("a run", () => {
         f.runtime,
       );
       expect(f.calls, String(later)).toEqual([]);
-      expect(result).toEqual({
+      // Marked as skipped (SDK 0.2.23, #898): the host keeps the next
+      // due time instead of moving it a whole interval on.
+      expect(syncResultSchema.parse(result)).toEqual({
         observations: [],
         datasetPages: [],
         nextCursor: last.nextCursor,
+        skipped: true,
         done: true,
       });
     }

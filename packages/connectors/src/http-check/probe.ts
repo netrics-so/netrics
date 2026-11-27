@@ -175,11 +175,41 @@ export async function probe(
     return { up: true, reason: null, status, responseMs };
   } catch (error) {
     if (runtime.signal.aborted) throw error;
+    // The answer came, but its body could not be read (too large, too
+    // slow, or broken off; #898): its status is known, and an unexpected one says more.
+    const status = receivedStatus(error);
+    if (status !== null && !statusExpected(check, status)) {
+      return {
+        up: false,
+        reason: "unexpected_status",
+        status,
+        responseMs: null,
+      };
+    }
     return {
       up: false,
       reason: failureReason(error),
-      status: null,
+      status,
       responseMs: null,
     };
   }
+}
+
+/**
+ * The status of an answer whose body failed (SDK 0.2.23): the `status`
+ * runtime.fetch puts on the error it throws once the answer came (a body
+ * too large, too slow, or broken off), else null. Only the thrown error
+ * counts, never a cause.
+ */
+export function receivedStatus(error: unknown): number | null {
+  const status =
+    error && typeof error === "object"
+      ? (error as { status?: unknown }).status
+      : undefined;
+  return typeof status === "number" &&
+    Number.isInteger(status) &&
+    status >= 100 &&
+    status <= 599
+    ? status
+    : null;
 }

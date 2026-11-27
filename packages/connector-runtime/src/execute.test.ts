@@ -1621,3 +1621,63 @@ describe("executeTrustedCall (#809)", () => {
     ).rejects.toBeInstanceOf(ContractViolationError);
   });
 });
+
+describe("skipped (SDK 0.2.23, #898)", () => {
+  const withCursor: SyncRequest = {
+    ...request,
+    mode: "incremental",
+    cursor: "kept",
+  };
+  const run = (result: object, req: SyncRequest = withCursor) =>
+    executeSync(
+      connectorWith(demoManifest, () => ({ observations: [], ...result })),
+      baseContext,
+      req,
+    );
+
+  it("passes a final result that read nothing and keeps the cursor", async () => {
+    await expect(
+      run({ skipped: true, nextCursor: "kept", done: true }),
+    ).resolves.toMatchObject({ skipped: true, done: true });
+  });
+
+  it("refuses a skipped result that is not final, carries data or moves the cursor", async () => {
+    for (const result of [
+      { skipped: true, nextCursor: "kept", done: false },
+      { skipped: true, done: true },
+      { skipped: true, nextCursor: "moved", done: true },
+      {
+        skipped: true,
+        nextCursor: "kept",
+        observations: [observation()],
+        done: true,
+      },
+      {
+        skipped: true,
+        nextCursor: "kept",
+        nextFrom: request.from,
+        done: true,
+      },
+    ]) {
+      await expect(run(result), JSON.stringify(result)).rejects.toThrow(
+        /skipped result/,
+      );
+    }
+    // Never for a backfill, nor for a run without a cursor: their window
+    // (and a backfill's history) would count as read.
+    await expect(
+      run(
+        { skipped: true, nextCursor: "kept", done: true },
+        { ...withCursor, mode: "backfill" },
+      ),
+    ).rejects.toThrow(/skipped result/);
+    const { cursor: _cursor, ...first } = withCursor;
+    await expect(run({ skipped: true, done: true }, first)).rejects.toThrow(
+      /skipped result/,
+    );
+    // Only `true`: a connector that did run says nothing.
+    await expect(
+      run({ skipped: false, nextCursor: "kept", done: true }),
+    ).rejects.toThrow(/invalid sync result/);
+  });
+});

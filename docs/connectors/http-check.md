@@ -31,8 +31,11 @@ and the other hop-by-hop headers. So is a URL with a user name or
 password, or whose query names a parameter that carries a credential (any
 name with `key`, `token`, `secret`, `passw`, `pwd`, `auth`, `sig`,
 `credential`, `session` or `jwt`, the name `code`, and AWS `X-Amz-*` and
-Google `X-Goog-*` parameters, as in signed URLs): everyone in the workspace
-sees a check's URL. A check of an endpoint that needs a credential is not
+Google `X-Goog-*` parameters, as in signed URLs), or that has a fragment
+(the part after `#`, which never reaches the site and can carry a token,
+as an OAuth redirect's `#access_token=…` does; it is refused, not
+stripped, #898; migration 0097 removed the fragments that saved URLs
+had, which the probe used to drop): everyone in the workspace sees a check's URL. A check of an endpoint that needs a credential is not
 supported yet (see "Not yet").
 
 The connection check validates the list and requests nothing: a site that
@@ -44,6 +47,7 @@ fails with a reason when:
 | `http_check.no_checks`       | No check, or more than 20                                                  |
 | `http_check.url_invalid`     | A URL is not https, has a user name or password, or names no full host     |
 | `http_check.url_secret`      | A URL's query names a parameter that carries a credential                  |
+| `http_check.url_fragment`    | A URL has a fragment (`#…`)                                                |
 | `http_check.name_duplicate`  | A name is empty or another check has it                                    |
 | `http_check.status_invalid`  | An expected status cannot be read                                          |
 | `http_check.text_invalid`    | Expected text on a `HEAD` check                                            |
@@ -111,6 +115,13 @@ run, replaced by every run that requested every check.
 | `checked_at`      | timestamp | When the run requested it                                   |
 | `last_change_at`  | timestamp | Since when the state holds; null until a run sees it change |
 
+An answer whose body cannot be read (larger than 1 MiB, not complete
+within the time limit, or broken off; only read for expected text) keeps
+its status code (#898): with a status the check does not expect the
+reason is `unexpected_status`, otherwise `too_large`, `timeout` or
+`connection`. Its response time
+is null.
+
 Reasons a check is down, fixed codes that never carry what the checked site
 answered (its body is only searched for the expected text, and nothing of
 it is stored, logged or put in an error):
@@ -177,13 +188,32 @@ without a previous state.
 A sync that starts within 55 seconds of the last finished round's start
 requests nothing and returns at once, completing nothing and claiming no
 freshness: "Sync now" or a quick edit of the list cannot probe a site more
-than about once a minute. (The floor is five seconds under the interval so
-the scheduler's jitter never makes a regular round wait a whole minute.) A
-round whose first page went out still finishes.
+than about once a minute. It returns a `skipped` result (SDK 0.2.23,
+#898), so the host keeps the connection's next due time when that is still
+ahead: a manual sync inside the floor does not push the next scheduled
+round back. A round whose first page went out still finishes.
 
-A connection's first job is the backfill every new connection queues; for
-a connector without backfills, such as this one, the worker runs it as an
-incremental sync.
+The floor is 55 seconds, not 60, on purpose (confirmed with #898). The
+next sync is due 60 seconds after the last run's job started, but a
+round's start is taken when its requests go out, a moment later (the
+job loads the connection first), and the scheduler and worker pick up a
+due job on their own ticks. With a 60-second floor an on-time round could
+fall a fraction of a second inside it and be skipped, and the check would
+run every two minutes instead of every minute. Five seconds of slack
+absorb that jitter; a round still never starts less than 55 seconds
+after the last.
+
+A run of this connector (whose resources are its configuration) checks
+that the configuration it read is still the saved one before
+it publishes its snapshot and freshness, under the connection's row lock
+(#898): when the list was saved during the run, for example removing a
+check (whose freshness the save retires), the run publishes neither, and
+the next round runs with the saved list.
+
+A connection's first job is a sync (#898): a connector without backfills
+queues no backfill, so it never holds the workspace's one backfill slot
+and another connection's "Reload history" is not refused for it. A
+backfill job queued before that change still runs, as an incremental sync.
 
 Only infrastructure failures fail a sync: a configuration it cannot run
 (with its reason code) or the host ending the call. Everything a checked

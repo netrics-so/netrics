@@ -386,6 +386,19 @@ describe("reload history (#617)", () => {
     expect(await reloadEvents(connectionId)).toHaveLength(0);
   });
 
+  it("is not held up by a new connection of a connector without backfills (#898)", async () => {
+    const reloaded = await createConnection(CONNECTOR);
+    await finishBackfills();
+    // Its first job is a sync, not a backfill waiting in the workspace.
+    const live = await createConnection(NO_BACKFILL);
+    const jobs = await admin`
+      select kind from jobs where connection_id = ${live} and status = 'pending'`;
+    expect(jobs.map((job) => job.kind)).toEqual(["connection.sync"]);
+    const answer = await reload(reloaded);
+    expect(answer.statusCode, answer.body).toBe(200);
+    await finishBackfills();
+  });
+
   it("is refused for a connector without backfills", async () => {
     const connectionId = await createConnection(NO_BACKFILL);
     await finishBackfills();
