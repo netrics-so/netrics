@@ -354,6 +354,31 @@ const planRecords = (records: RecordPlan[]): StoreTemplatePlan["records"] =>
 const dashboardWidgetRef = (key: string, widgetKey: string) =>
   `${key}#widget:${widgetKey.startsWith("widget:") ? widgetKey.slice("widget:".length) : widgetKey}`;
 
+/**
+ * Another template the update engine plans, merges and applies like the
+ * App Portfolio (the Developer Portfolio, #876): its id, how its stored
+ * inputs parse, the source datasets a newer version reads and the items
+ * its per-item slides are built from (`inputs.apps`, from version 1), read
+ * with whatever else it reads fresh for a plan (readItems). It
+ * has no app scope, no icons and no installs made before versions.
+ */
+export interface TemplateFamily {
+  id: string;
+  parseInputs(value: unknown): StoreTemplateInputs;
+  withSourceDatasets(
+    tx: Transaction,
+    workspaceId: string,
+    inputs: StoreTemplateInputs,
+    register: boolean,
+  ): Promise<StoreTemplateInputs>;
+  readItems(
+    tx: Transaction,
+    workspaceId: string,
+    install: InstallRow,
+    inputs: StoreTemplateInputs,
+  ): Promise<StoreTemplateInputs>;
+}
+
 export function createStoreTemplateUpdateService(deps: {
   db: Database;
   registry: ConnectorRegistry;
@@ -363,10 +388,20 @@ export function createStoreTemplateUpdateService(deps: {
   template?: StoreTemplateDefinition;
   /** Fetches missing app icons before a plan or an apply (version 4). */
   fetchIcons?: StoreIconFetcher;
+  /** Another template than the App Portfolio (with its `template`). */
+  family?: TemplateFamily;
 }) {
   const template = deps.template ?? storeTemplate,
     now = deps.now ?? (() => new Date()),
-    policy = deps.policy ?? DEFAULT_DATA_POLICY;
+    policy = deps.policy ?? DEFAULT_DATA_POLICY,
+    family = deps.family,
+    templateId = family?.id ?? STORE_TEMPLATE_ID,
+    // The version from which slides are built from `inputs.apps`.
+    itemsSince = family ? 1 : 4,
+    parseInputs = (value: unknown) =>
+      family
+        ? family.parseInputs(value)
+        : (storeTemplateInputsSchema.parse(value) as StoreTemplateInputs);
 
   async function installRow(
     tx: Transaction,
@@ -380,7 +415,7 @@ export function createStoreTemplateUpdateService(deps: {
         and(
           eq(schema.dataTemplateInstalls.workspaceId, workspaceId),
           eq(schema.dataTemplateInstalls.requestId, requestId),
-          eq(schema.dataTemplateInstalls.templateId, STORE_TEMPLATE_ID),
+          eq(schema.dataTemplateInstalls.templateId, templateId),
         ),
       );
     return install;
@@ -411,12 +446,16 @@ export function createStoreTemplateUpdateService(deps: {
     inputs: StoreTemplateInputs,
     identity: Identity,
   ): Promise<StoreTemplateInputs> {
-    if (template.version < 4) return inputs;
+    if (template.version < itemsSince) return inputs;
     if (identity === "stored")
-      return withCurrentIcons(tx, workspaceId, requestId, inputs);
+      return family
+        ? inputs
+        : withCurrentIcons(tx, workspaceId, requestId, inputs);
     const install = await installRow(tx, workspaceId, requestId);
     if (!install) return inputs;
     try {
+      if (family)
+        return await family.readItems(tx, workspaceId, install, inputs);
       const apps = await readStoreApps(
         tx,
         workspaceId,
@@ -451,12 +490,22 @@ export function createStoreTemplateUpdateService(deps: {
     rows: RecordRow[],
   ): Promise<boolean> {
     if (isUpdateAvailable(install, rows, template.version)) return true;
-    if (template.version < 4) return false;
-    const stored = storeTemplateInputsSchema.safeParse(install.inputs);
-    if (!stored.success) return false;
-    const inputs = stored.data as StoreTemplateInputs;
+    if (template.version < itemsSince) return false;
+    let inputs: StoreTemplateInputs;
+    try {
+      inputs = parseInputs(install.inputs);
+    } catch (error) {
+      rethrowWorkspaceGone(error);
+      return false;
+    }
     const fresh = await withApps(tx, workspaceId, requestId, inputs, "lenient");
-    return !same(builtApps(rows) ?? inputs.apps ?? [], fresh.apps ?? []);
+    if (!same(builtApps(rows) ?? inputs.apps ?? [], fresh.apps ?? []))
+      return true;
+    // Another template's other fresh inputs (the Developer Portfolio's
+    // default links): a change rebuilds its records, which the plan shows.
+    const { apps: _stored, ...stored } = inputs,
+      { apps: _fresh, ...current } = fresh;
+    return family !== undefined && !same(stored, current);
   }
 
   /**
@@ -564,7 +613,7 @@ export function createStoreTemplateUpdateService(deps: {
     /** A scope change: the apps of the chosen scope, not the stored one. */
     choice?: ScopeChoice,
   ) {
-    if (!deps.fetchIcons || template.version < 4) return;
+    if (!deps.fetchIcons || family || template.version < 4) return;
     try {
       const sources = await withWorkspace(
         deps.db,
@@ -615,6 +664,8 @@ export function createStoreTemplateUpdateService(deps: {
     inputs: StoreTemplateInputs,
     register: boolean,
   ): Promise<StoreTemplateInputs> {
+    if (family)
+      return family.withSourceDatasets(tx, workspaceId, inputs, register);
     const lacking = inputs.connections.filter((connection) =>
       STORE_SOURCE_DATASETS[connection.connectorId].some(
         (key) => connection.datasets[key] === undefined,
@@ -692,6 +743,7 @@ export function createStoreTemplateUpdateService(deps: {
       tx,
       workspaceId,
       requestId,
+      family ? { parse: parseInputs } : {},
     );
     if (!completion.ok) return null;
     const install = (await installRow(tx, workspaceId, requestId))!;
@@ -1462,6 +1514,7 @@ export function createStoreTemplateUpdateService(deps: {
       tx,
       actor.workspaceId,
       requestId,
+      family ? parseInputs : undefined,
     );
     if (!completed.ok) reject("store_template_baseline_unavailable", 409);
     const rows = await recordRows(tx, actor.workspaceId, requestId);
@@ -1851,7 +1904,7 @@ export function createStoreTemplateUpdateService(deps: {
         updatedAt: at,
         // What the install is built from from now on: a scope change, or
         // source datasets a newer version reads.
-        inputs: storeTemplateInputsSchema.parse(plan.inputs),
+        inputs: parseInputs(plan.inputs),
       })
       .where(
         and(
@@ -1990,6 +2043,9 @@ export function createStoreTemplateUpdateService(deps: {
       )[0];
     const found = await read();
     if (!found) reject("store_template_update_not_found", 404);
+    // An update of another template's install (#876): not this route's.
+    if (!(await installRow(tx, workspaceId, found.requestId)))
+      reject("store_template_update_not_found", 404);
     await lockInstall(tx, workspaceId, found.requestId);
     // Read again under the lock: a concurrent copy or swap went first.
     const row = (await read())!;
@@ -2563,7 +2619,9 @@ export function createStoreTemplateUpdateService(deps: {
                 eq(schema.dataTemplateUpdates.id, updateId),
               ),
             );
-          if (!update) reject("store_template_update_not_found", 404);
+          // Another template's install (#876) is not this route's.
+          if (!update || !(await installRow(tx, actor.workspaceId, requestId)))
+            reject("store_template_update_not_found", 404);
           if (update.closedAt !== null) return;
           await tx
             .update(schema.dataTemplateUpdates)
@@ -2750,7 +2808,7 @@ export function createStoreTemplateUpdateService(deps: {
             .where(
               and(
                 eq(schema.dataTemplateInstalls.workspaceId, actor.workspaceId),
-                eq(schema.dataTemplateInstalls.templateId, STORE_TEMPLATE_ID),
+                eq(schema.dataTemplateInstalls.templateId, templateId),
               ),
             )
             .orderBy(

@@ -137,6 +137,50 @@ export const dashboardsEn = {
     identityTooLarge:
       "App identity can’t be shown: these connections have more apps or website projects than this workspace’s row limit allows. You can still change the apps above, for example remove a connection.",
   },
+  /** The Developer Portfolio template (#876). */
+  developerTemplate: {
+    title: "Developer portfolio",
+    templateCard: "Uptime, deploys, spend and users per project",
+    subtitle:
+      "What is down, what shipped today, this month's spend and active users, with one slide per project. Numbers stay editable measures.",
+    back: "Back to dashboards",
+    roleCannot:
+      "A workspace editor, admin or owner can install these templates.",
+    defaultName: "Developer portfolio",
+    empty:
+      "Connect Railway, Vercel, Hetzner Cloud, HTTP checks, PostHog, Search Console, App Store Connect or Google Play to start.",
+    connect: "Connect sources",
+    name: "Dashboard name",
+    connections: "1. Choose sources",
+    connectionsHelp:
+      "Any mix works: a source you leave out just leaves its numbers out.",
+    projectsTitle: "2. Projects",
+    projectsHelp:
+      "Each project gets a slide. A source's resources belong to the project the connection is in; you can relink them later in the links table under Data.",
+    noProjects:
+      "This workspace has no projects yet: the dashboard starts with the overview only.",
+    inProject: "Project: {name}",
+    noProject: "No project",
+    resources: "{count, plural, one {# resource} other {# resources}}",
+    setupPending: "Finish setup",
+    connectors: {
+      railway: "Railway",
+      vercel: "Vercel",
+      "hetzner-cloud": "Hetzner Cloud",
+      "http-check": "HTTP checks",
+      posthog: "PostHog",
+      "google-search-console": "Search Console",
+      "app-store-connect": "App Store Connect",
+      "google-play": "Google Play",
+    },
+    install: "Create dashboard",
+    chosen:
+      "{count, plural, one {# source} other {# sources}} chosen, at most {max}.",
+    tooMany: "Choose at most {max} sources: one dashboard reads up to {max}.",
+    installing: "Creating…",
+    omitted: "The dashboard is full: {names} show in the overview only.",
+    open: "Open the dashboard",
+  },
   dashboardsPage: {
     meta: "{count, plural, =0 {No dashboards yet} one {# dashboard} other {# dashboards}}",
     metaLive:

@@ -34,7 +34,7 @@ import { ModelEditor } from "./model-editor";
 import { ReferenceEditor } from "./reference-editor";
 import { PreviewNotes } from "./preview-notes";
 import { StoreUpdateSummary } from "@/components/store-update-summary";
-import { dataUpdates, storeUpdatePath } from "@/lib/store-updates";
+import { dataUpdates, installUpdatePath } from "@/lib/store-updates";
 
 type Section = "datasets" | "preparations" | "models";
 type ProjectRef = { id: string; name: string; archivedAt: string | null };
@@ -393,7 +393,7 @@ export function DataWorkspace({
     return install ? (
       <Link
         className="data-update-mark"
-        href={storeUpdatePath(workspaceId, install.requestId)}
+        href={installUpdatePath(workspaceId, install)}
         title={updateT("dataBanner", { name: install.name })}
       >
         {updateT("dataMark")}
@@ -465,7 +465,7 @@ export function DataWorkspace({
             ) : install.summary ? (
               <StoreUpdateSummary summary={install.summary} />
             ) : null}{" "}
-            <Link href={storeUpdatePath(workspaceId, install.requestId)}>
+            <Link href={installUpdatePath(workspaceId, install)}>
               {updateT(install.openUpdate ? "openUpdate" : "review")}
             </Link>
           </section>

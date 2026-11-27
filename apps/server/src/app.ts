@@ -1,5 +1,6 @@
 import { registerDataRoutes } from "./routes/data.js";
 import { registerStoreTemplateRoutes } from "./routes/store-templates.js";
+import { registerDeveloperTemplateRoutes } from "./routes/developer-templates.js";
 import { createConnectionService } from "./connections/service.js";
 import { createResourceIconService } from "./images/resource-icons.js";
 import type { StoreTemplateDefinition } from "./dashboards/store-template.js";
@@ -303,6 +304,13 @@ export async function buildApp(
     ...(deps.now ? { now: deps.now } : {}),
     ...(deps.storeTemplate ? { template: deps.storeTemplate } : {}),
     fetchIcons: (actor, sources) => storeIcons.fetchMissing(actor, sources),
+  });
+  registerDeveloperTemplateRoutes(app, {
+    authService,
+    db,
+    registry,
+    policy: config.dataPolicy,
+    ...(deps.now ? { now: deps.now } : {}),
   });
   registerThemeRoutes(app, { authService, db });
   registerCustomApiRoutes(app, {

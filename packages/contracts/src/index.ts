@@ -4318,3 +4318,4 @@ export * from "./custom-api-builder.js";
 export * from "./dashboard-data.js";
 
 export * from "./store-templates.js";
+export * from "./developer-templates.js";

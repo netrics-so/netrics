@@ -9,7 +9,7 @@ import {
   getTheme,
   getWorkspace,
   listConnections,
-  listStoreTemplateInstalls,
+  listTemplateInstalls,
   listStudioImages,
   listWorkspaceMetrics,
   listWorkspaces,
@@ -18,7 +18,7 @@ import { getT } from "@/lib/i18n/server";
 import { requireSession } from "@/lib/session";
 import {
   storeScopePath,
-  storeUpdatePath,
+  installUpdatePath,
   studioUpdateNote,
 } from "@/lib/store-updates";
 import { StoreUpdateNote } from "@/components/studio-editor/studio-status";
@@ -66,16 +66,15 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
     can(membership.role, "dashboards:create");
   const installs =
     archived || canChangeApps
-      ? await listStoreTemplateInstalls(forwarded, workspaceId).then(
-          ({ installs }) => installs,
-          () => [],
-        )
+      ? await listTemplateInstalls(forwarded, workspaceId)
       : [];
   const archivedNote = archived ? studioUpdateNote(installs, dashboard) : null;
+  // The App Portfolio's apps (the Developer Portfolio has no app scope).
   const scopeInstall =
     !archived && canChangeApps
       ? installs.find(
           (install) =>
+            !install.template &&
             install.error === null &&
             install.dashboardIds.includes(dashboard.id),
         )
@@ -125,7 +124,7 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
       {archivedNote ? (
         <StoreUpdateNote
           kind={archivedNote.kind}
-          href={storeUpdatePath(workspaceId, archivedNote.requestId)}
+          href={installUpdatePath(workspaceId, archivedNote)}
         />
       ) : null}
       <DashboardView

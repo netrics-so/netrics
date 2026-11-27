@@ -101,6 +101,18 @@ export const measureWidgetOptionsSchema = z.object({
    * widget should then exclude). Absent: the filters' range.
    */
   period: z.enum(PERIODS).optional(),
+  /**
+   * The zone whose days `period` reads (#876): "UTC" for a model whose
+   * days are UTC (the Developer Portfolio's deploys, costs and usage), so
+   * "today" is the UTC day its rows are dated by. Absent: the workspace's.
+   */
+  periodTimeZone: z.literal("UTC").optional(),
+  /**
+   * "previous": the period just before `period` (#876): with "today", the
+   * last complete day, as "active users yesterday" reads it. Absent: the
+   * period itself.
+   */
+  periodWindow: z.literal("previous").optional(),
 });
 /**
  * A latest-items widget's binding (#810): a published model and its

@@ -40,6 +40,12 @@ import {
   type StoreTemplateRequest,
   type StoreTemplateOptions,
   type StoreTemplateResult,
+  developerTemplateOptionsSchema,
+  developerTemplateRequestSchema,
+  developerTemplateResultSchema,
+  type DeveloperTemplateOptions,
+  type DeveloperTemplateRequest,
+  type DeveloperTemplateResult,
   createDashboardFromTemplateRequestSchema,
   dashboardTemplateOptionsResponseSchema,
   resourceIconListResponseSchema,
@@ -1762,39 +1768,77 @@ export function installStoreTemplate(
 
 // ─── Store-template updates (11E) ─────────────────────────────────────────
 
-const storesPath = (workspaceId: string) =>
-  `/v1/workspaces/${workspaceId}/dashboard-templates/stores`;
+/**
+ * The templates that are installed, updated and swapped alike (11E): the
+ * App Portfolio (`stores`) and the Developer Portfolio (`developer`, #876).
+ * Their update routes are the same under each template's path.
+ */
+export type TemplateKind = "stores" | "developer";
+const storesPath = (workspaceId: string, template: TemplateKind = "stores") =>
+  `/v1/workspaces/${workspaceId}/dashboard-templates/${template}`;
 
 /** The workspace's store-template installs and their updates (server). */
 export function listStoreTemplateInstalls(
   forwarded: Headers,
   workspaceId: string,
+  template: TemplateKind = "stores",
 ): Promise<StoreTemplateInstallList> {
   return serverGet(
     storeTemplateInstallListSchema,
     forwarded,
-    `${storesPath(workspaceId)}/installs`,
+    `${storesPath(workspaceId, template)}/installs`,
   );
+}
+/**
+ * The installs of both templates (server), each Developer Portfolio
+ * install marked with its template, so update links lead to its review.
+ * A list that cannot be read is left out: pages work without updates.
+ */
+export async function listTemplateInstalls(
+  forwarded: Headers,
+  workspaceId: string,
+): Promise<
+  (StoreTemplateInstallList["installs"][number] & {
+    template?: "developer";
+  })[]
+> {
+  const [stores, developer] = await Promise.all(
+    (["stores", "developer"] as const).map((template) =>
+      listStoreTemplateInstalls(forwarded, workspaceId, template).then(
+        ({ installs }) => installs,
+        () => [],
+      ),
+    ),
+  );
+  return [
+    ...stores!,
+    ...developer!.map((install) => ({
+      ...install,
+      template: "developer" as const,
+    })),
+  ];
 }
 /** The same list in the browser, to reload it after a change. */
 export function readStoreTemplateInstalls(
   workspaceId: string,
+  template: TemplateKind = "stores",
 ): Promise<StoreTemplateInstallList> {
   return browserSend(
     storeTemplateInstallListSchema,
     "GET",
-    `${storesPath(workspaceId)}/installs`,
+    `${storesPath(workspaceId, template)}/installs`,
   );
 }
 /** The three-way plan of an install's update, item by item. */
 export function getStoreTemplatePlan(
   workspaceId: string,
   requestId: string,
+  template: TemplateKind = "stores",
 ): Promise<StoreTemplatePlan> {
   return browserSend(
     storeTemplatePlanSchema,
     "GET",
-    `${storesPath(workspaceId)}/installs/${requestId}/update`,
+    `${storesPath(workspaceId, template)}/installs/${requestId}/update`,
   );
 }
 /**
@@ -1805,12 +1849,36 @@ export function applyStoreTemplateUpdate(
   workspaceId: string,
   requestId: string,
   body: StoreTemplateApplyRequest,
+  template: TemplateKind = "stores",
 ): Promise<StoreTemplateUpdate> {
   return browserSend(
     storeTemplateUpdateSchema,
     "POST",
-    `${storesPath(workspaceId)}/installs/${requestId}/update`,
+    `${storesPath(workspaceId, template)}/installs/${requestId}/update`,
     storeTemplateApplyRequestSchema.parse(body),
+  );
+}
+/** What a Developer Portfolio can read (server). */
+export function readDeveloperTemplateOptions(
+  forwarded: Headers,
+  workspaceId: string,
+): Promise<DeveloperTemplateOptions> {
+  return serverGet(
+    developerTemplateOptionsSchema,
+    forwarded,
+    storesPath(workspaceId, "developer"),
+  );
+}
+/** Installs the Developer Portfolio (#876). */
+export function installDeveloperTemplate(
+  workspaceId: string,
+  input: DeveloperTemplateRequest,
+): Promise<DeveloperTemplateResult> {
+  return browserSend(
+    developerTemplateResultSchema,
+    "POST",
+    storesPath(workspaceId, "developer"),
+    developerTemplateRequestSchema.parse(input),
   );
 }
 /** The store connections and their apps a template can use (server). */
@@ -1930,8 +1998,9 @@ export async function closeStoreTemplateUpdate(
   workspaceId: string,
   requestId: string,
   updateId: string,
+  template: TemplateKind = "stores",
 ): Promise<void> {
-  const path = `${storesPath(workspaceId)}/installs/${requestId}/updates/${updateId}/close`;
+  const path = `${storesPath(workspaceId, template)}/installs/${requestId}/updates/${updateId}/close`;
   const response = await fetch(path, { method: "POST" });
   if (!response.ok) throw await readError(response);
 }
@@ -1940,19 +2009,21 @@ const updateDashboardPath = (
   updateId: string,
   key: string,
   action: "copy" | "swap" | "swap-back",
+  template: TemplateKind,
 ) =>
-  `${storesPath(workspaceId)}/updates/${updateId}/dashboards/${encodeURIComponent(key)}/${action}`;
+  `${storesPath(workspaceId, template)}/updates/${updateId}/dashboards/${encodeURIComponent(key)}/${action}`;
 /** Creates the updated dashboard copy, unassigned from screens. */
 export function createStoreTemplateCopy(
   workspaceId: string,
   updateId: string,
   key: string,
   options: { replace?: boolean; discardCopyEdits?: boolean } = {},
+  template: TemplateKind = "stores",
 ): Promise<StoreTemplateUpdate> {
   return browserSend(
     storeTemplateUpdateSchema,
     "POST",
-    updateDashboardPath(workspaceId, updateId, key, "copy"),
+    updateDashboardPath(workspaceId, updateId, key, "copy", template),
     storeTemplateCopyRequestSchema.parse(options),
   );
 }
@@ -1961,11 +2032,12 @@ export function swapStoreTemplateDashboard(
   workspaceId: string,
   updateId: string,
   key: string,
+  template: TemplateKind = "stores",
 ): Promise<StoreTemplateUpdate> {
   return browserSend(
     storeTemplateUpdateSchema,
     "POST",
-    updateDashboardPath(workspaceId, updateId, key, "swap"),
+    updateDashboardPath(workspaceId, updateId, key, "swap", template),
   );
 }
 /** Puts the archived original back on the copy's screens. */
@@ -1973,10 +2045,11 @@ export function swapBackStoreTemplateDashboard(
   workspaceId: string,
   updateId: string,
   key: string,
+  template: TemplateKind = "stores",
 ): Promise<StoreTemplateUpdate> {
   return browserSend(
     storeTemplateUpdateSchema,
     "POST",
-    updateDashboardPath(workspaceId, updateId, key, "swap-back"),
+    updateDashboardPath(workspaceId, updateId, key, "swap-back", template),
   );
 }

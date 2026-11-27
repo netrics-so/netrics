@@ -332,7 +332,14 @@ export async function deriveInstallCompletion(
   tx: Transaction,
   workspaceId: string,
   requestId: string,
-  options: { lock?: boolean } = {},
+  options: {
+    lock?: boolean;
+    /**
+     * Another template's inputs (the Developer Portfolio, #876): parsed
+     * with this; it has no installs made before versions.
+     */
+    parse?: (value: unknown) => StoreTemplateInputs;
+  } = {},
 ): Promise<LegacyCompletion & { pending?: boolean }> {
   const query = tx
     .select()
@@ -358,10 +365,13 @@ export async function deriveInstallCompletion(
   if (install.inputs !== null)
     return {
       ok: true,
-      inputs: storeTemplateInputsSchema.parse(install.inputs),
+      inputs: options.parse
+        ? options.parse(install.inputs)
+        : storeTemplateInputsSchema.parse(install.inputs),
       keys: {},
       widgetKeys: (dashboardRecord?.widgetKeys ?? {}) as Record<string, string>,
     };
+  if (options.parse) return unavailable;
   const result = storeTemplateResultSchema.parse(install.result);
   const models = {} as Record<StoreMetric, SemanticModelDefinition>;
   for (const record of records) {
@@ -422,12 +432,13 @@ export async function ensureInstallCompleted(
   tx: Transaction,
   workspaceId: string,
   requestId: string,
+  parse?: (value: unknown) => StoreTemplateInputs,
 ): Promise<LegacyCompletion> {
   const { pending, ...done } = await deriveInstallCompletion(
     tx,
     workspaceId,
     requestId,
-    { lock: true },
+    { lock: true, ...(parse ? { parse } : {}) },
   );
   if (!done.ok || !pending) return done;
   // The dashboard original stays `{ legacySnapshot }` here; turning it into

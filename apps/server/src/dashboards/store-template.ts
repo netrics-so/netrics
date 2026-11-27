@@ -405,6 +405,12 @@ export const storeTemplateV4: StoreTemplateDefinition = defineStoreTemplate(4);
 export const storeTemplateV5: StoreTemplateDefinition = defineStoreTemplate(5);
 /** Version 6, frozen like version 1 (`store-template.test.ts`). */
 export const storeTemplateV6: StoreTemplateDefinition = defineStoreTemplate(6);
+/**
+ * Version 7, frozen like version 1: the Developer Portfolio (#876) builds
+ * its store preparations and models with it, whatever later versions of
+ * the App Portfolio change (`developer-template.test.ts` hashes them).
+ */
+export const storeTemplateV7: StoreTemplateDefinition = defineStoreTemplate(7);
 
 /** What version 4 builds the slides from: the apps and App Store accounts. */
 export function storePortfolio(inputs: StoreTemplateInputs) {

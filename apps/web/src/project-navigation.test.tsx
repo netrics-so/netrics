@@ -298,6 +298,7 @@ describe("project navigation checks: lists (#573)", () => {
       `/v1/workspaces/${W}/data/models?project=${A}`,
       // Store-template updates (11E) are workspace-wide, as in the Studio.
       `/v1/workspaces/${W}/dashboard-templates/stores/installs`,
+      `/v1/workspaces/${W}/dashboard-templates/developer/installs`,
       `/v1/workspaces/${W}/data/sources?project=${A}&unassigned=include`,
     ]);
   });
