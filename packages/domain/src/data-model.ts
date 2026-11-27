@@ -118,6 +118,23 @@ export interface ModelQuery {
    * them: a table's top N. Without it, groups follow their dimensions.
    */
   orderBy?: ModelQueryOrder;
+  /** Internal: groups ranked by their own values (`ModelQueryRank`). */
+  rank?: ModelQueryRank;
+}
+/**
+ * Internal (state widget, #900): every group ranked by its own dimension
+ * values, once per group and lowest first, before `limit` and `offset`
+ * page them; ties by `tieBreak`'s shown name (its label, else its value),
+ * case-insensitively, then exactly, nameless last, then in the groups'
+ * own order. Each result row carries its rank, and `rankCounts` counts
+ * every group per rank, so a page, its total and its counts share one
+ * grain. `key` names the ranking in snapshot and page keys. Never with
+ * `orderBy` or windowed measures.
+ */
+export interface ModelQueryRank {
+  key: string;
+  of: (values: Readonly<DataRow>) => number;
+  tieBreak?: string;
 }
 export interface ModelQueryOrder {
   measureId: string;
@@ -737,6 +754,14 @@ export function querySemanticModel(
       !["asc", "desc"].includes(query.orderBy.direction))
   )
     dataFail("model_result_order_invalid");
+  if (
+    query.rank !== undefined &&
+    (query.orderBy !== undefined ||
+      typeof query.rank.of !== "function" ||
+      (query.rank.tieBreak !== undefined &&
+        !query.groupBy.includes(query.rank.tieBreak)))
+  )
+    dataFail("model_result_order_invalid");
   const usedDatasets = new Set<string>();
   const now = query.now ?? new Date().toISOString();
   validateDataValue("timestamp", now, false);
@@ -1137,6 +1162,8 @@ export function querySemanticModel(
   const results: Array<{
     dimensions: DataRow;
     dimensionLabels?: Record<string, string>;
+    /** With `query.rank`: the group's rank. */
+    rank?: number;
     measures: Record<string, ModelMeasureResult>;
   }> = [];
   // Display names of the dimensions that show or name values: the grouped
@@ -1495,6 +1522,59 @@ export function querySemanticModel(
       return position.get(a)! - position.get(b)!;
     });
   }
+  // Ranked by the groups' own values (#900): each group once, every group
+  // counted, before the page is cut.
+  let rankOf: Map<string, number> | undefined;
+  let rankCounts: Record<number, number> | undefined;
+  if (query.rank) {
+    if (windowPlan) dataFail("model_result_order_invalid");
+    const { of, tieBreak } = query.rank;
+    rankOf = new Map();
+    rankCounts = {};
+    for (const [key, values] of orderedGroups) {
+      budget.tick();
+      const rank = of(values);
+      if (!Number.isSafeInteger(rank)) dataFail("model_result_order_invalid");
+      rankOf.set(key, rank);
+      rankCounts[rank] = (rankCounts[rank] ?? 0) + 1;
+    }
+    const tieDimension = tieBreak ? dimensions.get(tieBreak)! : undefined;
+    const nameOf = (values: DataRow): string | null => {
+      if (!tieDimension) return null;
+      const value = values[tieDimension.id];
+      if (value === null || value === undefined) return null;
+      const label = displayLabels
+        .get(tieDimension.id)
+        ?.get(
+          dataKey(
+            table(tieDimension.datasetId).fields,
+            { [tieDimension.fieldId]: value },
+            [tieDimension.fieldId],
+          ),
+        );
+      return label ?? String(value);
+    };
+    const keyed = orderedGroups.map(([key, values], position) => {
+      const name = nameOf(values);
+      return {
+        entry: [key, values] as [string, DataRow],
+        rank: rankOf!.get(key)!,
+        name,
+        folded: name?.toLowerCase() ?? null,
+        position,
+      };
+    });
+    keyed.sort((a, b) => {
+      budget.tick();
+      if (a.rank !== b.rank) return a.rank - b.rank;
+      if ((a.name === null) !== (b.name === null))
+        return a.name === null ? 1 : -1;
+      if (a.folded !== b.folded) return a.folded! < b.folded! ? -1 : 1;
+      if (a.name !== b.name) return a.name! < b.name! ? -1 : 1;
+      return a.position - b.position;
+    });
+    orderedGroups.splice(0, orderedGroups.length, ...keyed.map((k) => k.entry));
+  }
   for (const [key, values] of orderedGroups.slice(start, end)) {
     const evaluate = evaluatorOf(key);
     const labels = Object.fromEntries(
@@ -1516,6 +1596,7 @@ export function querySemanticModel(
     );
     results.push({
       dimensions: values,
+      ...(rankOf ? { rank: rankOf.get(key)! } : {}),
       ...(Object.keys(labels).length ? { dimensionLabels: labels } : {}),
       measures: Object.fromEntries(
         query.measureIds.map((id) => {
@@ -1585,6 +1666,7 @@ export function querySemanticModel(
           ],
         }
       : {}),
+    ...(rankCounts ? { rankCounts } : {}),
     totalRows: orderedGroups.length,
     offset: start,
     warnings: [...budget.warnings],

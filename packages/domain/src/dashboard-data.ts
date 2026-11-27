@@ -9,8 +9,9 @@ import {
 } from "./data-expression.js";
 import { compareMeasureFilter } from "./compare-measure.js";
 import {
-  SERVICE_STATE_TIERS,
-  serviceStateSpellings,
+  isMappableServiceStateValue,
+  serviceStateClassifier,
+  serviceStateRank,
   type ServiceState,
 } from "./service-state.js";
 import type {
@@ -596,177 +597,69 @@ export interface StateWidgetBinding {
   exclusions: DashboardFilterExclusion[];
 }
 
-/** The rank measure a state query orders by: 0 (down) to 6 (up), the
- * index in `SERVICE_STATE_TIERS`. */
-export const STATE_RANK_MEASURE_ID = "__state_rank";
-/** Per tier, the rows of a group (or of every match) in that tier. */
-export const STATE_TIER_MEASURE_IDS = SERVICE_STATE_TIERS.map(
-  (_, index) => `__state_t${index}`,
-);
+/** The internal measure a state query names: the rows of a group, on the
+ * state's dataset (the query needs one measure; it is read for the page
+ * only). */
+export const STATE_ROWS_MEASURE_ID = "__state_rows";
 /** The most items a state widget's list query returns, most urgent first. */
 export const STATE_QUERY_MAX = 500;
+/** The most distinct state values the Studio's discovery reads. */
+export const STATE_DISCOVERY_MAX = 100;
 
 /**
- * The tier predicates over a state value and an optional rollback flag
- * (dataset fields in an aggregate's filter, dimensions in a query's), in
- * `SERVICE_STATE_TIERS` order: the value lower-cased and trimmed against
- * `serviceStateSpellings`, null and unlisted values unknown, a rollback
- * only on up.
+ * The model a state query runs against (#875, #900): the published
+ * dimensions and datasets, the model's own measures left out (a state
+ * query reads none, and they would count toward the model's 100), and one
+ * internal count on the state's dataset.
  */
-function stateTierPredicates(
-  state: DataExpression,
-  rolledBack: DataExpression | null,
-  overrides: Readonly<Record<string, ServiceState>>,
-): DataExpression[] {
-  const lists = new Map<ServiceState, string[]>();
-  for (const [spelling, mapped] of serviceStateSpellings(overrides))
-    lists.set(mapped, [...(lists.get(mapped) ?? []), spelling]);
-  const key: DataExpression = {
-    kind: "call",
-    fn: "lower",
-    args: [
-      {
-        kind: "call",
-        fn: "trim",
-        args: [{ kind: "call", fn: "to_string", args: [state] }],
-      },
-    ],
-  };
-  const no: DataExpression = { kind: "literal", type: "boolean", value: false };
-  const is = (mapped: ServiceState): DataExpression => {
-    const spellings = lists.get(mapped) ?? [];
-    return spellings.length
-      ? {
-          kind: "call",
-          fn: "coalesce",
-          args: [
-            {
-              kind: "call",
-              fn: "in",
-              args: [key, { kind: "literal", type: "json", value: spellings }],
-            },
-            no,
-          ],
-        }
-      : no;
-  };
-  const not = (expression: DataExpression): DataExpression => ({
-    kind: "call",
-    fn: "not",
-    args: [expression],
-  });
-  const known = combine(
-    "or",
-    (["up", "down", "failed", "building", "sleeping"] as const).map(is),
-  )!;
-  const rolled: DataExpression = rolledBack
-    ? {
-        kind: "call",
-        fn: "coalesce",
-        args: [
-          {
-            kind: "call",
-            fn: "eq",
-            args: [
-              rolledBack,
-              { kind: "literal", type: "boolean", value: true },
-            ],
-          },
-          no,
-        ],
-      }
-    : no;
-  return SERVICE_STATE_TIERS.map(({ state: tier, rolledBack: back }) => {
-    if (tier === "unknown")
-      return combine("or", [
-        { kind: "call", fn: "is_null", args: [state] },
-        not(known),
-      ])!;
-    if (tier !== "up") return is(tier);
-    return combine("and", [is("up"), back ? rolled : not(rolled)])!;
-  });
-}
-
-/**
- * A copy of the model with the state widget's internal measures (#875
- * final review: ranked inside the query, over every match, before any
- * limit): per tier a count of the state dataset's rows in it, and the rank
- * formula, the first tier with rows. A rollback counts only when its field
- * is in the state's dataset.
- */
-export function stateModelWithRank(
+export function stateQueryModel(
   model: SemanticModelDefinition,
-  binding: Pick<
-    StateWidgetBinding,
-    "stateDimensionId" | "rolledBackDimensionId"
-  >,
-  overrides: Readonly<Record<string, ServiceState>> = {},
+  binding: Pick<StateWidgetBinding, "stateDimensionId">,
 ): SemanticModelDefinition {
   const state = model.dimensions.find(
     (dimension) => dimension.id === binding.stateDimensionId,
   );
   if (!state) dataFail("state_dimension_unknown", binding.stateDimensionId);
-  const internal = new Set([STATE_RANK_MEASURE_ID, ...STATE_TIER_MEASURE_IDS]);
-  if (model.measures.some((measure) => internal.has(measure.id)))
-    dataFail("model_ids_not_unique");
-  const back = binding.rolledBackDimensionId
-    ? model.dimensions.find(
-        (dimension) => dimension.id === binding.rolledBackDimensionId,
-      )
-    : undefined;
-  const tiers = stateTierPredicates(
-    field(state.fieldId),
-    back && back.datasetId === state.datasetId ? field(back.fieldId) : null,
-    overrides,
-  );
-  const integer = (value: number): DataExpression => ({
-    kind: "literal",
-    type: "integer",
-    value,
-  });
-  // if(t0 > 0, 0, if(t1 > 0, 1, ... 6)).
-  let rank: DataExpression = integer(SERVICE_STATE_TIERS.length - 1);
-  for (let index = SERVICE_STATE_TIERS.length - 2; index >= 0; index -= 1)
-    rank = {
-      kind: "call",
-      fn: "if",
-      args: [
-        {
-          kind: "call",
-          fn: "gt",
-          args: [field(STATE_TIER_MEASURE_IDS[index]!), integer(0)],
-        },
-        integer(index),
-        rank,
-      ],
-    };
   return {
     ...model,
     measures: [
-      ...model.measures,
-      ...tiers.map((filter, index) => ({
-        id: STATE_TIER_MEASURE_IDS[index]!,
-        name: `tier ${index}`,
-        kind: "aggregate" as const,
-        datasetId: state.datasetId,
-        aggregate: {
-          id: STATE_TIER_MEASURE_IDS[index]!,
-          name: `tier ${index}`,
-          op: "count" as const,
-          filter,
-        },
-      })),
       {
-        id: STATE_RANK_MEASURE_ID,
-        name: "rank",
-        kind: "formula" as const,
-        expression: rank,
+        id: STATE_ROWS_MEASURE_ID,
+        name: "rows",
+        kind: "aggregate",
+        datasetId: state.datasetId,
+        aggregate: { id: STATE_ROWS_MEASURE_ID, name: "rows", op: "count" },
       },
     ],
   };
 }
 
-/** The dimensions a state widget groups by, in query order. */
+/**
+ * An item's rank from its grouped values (#900): the index in
+ * `SERVICE_STATE_TIERS` of its state, read by the widget's one
+ * normalization (`serviceStateClassifier`), and its rollback flag, which
+ * qualifies only an up; the flag may come from any dataset the state's
+ * reaches (a joined one too), since it is a grouped value.
+ */
+export function stateItemRank(
+  binding: Pick<
+    StateWidgetBinding,
+    "stateDimensionId" | "rolledBackDimensionId"
+  >,
+  overrides: Readonly<Record<string, ServiceState>> = {},
+): (values: Readonly<Record<string, unknown>>) => number {
+  const classify = serviceStateClassifier(overrides);
+  return (values) => {
+    const state = classify(values[binding.stateDimensionId]);
+    const rolledBack =
+      binding.rolledBackDimensionId !== undefined &&
+      values[binding.rolledBackDimensionId] === true;
+    return serviceStateRank(state, state === "up" && rolledBack);
+  };
+}
+
+/** The dimensions a state widget groups by, in query order: one item per
+ * distinct name, state, changed-at and rollback flag. */
 export function stateGroupBy(binding: StateWidgetBinding): string[] {
   return [
     binding.nameDimensionId,
@@ -777,23 +670,32 @@ export function stateGroupBy(binding: StateWidgetBinding): string[] {
 }
 
 /**
- * What a state query reads (#875): `items` (default) the items ordered by
- * rank, then by name, at most `limit`; `counts` the rows per tier over
- * every match (one row, no grouping); `unknownValues` the distinct state
- * values in the unknown tier, for the Studio's mapping.
+ * What a state query reads (#875, #900): `items` (default) the items
+ * ranked over every match, at most `limit`, with every item counted per
+ * rank; `sourceValues` the distinct state values, those the Studio can map
+ * (unknown and mappable, `isMappableServiceStateValue`) ranked 0 and
+ * first, at most `limit`.
  */
 export interface StateQueryRead {
-  kind?: "items" | "counts" | "unknownValues";
+  kind?: "items" | "sourceValues";
   limit?: number;
 }
 
+/** A widget's overrides as a stable text, naming its ranking. */
+const overridesKey = (overrides: Readonly<Record<string, ServiceState>>) =>
+  JSON.stringify(
+    Object.entries(overrides).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+  );
+
 /**
- * A state widget's query (#875): a copy of the model with the internal
- * tier and rank measures (`stateModelWithRank`) and the query `read` asks
- * for. Ranking and counting run over every match inside the query, so no
- * limit ever applies before the most urgent items are first. `item` (the
- * single form's chosen name) keeps that item only. Filters, exclusions, the
- * screen's and the slide's scopes apply as in `dashboardModelQuery`.
+ * A state widget's query (#875, #900): the state model
+ * (`stateQueryModel`) and the query `read` asks for. Every group is ranked
+ * by its own values (`stateItemRank`, the semantic layer's internal
+ * `rank`), ties by the name as shown, case-insensitively, before any
+ * limit, and counted per rank, so the items, their total and the counts
+ * share one grain. `item` (the single form's chosen name) keeps that item
+ * only. Filters, exclusions, the screen's and the slide's scopes apply as
+ * in `dashboardModelQuery`.
  */
 export function stateModelQuery(
   model: SemanticModelDefinition,
@@ -806,7 +708,7 @@ export function stateModelQuery(
   read: StateQueryRead = {},
   overrides: Readonly<Record<string, ServiceState>> = {},
 ): { model: SemanticModelDefinition; query: Omit<ModelQuery, "now"> } {
-  const ranked = stateModelWithRank(model, binding, overrides);
+  const internal = stateQueryModel(model, binding);
   const parts: DataExpression[] = [];
   if (binding.filter) parts.push(binding.filter);
   if (item !== null)
@@ -815,45 +717,46 @@ export function stateModelQuery(
       fn: "eq",
       args: [field(binding.nameDimensionId), literal("string", item)],
     });
-  const kind = read.kind ?? "items";
-  const unknownTier = SERVICE_STATE_TIERS.findIndex(
-    (tier) => tier.state === "unknown",
-  );
-  if (kind === "unknownValues")
-    parts.push(
-      stateTierPredicates(field(binding.stateDimensionId), null, overrides)[
-        unknownTier
-      ]!,
-    );
+  const discovery = read.kind === "sourceValues";
+  const classify = serviceStateClassifier(overrides);
   const query = dashboardModelQuery(
     filters,
     values,
     {
       modelId: binding.modelId,
-      measureIds:
-        kind === "counts"
-          ? [...STATE_TIER_MEASURE_IDS]
-          : kind === "unknownValues"
-            ? [STATE_TIER_MEASURE_IDS[unknownTier]!]
-            : [STATE_RANK_MEASURE_ID],
-      groupBy:
-        kind === "counts"
-          ? []
-          : kind === "unknownValues"
-            ? [binding.stateDimensionId]
-            : stateGroupBy(binding),
+      measureIds: [STATE_ROWS_MEASURE_ID],
+      groupBy: discovery ? [binding.stateDimensionId] : stateGroupBy(binding),
       ...(parts.length ? { filter: combine("and", parts)! } : {}),
       exclusions: binding.exclusions,
     },
-    read.limit ?? STATE_QUERY_MAX,
+    read.limit ?? (discovery ? STATE_DISCOVERY_MAX : STATE_QUERY_MAX),
     "first",
     scope,
     slide,
-    kind === "items"
-      ? { measureId: STATE_RANK_MEASURE_ID, direction: "asc" }
-      : undefined,
   );
-  return { model: ranked, query };
+  return {
+    model: internal,
+    query: {
+      ...query,
+      rank: discovery
+        ? {
+            key: `state-values:${overridesKey(overrides)}`,
+            of: (group) => {
+              const value = group[binding.stateDimensionId];
+              return isMappableServiceStateValue(value) &&
+                classify(value) === "unknown"
+                ? 0
+                : 1;
+            },
+            tieBreak: binding.stateDimensionId,
+          }
+        : {
+            key: `state-items:${overridesKey(overrides)}`,
+            of: stateItemRank(binding, overrides),
+            tieBreak: binding.nameDimensionId,
+          },
+    },
+  };
 }
 
 /** A measure widget's options as far as they reach its binding (#768). */

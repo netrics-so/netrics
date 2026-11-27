@@ -81,58 +81,49 @@ export function serviceStateKey(value: string): string {
 }
 
 /**
- * A source value as one of the fixed states: the widget's override for it
- * first (keys compared as `serviceStateKey`), then the built-in words, then
- * `unknown`. Booleans read as a health flag (true up, false down); null and
- * anything else is unknown.
+ * The one normalization of a widget's source values (#900): a function
+ * that reads a value as one of the fixed states, its overrides keyed once
+ * (`serviceStateKey`), so ranking, counting and the Studio's discovery
+ * classify every value alike and no value rescans the overrides. Type
+ * aware: a boolean reads as a health flag (true up, false down, unless an
+ * override keys "true" or "false"); text and numbers by their key, the
+ * widget's override first, then the built-in words, else `unknown` (the
+ * text "true" is no built-in word). Null and anything else is unknown.
+ */
+export function serviceStateClassifier(
+  overrides: Readonly<Record<string, ServiceState>> = {},
+): (value: unknown) => ServiceState {
+  const mapped = new Map<string, ServiceState>();
+  for (const [raw, state] of Object.entries(overrides)) {
+    const key = serviceStateKey(raw);
+    // The first override of a key wins.
+    if (key !== "" && !mapped.has(key)) mapped.set(key, state);
+  }
+  return (value) => {
+    if (typeof value === "boolean")
+      return mapped.get(String(value)) ?? (value ? "up" : "down");
+    if (typeof value !== "string" && typeof value !== "number")
+      return "unknown";
+    const key = serviceStateKey(String(value));
+    if (key === "") return "unknown";
+    return (
+      mapped.get(key) ??
+      (Object.hasOwn(BUILT_IN, key) ? BUILT_IN[key]! : "unknown")
+    );
+  };
+}
+
+/**
+ * A source value as one of the fixed states (`serviceStateClassifier`):
+ * the widget's override for it first (keys compared as `serviceStateKey`),
+ * then the built-in words, then `unknown`. Booleans read as a health flag
+ * (true up, false down); null and anything else is unknown.
  */
 export function normalizeServiceState(
   value: unknown,
   overrides: Readonly<Record<string, ServiceState>> = {},
 ): ServiceState {
-  if (typeof value === "boolean") {
-    const key = String(value);
-    for (const [raw, state] of Object.entries(overrides))
-      if (serviceStateKey(raw) === key) return state;
-    return value ? "up" : "down";
-  }
-  if (typeof value !== "string" && typeof value !== "number") return "unknown";
-  const key = serviceStateKey(String(value));
-  if (key === "") return "unknown";
-  for (const [raw, state] of Object.entries(overrides))
-    if (serviceStateKey(raw) === key) return state;
-  return Object.hasOwn(BUILT_IN, key) ? BUILT_IN[key]! : "unknown";
-}
-
-/**
- * Every spelling a query compares a lower-cased, trimmed source value with
- * (#875 final review: ranking inside the query), with its state: the
- * built-in words and the widget's overrides (which win), each as written
- * with underscores, spaces and dashes ("in_progress", "in progress",
- * "in-progress"), and "true"/"false" for a yes/no field. Unlisted values,
- * and null, are unknown. `normalizeServiceState` reads the same words.
- */
-export function serviceStateSpellings(
-  overrides: Readonly<Record<string, ServiceState>> = {},
-): Map<string, ServiceState> {
-  const keys = new Map<string, ServiceState>([
-    ...Object.entries(BUILT_IN),
-    ["true", "up"],
-    ["false", "down"],
-  ]);
-  for (const [raw, state] of Object.entries(overrides)) {
-    const key = serviceStateKey(raw);
-    if (key !== "") keys.set(key, state);
-  }
-  const spellings = new Map<string, ServiceState>();
-  for (const [key, state] of keys)
-    for (const spelling of [
-      key,
-      key.replace(/_/g, " "),
-      key.replace(/_/g, "-"),
-    ])
-      spellings.set(spelling, state);
-  return spellings;
+  return serviceStateClassifier(overrides)(value);
 }
 
 /**
@@ -157,6 +148,22 @@ export function isKnownServiceStateValue(value: unknown): boolean {
   if (typeof value === "boolean") return true;
   if (typeof value !== "string" && typeof value !== "number") return false;
   return Object.hasOwn(BUILT_IN, serviceStateKey(String(value)));
+}
+
+/**
+ * True for a source value an override can key in full (#875, #900): text
+ * or a number no built-in word knows, its key not empty and at most
+ * `SERVICE_STATE_VALUE_MAX` characters as stored. The Studio's discovery
+ * lists only these; longer ones stay unknown.
+ */
+export function isMappableServiceStateValue(value: unknown): boolean {
+  if (typeof value !== "string" && typeof value !== "number") return false;
+  const text = String(value);
+  return (
+    [...text].length <= SERVICE_STATE_VALUE_MAX &&
+    serviceStateKey(text) !== "" &&
+    !isKnownServiceStateValue(text)
+  );
 }
 
 /**

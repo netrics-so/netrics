@@ -138,11 +138,13 @@ export interface StateWidgetViewProps {
 
 /**
  * The box a growing state card is laid out in (scroll view, #875 review):
- * half a slide wide and exactly tall enough for `rows` list rows.
+ * half a slide wide and exactly tall enough for `rows` list rows under
+ * `label`, the card's own title as it wraps (#900).
  */
 export function scrollStatePlacement(
   rows: number,
   fontScale: number,
+  label: string,
 ): {
   placement: ScreenPlacement & { unitBox: { width: number; height: number } };
   rowCapacity: number;
@@ -150,7 +152,7 @@ export function scrollStatePlacement(
   const base = { x: 0, y: 0, w: 6, h: 6 };
   const width = contentBox(base, false).width;
   const probe = statusLayout({
-    label: "Status",
+    label,
     width,
     height: 10_000,
     fontScale,
@@ -169,7 +171,7 @@ export function scrollStatePlacement(
   return {
     placement,
     rowCapacity: statusLayout({
-      label: "Status",
+      label,
       width: box.width,
       height: box.height,
       fontScale,
@@ -199,7 +201,7 @@ export function StateWidgetView(input: StateWidgetViewProps) {
       : Math.min(input.total, input.options.limit) +
         (input.total > input.options.limit ? 1 : 0);
   const grown = input.grow
-    ? scrollStatePlacement(listRows, input.fontScale).placement
+    ? scrollStatePlacement(listRows, input.fontScale, input.label).placement
     : null;
   const props = grown ? { ...input, placement: grown } : input;
   const stale = props.status === "stale";

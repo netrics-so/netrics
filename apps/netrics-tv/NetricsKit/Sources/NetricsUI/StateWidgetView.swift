@@ -55,16 +55,21 @@ struct StateWidgetView: View {
         let word: Double
         let showName: Bool
         let showQualifier: Bool
+        /** The qualifier line did not fit: "rolled back" joins the word ("Up · rolled back"). */
+        var rollbackInWord = false
     }
 
     /**
      * The single form in `height` units: the state word as large as fits
      * (at least a cell, at most 160 u), with the name above and the
      * qualifier line below while they leave the word a cell; the qualifier
-     * goes first, then the name.
+     * line goes first, then the name. A rollback is never dropped (#900):
+     * without room for its line, it joins the word and only the time of the
+     * change is lost.
      */
     static func singlePlan(
-        height: Double, sizes: [StudioTextRole: Double], hasName: Bool, hasQualifier: Bool
+        height: Double, sizes: [StudioTextRole: Double], hasName: Bool, hasQualifier: Bool,
+        rolledBack: Bool = false
     ) -> SinglePlan {
         let cell = sizes[.cell] ?? StudioLayout.Minimum.cell
         let change = sizes[.change] ?? StudioLayout.Minimum.change
@@ -83,7 +88,13 @@ struct StateWidgetView: View {
         if qualifier && word(name, qualifier) < cell { qualifier = false }
         if name && word(name, qualifier) < cell { name = false }
         return SinglePlan(
-            word: max(cell, min(160, word(name, qualifier))), showName: name, showQualifier: qualifier)
+            word: max(cell, min(160, word(name, qualifier))), showName: name, showQualifier: qualifier,
+            rollbackInWord: rolledBack && !qualifier)
+    }
+
+    /** The single form's word: "Up", or "Up · rolled back" when the plan folds the rollback in. */
+    static func singleWord(_ item: StateWidgetItem, plan: SinglePlan, language: ScreenLanguage) -> String {
+        plan.rollbackInWord ? StateBoard.stateText(item, language: language) : item.state.word(language)
     }
 
     var body: some View {
@@ -192,7 +203,8 @@ struct StateWidgetView: View {
             options.showChanged ? StateBoard.changed(item.changedAt, now: now, language: env.language) : nil,
         ].compactMap { $0 }.joined(separator: " · ")
         let plan = Self.singlePlan(
-            height: height, sizes: sizes, hasName: item.name != nil, hasQualifier: !qualifier.isEmpty)
+            height: height, sizes: sizes, hasName: item.name != nil, hasQualifier: !qualifier.isEmpty,
+            rolledBack: item.rolledBack)
         let word = plan.word
         return VStack(alignment: .leading, spacing: env.pt(StudioRender.stackGap)) {
             if plan.showName, let name = item.name {
@@ -207,7 +219,7 @@ struct StateWidgetView: View {
                     .font(.system(size: env.pt(word * 0.85), weight: .semibold))
                     .foregroundStyle(color)
                     .accessibilityHidden(true)
-                Text(item.state.word(env.language))
+                Text(Self.singleWord(item, plan: plan, language: env.language))
                     .font(env.font(word, .semibold))
                     .foregroundStyle(color)
                     .lineLimit(1)

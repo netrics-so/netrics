@@ -180,9 +180,10 @@ export const stateWidgetOptionsSchema = z.object({
   layout: z.enum(["list", "single"]).default("list"),
   /**
    * Single: the name of the item shown; null shows the most urgent item
-   * (with a slide scoped to a project, usually its only one).
+   * (with a slide scoped to a project, usually its only one). Kept
+   * exactly as written, spaces included (#900): the item matches whole.
    */
-  item: z.string().trim().min(1).max(200).nullable().default(null),
+  item: z.string().min(1).max(200).regex(/\S/).nullable().default(null),
   /** List: the most items listed; the rest is "+N more". */
   limit: z.number().int().min(1).max(STATE_LIST_MAX).default(8),
   /** The time the state last changed, when the binding names it. */

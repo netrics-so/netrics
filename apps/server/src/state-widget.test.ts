@@ -579,6 +579,208 @@ describe("the state widget (#875)", () => {
     // Both still count as unknown.
     expect(list!.counts.unknown).toBe(2);
   });
+
+  /** A manual snapshot dataset of text and yes/no fields; its id. */
+  async function manualDataset(
+    key: string,
+    fields: Record<string, string>,
+    rows: Array<Record<string, unknown>>,
+  ): Promise<string> {
+    const response = await f.call("POST", "/data/manual", {
+      definition: {
+        key,
+        name: key,
+        version: 1,
+        mode: "snapshot",
+        grain: "one row",
+        keyFields: ["id"],
+        fields: Object.entries({ id: "string", ...fields }).map(
+          ([id, type]) => ({
+            id,
+            name: id,
+            type,
+            nullable: id !== "id",
+            classification: "internal",
+          }),
+        ),
+      },
+      records: rows.map((values, index) => ({
+        values: { id: `r${index}`, ...values },
+      })),
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    return response.json().datasetId as string;
+  }
+
+  /** Publishes a model; its id. */
+  async function published(definition: Record<string, unknown>) {
+    const model = await f.call("POST", "/data/models", {
+      name: "Model",
+      definition: { version: 1, relationships: [], ...definition },
+    });
+    expect(model.statusCode, model.body).toBe(200);
+    const { id, version } = model.json().model;
+    const response = await f.call("POST", `/data/models/${id}/publish`, {
+      version,
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    return id as string;
+  }
+
+  const count = (id: string, datasetId: string) => ({
+    id,
+    name: id,
+    kind: "aggregate",
+    datasetId,
+    aggregate: { id, name: id, op: "count" },
+  });
+
+  it("honors a rollback flag from a joined dataset in ranking and counts (#900)", async () => {
+    const hosts = await manualDataset(
+      "joined-hosts",
+      { host: "string", project: "string", state: "string" },
+      [
+        { host: "a", project: "p1", state: "up" },
+        { host: "b", project: "p1", state: "up" },
+        { host: "z", project: "p2", state: "up" },
+      ],
+    );
+    const projects = await manualDataset(
+      "joined-projects",
+      { project: "string", rolled_back: "boolean" },
+      [
+        { project: "p1", rolled_back: false },
+        { project: "p2", rolled_back: true },
+      ],
+    );
+    const id = await published({
+      datasets: [hosts, projects],
+      relationships: [
+        {
+          id: "project",
+          from: { datasetId: hosts, fieldId: "project" },
+          to: { datasetId: projects, fieldId: "project" },
+          cardinality: "many_to_one",
+        },
+      ],
+      dimensions: [
+        { id: "host", name: "host", datasetId: hosts, fieldId: "host" },
+        { id: "state", name: "state", datasetId: hosts, fieldId: "state" },
+        {
+          id: "rolled_back",
+          name: "rolled_back",
+          datasetId: projects,
+          fieldId: "rolled_back",
+        },
+      ],
+      measures: [count("hosts", hosts)],
+    });
+    const dashboard = await saved([fleetWidget(id, { limit: 2 })]);
+    const [list] = (await data(dashboard.id)).states;
+    expect(
+      list!.items.map(
+        (item) => `${item.name}:${item.state}:${item.rolledBack}`,
+      ),
+    ).toEqual(["z:up:true", "a:up:false"]);
+    expect(list!.counts).toMatchObject({ up: 3, rolledBack: 1 });
+    expect(list!.total).toBe(3);
+  });
+
+  it("normalizes ranking, counts and discovery alike (#900)", async () => {
+    const id = await fleetModel("spelled", [
+      { host: "a", state: "in  progress" },
+      { host: "b", state: "IN - PROGRESS" },
+      { host: "c", state: "TRUE" },
+      { host: "d", state: "stopped" },
+    ]);
+    const dashboard = await saved([fleetWidget(id, {})]);
+    const [list] = (await data(dashboard.id)).states;
+    expect(list!.items.map((item) => `${item.name}:${item.state}`)).toEqual([
+      "d:down",
+      "c:unknown",
+      "a:building",
+      "b:building",
+    ]);
+    expect(list!.counts).toMatchObject({
+      building: 2,
+      down: 1,
+      unknown: 1,
+      up: 0,
+    });
+    // The text "TRUE" is no built-in word: the Studio can map it.
+    expect(list!.sourceValues).toEqual(["TRUE"]);
+  });
+
+  it("counts items, not rows: identical rows are one item (#900)", async () => {
+    const id = await fleetModel("duplicates", [
+      { host: "a", state: "up" },
+      { host: "a", state: "up" },
+      { host: "b", state: "down" },
+    ]);
+    const dashboard = await saved([fleetWidget(id, {})]);
+    const [list] = (await data(dashboard.id)).states;
+    expect(names(list!.items)).toEqual(["b", "a"]);
+    expect(list!.total).toBe(2);
+    expect(list!.counts).toMatchObject({ up: 1, down: 1 });
+  });
+
+  it("breaks ties by name case-insensitively before the limit (#900)", async () => {
+    const id = await fleetModel("cases", [
+      { host: "B1", state: "up" },
+      { host: "a2", state: "up" },
+    ]);
+    const dashboard = await saved([fleetWidget(id, { limit: 1 })]);
+    const [list] = (await data(dashboard.id)).states;
+    expect(names(list!.items)).toEqual(["a2"]);
+  });
+
+  it("finds mappable values behind 100 too long to map (#900)", async () => {
+    const id = await fleetModel("discovery", [
+      ...Array.from({ length: 120 }, (_, index) => ({
+        host: `h${pad(index)}`,
+        state: `a${pad(index)}${"x".repeat(70)}`,
+      })),
+      { host: "zzz", state: "maintenance" },
+    ]);
+    const dashboard = await saved([fleetWidget(id, {})]);
+    const [list] = (await data(dashboard.id)).states;
+    expect(list!.sourceValues).toEqual(["maintenance"]);
+    expect(list!.counts.unknown).toBe(121);
+  });
+
+  it("reads a model with 100 measures (#900)", async () => {
+    const hosts = await manualDataset(
+      "measured",
+      { host: "string", state: "string" },
+      [{ host: "a", state: "down" }],
+    );
+    const id = await published({
+      datasets: [hosts],
+      dimensions: ["host", "state"].map((dimension) => ({
+        id: dimension,
+        name: dimension,
+        datasetId: hosts,
+        fieldId: dimension,
+      })),
+      measures: Array.from({ length: 100 }, (_, index) =>
+        count(`m${index}`, hosts),
+      ),
+    });
+    const dashboard = await saved([
+      stateWidget({
+        binding: {
+          modelId: id,
+          nameDimensionId: "host",
+          stateDimensionId: "state",
+        },
+      }),
+    ]);
+    const [list] = (await data(dashboard.id)).states;
+    expect(list!.error).toBeNull();
+    expect(list!.items.map((item) => `${item.name}:${item.state}`)).toEqual([
+      "a:down",
+    ]);
+  });
 });
 
 describe("stateSourcesStale (final review: a source that stopped syncing)", () => {
@@ -630,7 +832,7 @@ describe("stateItemsOf (#875)", () => {
   it("takes the state from the query's rank, a rollback included", () => {
     const rows = [5, 2, 99].map((rank) => ({
       dimensions: { n: "a", s: "x" },
-      measures: { __state_rank: { value: rank } },
+      rank,
     }));
     expect(
       stateItemsOf(rows, {
@@ -651,7 +853,7 @@ describe("stateItemsOf (#875)", () => {
       [
         {
           dimensions: { n: "x".repeat(300), s: "Running" },
-          measures: { __state_rank: { value: 6 } },
+          rank: 6,
         },
       ],
       {

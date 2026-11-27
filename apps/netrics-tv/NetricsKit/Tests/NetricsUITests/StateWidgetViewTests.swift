@@ -68,6 +68,25 @@ import Testing
         #expect(roomy.word > tight.word && roomy.word <= 160)
     }
 
+    @Test func compactSingleTileKeepsTheRollback() {
+        let sizes = StudioLayout.typeScale(
+            .state, placement: StudioPlacement(x: 0, y: 0, w: 3, h: 2), fontScale: 1, showHeader: true)
+        let item = StateWidgetItem(name: "site", state: .up, rolledBack: true, changedAt: "2026-11-21T08:00:00.000Z")
+        let tight = StateWidgetView.singlePlan(
+            height: 60, sizes: sizes, hasName: true, hasQualifier: true, rolledBack: true)
+        // No room for the line: the time goes, the rollback joins the word.
+        #expect(!tight.showQualifier && tight.rollbackInWord)
+        #expect(StateWidgetView.singleWord(item, plan: tight, language: .en) == "Up · rolled back")
+        #expect(StateWidgetView.singleWord(item, plan: tight, language: .de) == "Online · zurückgesetzt")
+        let roomy = StateWidgetView.singlePlan(
+            height: 400, sizes: sizes, hasName: true, hasQualifier: true, rolledBack: true)
+        #expect(roomy.showQualifier && !roomy.rollbackInWord)
+        #expect(StateWidgetView.singleWord(item, plan: roomy, language: .en) == "Up")
+        // Without a rollback, the word stays alone.
+        let plain = StateWidgetView.singlePlan(height: 60, sizes: sizes, hasName: true, hasQualifier: true)
+        #expect(!plain.rollbackInWord)
+    }
+
     @Test(arguments: [ScreenLanguage.en, .de])
     func bothFormsDrawInsideTheirBox(language: ScreenLanguage) {
         let forms = [StateWidgetOptions(), StateWidgetOptions(layout: .single)]

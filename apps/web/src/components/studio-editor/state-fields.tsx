@@ -31,13 +31,12 @@ import { FilterExclusions } from "./shared-filters";
 type StateWidget = Extract<DashboardWidget, { type: "state" }>;
 
 /**
- * The single form's item as typed, kept while typing and trimmed on commit
- * (blur or Enter), so a name with spaces ("Billing API") can be typed;
- * empty is none (the summary).
+ * The single form's item as typed, committed on blur or Enter exactly as
+ * written (#900: an item's name may begin or end with a space, and the
+ * server matches it whole); empty or only spaces is none (the summary).
  */
 export function commitStateItem(draft: string): string | null {
-  const item = draft.trim();
-  return item === "" ? null : item.slice(0, 200);
+  return draft.trim() === "" ? null : draft.slice(0, 200);
 }
 
 /**

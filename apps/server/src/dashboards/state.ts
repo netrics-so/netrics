@@ -5,19 +5,18 @@ import type {
   StateWidgetOptions,
 } from "@netrics/contracts";
 import {
-  isKnownServiceStateValue,
+  isMappableServiceStateValue,
   querySemanticModel,
   serviceStateCounts,
   serviceStateKey,
   sourceItemStatus,
   stateModelQuery,
-  stateModelWithRank,
+  stateQueryModel,
   DEFAULT_DATA_POLICY,
   SERVICE_STATE_OVERRIDES_MAX,
   SERVICE_STATE_TIERS,
   SERVICE_STATE_VALUE_MAX,
-  STATE_RANK_MEASURE_ID,
-  STATE_TIER_MEASURE_IDS,
+  type ServiceStateCounts,
   type SourceStateInput,
   type StateQueryRead,
   type DashboardDataFilter,
@@ -215,22 +214,19 @@ function cut(value: unknown, max: number): string | null {
 }
 
 /**
- * The source values the Studio may map (#875): distinct, at most
- * `SERVICE_STATE_OVERRIDES_MAX`, and only those an override can key (at
- * most `SERVICE_STATE_VALUE_MAX` characters), as stored, so discovery,
- * storage and normalization use the same full key; longer ones stay
- * unknown.
+ * The source values the Studio may map (#875, #900): distinct by
+ * `serviceStateKey`, at most `SERVICE_STATE_OVERRIDES_MAX`, and only those
+ * an override can key in full (`isMappableServiceStateValue`), as stored,
+ * so discovery, storage and normalization use the same full key.
  */
 export function stateSourceValues(values: readonly unknown[]): string[] {
   const keys = new Set<string>();
   const result: string[] = [];
   for (const value of values) {
-    if (typeof value !== "string" && typeof value !== "number") continue;
+    if (!isMappableServiceStateValue(value)) continue;
     const text = String(value);
-    if ([...text].length > SERVICE_STATE_VALUE_MAX) continue;
-    if (isKnownServiceStateValue(text)) continue;
     const key = serviceStateKey(text);
-    if (key === "" || keys.has(key)) continue;
+    if (keys.has(key)) continue;
     keys.add(key);
     result.push(text);
     if (result.length >= SERVICE_STATE_OVERRIDES_MAX) break;
@@ -240,21 +236,21 @@ export function stateSourceValues(values: readonly unknown[]): string[] {
 
 /**
  * The rows of a ranked state query as widget items, in the query's order:
- * each state from the rank the query computed (`SERVICE_STATE_TIERS`), so
- * order, state and counts always agree. Pure, for the server and its tests.
+ * each state from the rank the query gave its group
+ * (`SERVICE_STATE_TIERS`), so order, state and counts always agree. Pure,
+ * for the server and its tests.
  */
 export function stateItemsOf(
   rows: ReadonlyArray<{
     dimensions: Record<string, unknown>;
     dimensionLabels?: Record<string, string>;
-    measures: Record<string, { value: unknown } | undefined>;
+    rank?: number;
   }>,
   binding: StateWidgetBinding,
 ): StateWidgetItem[] {
   return rows.map((row): StateWidgetItem => {
-    const rank = Number(row.measures[STATE_RANK_MEASURE_ID]?.value);
     const tier =
-      SERVICE_STATE_TIERS[rank] ??
+      SERVICE_STATE_TIERS[row.rank ?? -1] ??
       SERVICE_STATE_TIERS.find((entry) => entry.state === "unknown")!;
     return {
       name: cut(
@@ -275,6 +271,19 @@ export function stateItemsOf(
   });
 }
 
+/** Items per state from a ranked query's groups per rank (#900): the
+ * same grain as its items and total. */
+export function stateCountsOf(
+  rankCounts: Readonly<Record<number, number>> | undefined,
+): ServiceStateCounts {
+  const counts = serviceStateCounts([]);
+  SERVICE_STATE_TIERS.forEach((tier, rank) => {
+    const groups = rankCounts?.[rank] ?? 0;
+    counts[tier.state] += groups;
+    if (tier.rolledBack) counts.rolledBack += groups;
+  });
+  return counts;
+}
 /**
  * The items of a state widget (#875), ranked inside the query over every
  * match (no limit applies before the most urgent come first): at most the
@@ -372,43 +381,31 @@ export async function queryDashboardState(
           false,
           undefined,
           true,
-          (definition) =>
-            stateModelWithRank(definition, input.binding, input.options.states),
+          (definition) => stateQueryModel(definition, input.binding),
         );
-      // Ranked and counted inside the query, over every match (final
-      // review): the most urgent items first, then the per-state counts,
-      // then the values no word knows, for the Studio.
+      // Ranked and counted inside the query, over every item (#900): the
+      // most urgent items first with every item counted per state, then
+      // the values the Studio can map.
       const ranked = await run({
         limit: single ? 1 : input.options.limit,
       });
-      const tiers = await run({ kind: "counts" });
-      const unknown = await run({ kind: "unknownValues", limit: 100 });
-      const counts = serviceStateCounts([]);
-      const [totals] = tiers.rows;
-      SERVICE_STATE_TIERS.forEach((tier, index) => {
-        const value = Number(
-          totals?.measures[STATE_TIER_MEASURE_IDS[index]!]?.value ?? 0,
-        );
-        const rows = Number.isFinite(value) ? value : 0;
-        counts[tier.state] += rows;
-        if (tier.rolledBack) counts.rolledBack += rows;
-      });
+      const discovered = await run({ kind: "sourceValues" });
       const items = stateItemsOf(ranked.rows, input.binding);
       return {
         widgetId: input.id,
         status: stateWidgetStatus({
           items: items.length,
           stale:
-            sourcesStale || [ranked, tiers, unknown].some((read) => read.stale),
+            sourcesStale || [ranked, discovered].some((read) => read.stale),
           overdue: fresh.overdue,
         }),
         items,
         total: ranked.totalRows,
-        counts,
+        counts: stateCountsOf(ranked.rankCounts),
         sourceValues: stateSourceValues(
-          unknown.rows.map(
-            (row) => row.dimensions[input.binding.stateDimensionId],
-          ),
+          discovered.rows
+            .filter((row) => row.rank === 0)
+            .map((row) => row.dimensions[input.binding.stateDimensionId]),
         ),
         error: null,
         exclusions,

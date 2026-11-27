@@ -1315,4 +1315,30 @@ describe("ordering groups by a measure (#768)", () => {
       }),
     ).toThrow("model_result_order_invalid");
   });
+
+  it("refuses an internal rank beside an order, or ties by an ungrouped dimension (#900)", () => {
+    const rank = { key: "r", of: () => 0 };
+    expect(() =>
+      querySemanticModel(model, sources, {
+        measureIds: ["apple-downloads"],
+        groupBy: ["app"],
+        orderBy: { measureId: "apple-downloads", direction: "desc" },
+        rank,
+      }),
+    ).toThrow("model_result_order_invalid");
+    expect(() =>
+      querySemanticModel(model, sources, {
+        measureIds: ["apple-downloads"],
+        groupBy: ["app"],
+        rank: { ...rank, tieBreak: "nope" },
+      }),
+    ).toThrow("model_result_order_invalid");
+    expect(() =>
+      querySemanticModel(model, sources, {
+        measureIds: ["apple-downloads"],
+        groupBy: ["app"],
+        rank: { key: "r", of: () => 0.5 },
+      }),
+    ).toThrow("model_result_order_invalid");
+  });
 });

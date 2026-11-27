@@ -6,6 +6,7 @@ import {
   itemsWidgetDataSchema,
   itemsWidgetOptionsSchema,
   measureWidgetBindingSchema,
+  stateWidgetOptionsSchema,
 } from "./dashboard-data.js";
 
 const binding = {
@@ -107,5 +108,17 @@ describe("latest items widget contract (#810)", () => {
         items: Array.from({ length: 51 }, () => item),
       }).success,
     ).toBe(false);
+  });
+});
+
+describe("state widget options (#900)", () => {
+  it("keeps the single form's item exactly as written", () => {
+    expect(stateWidgetOptionsSchema.parse({ item: " web " }).item).toBe(
+      " web ",
+    );
+    expect(stateWidgetOptionsSchema.safeParse({ item: "   " }).success).toBe(
+      false,
+    );
+    expect(stateWidgetOptionsSchema.parse({}).item).toBeNull();
   });
 });

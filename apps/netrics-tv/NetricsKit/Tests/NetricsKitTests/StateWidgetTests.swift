@@ -213,6 +213,24 @@ private func stateWidget(_ payload: DeviceDashboardV2) throws -> (StateWidgetOpt
         #expect(summary.text == "4 items · 1 failing")
     }
 
+    @Test(arguments: [ScreenLanguage.en, .de])
+    func detailSheetWarnsWhenStaleWithoutFreshness(language: ScreenLanguage) throws {
+        let json = stateWidgetJSON().replacingOccurrences(of: #""status": "ok""#, with: #""status": "stale""#)
+        let widget = try #require(v2Payload(slides: stateSlides(json)).slides.first?.widgets.first)
+        let detail = try #require(
+            WidgetDetail.make(
+                widget, now: ISODate.parse("2026-11-21T10:00:00.000Z")!, language: language,
+                timeZone: TimeZone(identifier: "UTC")!))
+        #expect(detail.text(.source) == KitStrings.text(.stateStale, language))
+        // A current state has no warning.
+        let current = try #require(v2Payload(slides: stateSlides(stateWidgetJSON())).slides.first?.widgets.first)
+        let plain = try #require(
+            WidgetDetail.make(
+                current, now: ISODate.parse("2026-11-21T10:00:00.000Z")!, language: language,
+                timeZone: TimeZone(identifier: "UTC")!))
+        #expect(plain.text(.source) == nil)
+    }
+
     @Test func decodesCountsAndStale() throws {
         let json = stateWidgetJSON().replacingOccurrences(
             of: #""status": "ok""#,

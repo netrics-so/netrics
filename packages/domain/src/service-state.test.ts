@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   isKnownServiceStateValue,
+  isMappableServiceStateValue,
   isServiceStateHealthy,
+  serviceStateClassifier,
   normalizeServiceState,
   serviceStateCounts,
   serviceStateHiddenTone,
@@ -77,6 +79,21 @@ describe("normalizeServiceState (#875)", () => {
       "sleeping",
     );
     expect(normalizeServiceState(503, { "503": "down" })).toBe("down");
+  });
+
+  it("is one classifier, type aware: the text TRUE is no health flag (#900)", () => {
+    const classify = serviceStateClassifier({ maintenance: "sleeping" });
+    expect(classify("in  progress")).toBe("building");
+    expect(classify("IN - PROGRESS")).toBe("building");
+    expect(classify(" Maintenance ")).toBe("sleeping");
+    expect(classify(true)).toBe("up");
+    expect(classify("TRUE")).toBe("unknown");
+    expect(isMappableServiceStateValue("TRUE")).toBe(true);
+    expect(isMappableServiceStateValue("in  progress")).toBe(false);
+    expect(isMappableServiceStateValue("x".repeat(61))).toBe(false);
+    expect(isMappableServiceStateValue("  ")).toBe(false);
+    expect(isMappableServiceStateValue(true)).toBe(false);
+    expect(isMappableServiceStateValue(503)).toBe(true);
   });
 
   it("says which values need an override", () => {
