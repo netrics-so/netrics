@@ -302,10 +302,7 @@ async function ingestPage(
   }
   const { workspaceId, connectionId } = input;
   // Scoped to this page: ingestDatasetPage restores the caller's value.
-  const [timeout] = await tx.execute<{ previous: string }>(
-    sql`select current_setting('statement_timeout') as previous, set_config('statement_timeout', ${String(policy.queryTimeoutMs ?? DATASET_INGEST_TIMEOUT_MS)}, true)`,
-  );
-  scope.previousTimeout = timeout?.previous ?? "0";
+  scope.previousTimeout = await setIngestTimeout(tx, policy);
   await tx.execute(
     sql`select pg_advisory_xact_lock(hashtextextended(${workspaceId}::uuid::text, 440))`,
   );
@@ -697,6 +694,22 @@ export async function previewDataset(
  * workspace ingest lock indefinitely.
  */
 export const DATASET_INGEST_TIMEOUT_MS = 300_000;
+
+/**
+ * Sets the ingest bound (the policy's queryTimeoutMs, else
+ * DATASET_INGEST_TIMEOUT_MS) as this transaction's statement timeout, and
+ * returns the previous value for the caller to restore. Taken before the
+ * workspace ingestion lock, so waiting for that lock is bounded too.
+ */
+export async function setIngestTimeout(
+  tx: Transaction,
+  policy: Pick<DataPolicy, "queryTimeoutMs">,
+): Promise<string> {
+  const [timeout] = await tx.execute<{ previous: string }>(
+    sql`select current_setting('statement_timeout') as previous, set_config('statement_timeout', ${String(policy.queryTimeoutMs ?? DATASET_INGEST_TIMEOUT_MS)}, true)`,
+  );
+  return timeout?.previous ?? "0";
+}
 
 /** Hide driver SQL/parameters from worker logs and API error paths. */
 export async function ingestDatasetPage(

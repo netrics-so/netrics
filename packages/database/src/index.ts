@@ -601,6 +601,7 @@ export {
   listObservationCatalog,
   readObservationDataset,
   previewDataset,
+  setIngestTimeout,
   DatasetStoreError,
 } from "./datasets.js";
 export {

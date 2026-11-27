@@ -30,6 +30,7 @@ import {
   demoManifest,
   HTTP_CHECK_CONNECTOR_ID,
 } from "@netrics/connectors";
+import { DEFAULT_DATA_POLICY, type DataPolicy } from "@netrics/domain";
 import {
   createDatabase,
   createRawSqlClient,
@@ -41,7 +42,11 @@ import { buildApp } from "../app.js";
 import { createAuthService } from "../auth/index.js";
 import { createCredentialKeyring } from "../credentials.js";
 import { loadConfig } from "../env.js";
-import { createJobHandlers, NonRetryableJobError } from "../jobs/handlers.js";
+import {
+  ContinueJobError,
+  createJobHandlers,
+  NonRetryableJobError,
+} from "../jobs/handlers.js";
 import { capturingLogger } from "../oauth/test-provider.js";
 import {
   createTestDatabase,
@@ -67,7 +72,13 @@ const iso = (ms: number) => new Date(ms).toISOString();
 
 /** What the fixture's next sync returns, or throws. */
 let reply:
-  | { freshness?: FreshnessEntry[]; skipped?: true; nextCursor?: string }
+  | {
+      freshness?: FreshnessEntry[];
+      skipped?: true;
+      nextCursor?: string;
+      /** A first page (done: false) before this reply, on the cursor "page-2". */
+      afterPage?: true;
+    }
   | Error = {};
 /** Runs inside the connector call, e.g. a change saved meanwhile. */
 let during: (() => Promise<void>) | null = null;
@@ -103,10 +114,13 @@ function fixture(): Connector {
     discover: (context, runtime) => demo.discover(context, runtime),
     async sync(_context, request) {
       if (reply instanceof Error) throw reply;
+      const { afterPage, ...final } = reply;
+      if (afterPage && request.cursor !== "page-2")
+        return { observations: [], nextCursor: "page-2", done: false };
       // A skipped run returns the cursor it was given (SDK 0.2.23).
       const cursor =
-        reply.skipped && request.cursor ? { nextCursor: request.cursor } : {};
-      return { observations: [], ...cursor, ...reply, done: true };
+        final.skipped && request.cursor ? { nextCursor: request.cursor } : {};
+      return { observations: [], ...cursor, ...final, done: true };
     },
   };
 }
@@ -296,11 +310,18 @@ beforeEach(() => {
   during = null;
 });
 
-async function sync(connectionId: string) {
+async function sync(
+  connectionId: string,
+  {
+    payload = {},
+    ...options
+  }: { dataPolicy?: DataPolicy; payload?: Record<string, unknown> } = {},
+) {
   const handlers = createJobHandlers({
     registry: registry(),
     credentialKeyring: KEYRING,
     now: () => new Date(clockMs),
+    ...options,
   });
   return handlers["connection.sync"]!({
     job: {
@@ -308,7 +329,7 @@ async function sync(connectionId: string) {
       kind: "connection.sync",
       workspaceId,
       connectionId,
-      payload: {},
+      payload,
       runAt: new Date(clockMs),
       attempts: 0,
       maxAttempts: 8,
@@ -556,6 +577,56 @@ describe("a skipped run (SDK 0.2.23, #898)", () => {
     await sync(id);
     expect(await nextDueAt(id)).toBe(iso(clockMs + SIX_HOURS_S * 1000));
   });
+  it("is refused after a committed page of the same run (#921)", async () => {
+    const id = await createConnection("freshness-fixture");
+    reply = { freshness: [{ stream: "reviews" }], nextCursor: "round-1" };
+    await sync(id);
+    const [before] = await admin`
+      select next_from from connection_state where connection_id = ${id}`;
+    // Page 1 commits (done: false), then a skipped result that is valid on
+    // its own: it would move nextFrom over a window nothing read.
+    clockMs = START + 7 * HOUR;
+    reply = { afterPage: true, skipped: true };
+    await expect(sync(id)).rejects.toBeInstanceOf(NonRetryableJobError);
+    expect(await lastRun(id)).toMatchObject({
+      status: "failed",
+      error_class: "contract",
+    });
+    const [after] = await admin`
+      select next_from from connection_state where connection_id = ${id}`;
+    expect(after!.next_from).toEqual(before!.next_from);
+  });
+
+  it("is refused when it continues a window across the page budget (#921)", async () => {
+    const id = await createConnection("freshness-fixture");
+    reply = { freshness: [{ stream: "reviews" }], nextCursor: "round-1" };
+    await sync(id);
+    const [before] = await admin`
+      select next_from from connection_state where connection_id = ${id}`;
+    // Page 1 commits and the page budget ends the job; its continuation
+    // resumes the saved window, where a skip would read nothing of it.
+    clockMs = START + 7 * HOUR;
+    reply = { afterPage: true, skipped: true };
+    const budget = {
+      dataPolicy: { ...DEFAULT_DATA_POLICY, syncPagesPerRun: 1 },
+    };
+    const continued = await sync(id, budget).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(continued).toBeInstanceOf(ContinueJobError);
+    const { continuation } = continued as ContinueJobError;
+    await expect(
+      sync(id, { ...budget, payload: { continuation } }),
+    ).rejects.toBeInstanceOf(NonRetryableJobError);
+    expect(await lastRun(id)).toMatchObject({
+      status: "failed",
+      error_class: "contract",
+    });
+    const [after] = await admin`
+      select next_from from connection_state where connection_id = ${id}`;
+    expect(after!.next_from).toEqual(before!.next_from);
+  });
 });
 
 describe("a run whose configuration changed meanwhile (#898)", () => {
@@ -580,6 +651,127 @@ describe("a run whose configuration changed meanwhile (#898)", () => {
       "api",
       "site",
     ]);
+  });
+
+  /**
+   * Holds a lock from another transaction while the run's last connector
+   * call runs (page 1 has committed), until released.
+   */
+  const holdDuringRun = (lock: (tx: Sql) => Promise<unknown>) => {
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    let holder: Promise<unknown> = Promise.resolve();
+    const state = { held: false };
+    during = async () => {
+      let held!: () => void;
+      const holding = new Promise<void>((resolve) => (held = resolve));
+      holder = admin.begin(async (tx) => {
+        await lock(tx as unknown as Sql);
+        state.held = true;
+        held();
+        await released;
+      });
+      await holding;
+    };
+    return {
+      state,
+      release: async () => {
+        release();
+        await holder;
+      },
+    };
+  };
+  /** The run ended in a statement timeout while the holder held its lock. */
+  const expectTimedOut = (
+    outcome: unknown,
+    holder: { held: boolean },
+  ): Error => {
+    expect(holder.held).toBe(true);
+    expect(outcome).toMatchObject({ failed: expect.any(Error) });
+    const failed = (outcome as { failed: Error & { cause?: unknown } }).failed;
+    const code =
+      (failed as { code?: unknown }).code ??
+      (failed.cause as { code?: unknown } | undefined)?.code;
+    expect(code).toBe("57014");
+    return failed;
+  };
+  const shortTimeout: DataPolicy = {
+    ...DEFAULT_DATA_POLICY,
+    queryTimeoutMs: 500,
+  };
+  const race = (run: Promise<unknown>) =>
+    Promise.race([
+      run.then(
+        () => "ran",
+        (error: unknown) => ({ failed: error }),
+      ),
+      new Promise((resolve) => setTimeout(() => resolve("waited"), 8_000)),
+    ]);
+
+  it("ends a wait for a held workspace ingestion lock in a timeout (#921)", async () => {
+    const id = await createConnection(HTTP_CHECK_CONNECTOR_ID);
+    await config(id, ["site"]);
+    const holder = holdDuringRun(
+      (tx) =>
+        tx`select pg_advisory_xact_lock(hashtextextended(${workspaceId}::uuid::text, 440))`,
+    );
+    let outcome: unknown;
+    try {
+      outcome = await race(sync(id, { dataPolicy: shortTimeout }));
+    } finally {
+      await holder.release();
+    }
+    expectTimedOut(outcome, holder.state);
+    expect(await lastRun(id)).toMatchObject({
+      status: "failed",
+      error_class: "transient",
+    });
+    expect(await generations(id)).toBe(0);
+  });
+
+  it("persists no configuration value when reading the saved one fails (#921)", async () => {
+    const id = await createConnection(HTTP_CHECK_CONNECTOR_ID);
+    const value = `https://checks.example/cb?token=CONFIG-VALUE-${randomUUID()}`;
+    await config(id, [value]);
+    // A change being saved holds the connection row: reading the saved
+    // configuration under its share lock times out.
+    const holder = holdDuringRun(
+      (tx) => tx`select id from connections where id = ${id} for no key update`,
+    );
+    let outcome: unknown;
+    try {
+      outcome = await race(sync(id, { dataPolicy: shortTimeout }));
+    } finally {
+      await holder.release();
+    }
+    const failed = expectTimedOut(outcome, holder.state);
+    // The worker stores the thrown message as jobs.last_error.
+    expect(failed.message).not.toContain("CONFIG-VALUE");
+    const [run] = await admin`
+      select status, error_message from sync_runs where connection_id = ${id}
+      order by started_at desc, finished_at desc limit 1`;
+    expect(run).toMatchObject({ status: "failed" });
+    expect(String(run!.error_message)).not.toContain("CONFIG-VALUE");
+    expect(await generations(id)).toBe(0);
+  });
+
+  it("returns the timeout when recording the failure waits on the same row (#921)", async () => {
+    const id = await createConnection(HTTP_CHECK_CONNECTOR_ID);
+    await config(id, ["site"]);
+    // FOR UPDATE also blocks the KEY SHARE that the failed run's sync_runs
+    // insert needs: recording the failure is bounded too, and the worker
+    // gets the original error, not an indefinite wait.
+    const holder = holdDuringRun(
+      (tx) => tx`select id from connections where id = ${id} for update`,
+    );
+    let outcome: unknown;
+    try {
+      outcome = await race(sync(id, { dataPolicy: shortTimeout }));
+    } finally {
+      await holder.release();
+    }
+    expectTimedOut(outcome, holder.state);
+    expect(await generations(id)).toBe(0);
   });
 
   it("publishes neither when a change was saved during the run", async () => {

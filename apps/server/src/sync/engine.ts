@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from "node:util";
+
 import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import type { DataPolicy } from "@netrics/domain";
 
@@ -49,6 +51,7 @@ import {
   notDraftConnection,
   rethrowWorkspaceGone,
   lockWorkspaceIngestion,
+  setIngestTimeout,
 } from "@netrics/database";
 import {
   CUSTOM_API_IMAGE_QUOTA_DEFAULT_BYTES,
@@ -609,6 +612,11 @@ async function runSync(
     const errorCode = errorCodeOf(error);
     try {
       await withWorkspace(appDb, { workspaceId }, async (tx) => {
+        // Best effort, and bounded as ingestion is (#921): the failure may
+        // be a lock wait on the connection row, which the sync_runs insert
+        // needs too (its foreign key). The worker then gets the original
+        // error instead of waiting as long as that lock is held.
+        await setIngestTimeout(tx, loaded.policy);
         let replaced = false;
         if (envelopeDigest) {
           // The connection row lock the client change writes under.
@@ -1450,13 +1458,25 @@ async function runSync(
           callSkips = null;
         }
         mergeSkips(recordSkips, skipsOfCall);
+        // A skipped result reads nothing, so only a run's first page may
+        // be one (#921): after a committed page, of this job or of the job
+        // whose saved window this continuation resumes (page budget, rate
+        // limit), it would end the run over a window no page finished.
+        if (
+          result.skipped &&
+          (progress.pagesCommitted > 0 || continuation !== undefined)
+        ) {
+          throw new ContractViolationError(
+            `connector "${manifest.id}" returned a skipped result after a committed page`,
+          );
+        }
         if (result.done) {
           finalObservations = result.observations;
           finalDatasetPages = result;
           finalReviews = result;
           finalFreshness = result.freshness ?? [];
           finalCursor = result.nextCursor ?? null;
-          skipped = result.skipped === true && progress.pagesCommitted === 0;
+          skipped = result.skipped === true;
           finalNextFrom = skipped
             ? window.from
             : result.nextFrom
@@ -1525,7 +1545,11 @@ async function runSync(
       // lock a change writes under, after the workspace ingestion lock,
       // which comes first (lockWorkspaceIngestion). Only such a run with
       // something to publish takes either; other connectors publish as
-      // they always did.
+      // they always did. Both waits are bounded by the ingest timeout, as
+      // dataset ingestion's own wait for that lock is (#921). The saved
+      // configuration is compared here, not in SQL: none of its values
+      // is a parameter that a failed statement's error would carry into
+      // sync_runs or the job (#921).
       const configBound =
         RESOURCES_FROM_CONFIG.has(manifest.id) &&
         ((finalDatasetPages.datasetPages?.length ?? 0) > 0 ||
@@ -1533,11 +1557,15 @@ async function runSync(
           finalFreshness.length > 0);
       let configKept = true;
       if (configBound) {
+        const { policy } = await resolveDataPolicy(
+          tx,
+          workspaceId,
+          deps.dataPolicy,
+        );
+        const previousTimeout = await setIngestTimeout(tx, policy);
         await lockWorkspaceIngestion(tx, workspaceId);
         const [saved] = await tx
-          .select({
-            same: sql<boolean>`${schema.connections.config} = ${JSON.stringify(connection.config)}::jsonb`,
-          })
+          .select({ config: schema.connections.config })
           .from(schema.connections)
           .where(
             and(
@@ -1546,7 +1574,12 @@ async function runSync(
             ),
           )
           .for("share");
-        configKept = saved?.same === true;
+        await tx.execute(
+          sql`select set_config('statement_timeout', ${previousTimeout}, true)`,
+        );
+        configKept =
+          saved !== undefined &&
+          isDeepStrictEqual(saved.config, connection.config);
         if (!configKept) {
           log.info(
             "snapshot and freshness not published: the configuration changed during the run",
