@@ -521,6 +521,26 @@ describe("Vercel follow-ups through the host's validation (#905)", () => {
     expect(total(results, "prj_site")).toBe(0);
   });
 
+  it("reads a charge's cost from the export's text, not a double (#925)", async () => {
+    const results = await syncThroughHost(
+      vercelWith(
+        projects,
+        1,
+        billing((lines) =>
+          lines.map((line) =>
+            line.replace(
+              '"EffectiveCost":0.5',
+              '"EffectiveCost":1.00499999999999999',
+            ),
+          ),
+        ),
+      ),
+      request,
+    );
+    // As a double it is 1.005: 101 cents.
+    expect(total(results, "prj_site")).toBe(100);
+  });
+
   it("reports the completed deploy checks when a project vanishes after the listing", async () => {
     // 1,000 projects with Web Analytics: the listing alone does not fit
     // per-project deployment entries; one vanishes, the 999 others fit.

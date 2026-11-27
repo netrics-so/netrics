@@ -154,8 +154,10 @@ selection, charges of other projects are left out; team-wide charges stay.
   of no single project under the team's ID as `resource`, and every value
   with its `team`. Summed over a calendar month it is the month's spend,
   rounded to the cent: the charges are summed exactly, with every decimal
-  of the export (a charge of $0.0049996 stays below half a cent), and only
-  the totals from the 1st are rounded. Each day is the difference of those
+  of the export as written (a charge of $0.0049996 stays below half a
+  cent, and 1.00499999999999999 is not 1.005), and only the totals from
+  the 1st are rounded. An amount with more than 64 decimals or 30 integer
+  digits is an invalid answer. Each day is the difference of those
   rounded totals, so the days add up to the month's rounded total even
   when every day's cost is a fraction of a cent. The billed cost stays in the
   dataset.
