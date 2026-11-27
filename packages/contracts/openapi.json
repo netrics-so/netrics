@@ -66475,7 +66475,7 @@
             }
           },
           "413": {
-            "description": "data_source_row_limit: the install's items are past the workspace's row limit",
+            "description": "payload_too_large: the request body is too large; data_source_row_limit: the install's items are past the workspace's row limit",
             "content": {
               "application/json": {
                 "schema": {
@@ -66490,7 +66490,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "data_source_row_limit: the install's items are past the workspace's row limit"
+                  "description": "payload_too_large: the request body is too large; data_source_row_limit: the install's items are past the workspace's row limit"
                 }
               }
             }
@@ -71072,7 +71072,7 @@
             }
           },
           "413": {
-            "description": "data_source_row_limit: the connections' resources are past the workspace's row limit; developer_default_links_limit: a connection has more selected resources in its project than one default lookup holds (9,999); developer_project_names_limit: a connection's resources are linked to more projects than one name lookup holds (9,999)",
+            "description": "payload_too_large: the request body is too large; data_source_row_limit: the connections' resources are past the workspace's row limit; developer_default_links_limit: a connection has more selected resources in its project than one default lookup holds (9,999); developer_project_names_limit: a connection's resources are linked to more projects than one name lookup holds (9,999)",
             "content": {
               "application/json": {
                 "schema": {
@@ -71087,7 +71087,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "data_source_row_limit: the connections' resources are past the workspace's row limit; developer_default_links_limit: a connection has more selected resources in its project than one default lookup holds (9,999); developer_project_names_limit: a connection's resources are linked to more projects than one name lookup holds (9,999)"
+                  "description": "payload_too_large: the request body is too large; data_source_row_limit: the connections' resources are past the workspace's row limit; developer_default_links_limit: a connection has more selected resources in its project than one default lookup holds (9,999); developer_project_names_limit: a connection's resources are linked to more projects than one name lookup holds (9,999)"
                 }
               }
             }
@@ -72510,7 +72510,7 @@
             }
           },
           "413": {
-            "description": "data_source_row_limit: the install's items are past the workspace's row limit; developer_default_links_limit: a connection has more selected resources in its project than one default lookup holds (9,999); developer_project_names_limit: a connection's resources are linked to more projects than one name lookup holds (9,999)",
+            "description": "payload_too_large: the request body is too large; data_source_row_limit: the install's items are past the workspace's row limit; developer_default_links_limit: a connection has more selected resources in its project than one default lookup holds (9,999); developer_project_names_limit: a connection's resources are linked to more projects than one name lookup holds (9,999)",
             "content": {
               "application/json": {
                 "schema": {
@@ -72525,7 +72525,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "data_source_row_limit: the install's items are past the workspace's row limit; developer_default_links_limit: a connection has more selected resources in its project than one default lookup holds (9,999); developer_project_names_limit: a connection's resources are linked to more projects than one name lookup holds (9,999)"
+                  "description": "payload_too_large: the request body is too large; data_source_row_limit: the install's items are past the workspace's row limit; developer_default_links_limit: a connection has more selected resources in its project than one default lookup holds (9,999); developer_project_names_limit: a connection's resources are linked to more projects than one name lookup holds (9,999)"
                 }
               }
             }

@@ -32,7 +32,12 @@ import {
   developerDefaults,
   projectProduct,
 } from "./developer-template-service.js";
-import { modelSourceDatasets, publishedReleases } from "./model-sources.js";
+import {
+  modelSourceDatasets,
+  publishedReleases,
+  releasesSourceDatasets,
+  type ModelRelease,
+} from "./model-sources.js";
 import { presentDashboard } from "./service.js";
 import { createStoreProductService } from "./store-template-products.js";
 
@@ -716,6 +721,114 @@ describe("Developer Portfolio installs", { timeout: TIMEOUT_MS }, () => {
     expect(apps.get(projectProduct(target.projects.web))).toEqual([
       `${target.connections.vercel}:prj_a`,
     ]);
+    expect(apps.get(projectProduct(target.projects.api))).toEqual([
+      `${target.connections.railway}:rw-1`,
+    ]);
+  });
+
+  it("keeps a resource in each project the releases of a rollout link it to, under the links table (#923)", async () => {
+    const target = await workspace(["railway", "vercel"], {
+      assign: { railway: "api", vercel: "web" },
+    });
+    await owner`insert into connection_resources
+        (connection_id, workspace_id, resource_id, name, kind)
+      values (${target.connections.railway}, ${target.id}, 'rw-1', 'api', 'project'),
+        (${target.connections.vercel}, ${target.id}, 'prj_a', 'a', 'project')`;
+    const result = await service().install(actor(target.id), {
+      requestId: randomUUID(),
+      name: "Ops",
+      connections: [target.connections.railway, target.connections.vercel],
+      links: [],
+    });
+    const data = createDataService(db, () => new Date(NOW));
+    // Publishes a Vercel preparation again with prj_a in the API project:
+    // a rollout under way, which only some releases pin yet.
+    const republish = async (family: "state" | "deploys") => {
+      const [record] = await owner<{ record_id: string }[]>`
+        select record_id from data_template_records
+        where workspace_id = ${target.id}
+          and key = ${`preparation:ops:${family}:${target.connections.vercel}`}`;
+      const [current] = await owner<
+        { name: string; graph: unknown; version: number }[]
+      >`select name, graph, version from data_preparations
+        where id = ${record!.record_id}`;
+      const saved = await data.savePreparation(
+        actor(target.id),
+        {
+          name: current!.name,
+          graph: JSON.parse(
+            JSON.stringify(current!.graph).replaceAll(
+              projectProduct(target.projects.web),
+              projectProduct(target.projects.api),
+            ),
+          ),
+          version: current!.version,
+        },
+        record!.record_id,
+      );
+      await data.publishPreparation(
+        actor(target.id),
+        record!.record_id,
+        saved.preparation.version,
+      );
+      return {
+        bindings: {},
+        dependencies: {
+          prepared: { [record!.record_id]: saved.preparation.version },
+        },
+      };
+    };
+    const resolve = (pinned: ModelRelease) =>
+      withWorkspace(db, { workspaceId: target.id }, async (tx) => {
+        const state = (
+          await publishedReleases(tx, target.id, [result.models.state!])
+        ).get(result.models.state!)!;
+        const sources = await releasesSourceDatasets(tx, target.id, [
+          state,
+          pinned,
+        ]);
+        return mappedProductApps(tx, target.id, sources.all, {
+          now: new Date(NOW),
+          defaultLinks: sources.defaultLinks,
+        });
+      });
+    const prjA = `${target.connections.vercel}:prj_a`;
+    // One preparation pinned at two versions: an older pin is not dropped.
+    const newer = await republish("state");
+    let apps = await resolve(newer);
+    expect(apps.get(projectProduct(target.projects.web))).toEqual([prjA]);
+    expect(apps.get(projectProduct(target.projects.api))?.sort()).toEqual(
+      [prjA, `${target.connections.railway}:rw-1`].sort(),
+    );
+    // Two preparations of the install that disagree: neither link wins.
+    const deploys = await republish("deploys");
+    apps = await resolve(deploys);
+    expect(apps.get(projectProduct(target.projects.web))).toEqual([prjA]);
+    expect(apps.get(projectProduct(target.projects.api))).toContain(prjA);
+    // The links table's row resolves over each release's defaults alike.
+    const links = await data.readManual(
+      actor(target.id),
+      result.linksDatasetId,
+      { offset: 0, limit: 1000 },
+    );
+    await data.saveManual(
+      actor(target.id),
+      {
+        definition: links.definition,
+        records: [
+          {
+            values: {
+              app_key: prjA,
+              product_id: projectProduct(target.projects.web),
+            },
+          },
+        ],
+        generationId: links.generationId,
+      },
+      result.linksDatasetId,
+    );
+    apps = await resolve(deploys);
+    expect(apps.get(projectProduct(target.projects.web))).toEqual([prjA]);
     expect(apps.get(projectProduct(target.projects.api))).toEqual([
       `${target.connections.railway}:rw-1`,
     ]);

@@ -28,6 +28,9 @@ const ERROR_DESCRIPTIONS: Record<ErrorStatus | 401, string> = {
   503: "Took too long; try again later",
 };
 
+/** The 413 of a request body past the limit (http-hardening). */
+const BODY_TOO_LARGE = "payload_too_large: the request body is too large";
+
 export interface RouteDoc {
   summary: string;
   tags: string[];
@@ -88,11 +91,16 @@ export function routeSchema(doc: RouteDoc) {
   for (const status of errors) {
     const schema =
       status === 401 ? undefined : doc.errorSchemas?.[status as ErrorStatus];
-    response[status] = (schema ?? errorResponseSchema).describe(
-      (status === 401
+    const own =
+      status === 401
         ? undefined
-        : doc.errorDescriptions?.[status as ErrorStatus]) ??
-        ERROR_DESCRIPTIONS[status],
+        : doc.errorDescriptions?.[status as ErrorStatus];
+    response[status] = (schema ?? errorResponseSchema).describe(
+      // A route with a body answers 413 for a body past the limit too
+      // (#923), next to its own causes.
+      own && status === 413 && doc.body
+        ? `${BODY_TOO_LARGE}; ${own}`
+        : (own ?? ERROR_DESCRIPTIONS[status]),
     );
   }
   return {

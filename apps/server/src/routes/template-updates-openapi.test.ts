@@ -36,6 +36,17 @@ describe("template update routes' 413", () => {
       expect(developer).toContain("data_source_row_limit");
       expect(developer).toContain("developer_default_links_limit");
       expect(developer).toContain("developer_project_names_limit");
+      // An apply has a body: past the body limit it is refused too (#923).
+      for (const description of [store, developer])
+        if (method === "post")
+          expect(description).toContain("payload_too_large");
+        else expect(description).not.toContain("payload_too_large");
     }
+  });
+
+  it("keeps the body limit beside a POST route's own 413s (#923)", () => {
+    const install = tooLarge("developer", "post");
+    expect(install).toContain("payload_too_large");
+    expect(install).toContain("developer_default_links_limit");
   });
 });

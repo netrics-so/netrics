@@ -592,6 +592,31 @@ describe("Developer Portfolio updates", { timeout: TIMEOUT_MS }, () => {
     ).toBe(false);
   });
 
+  it("applies an update to a project named like a record reference (#923)", async () => {
+    const target = await setup();
+    const { requestId } = await install(target, developerTemplate);
+    // The preparations' name lookups carry the name as a literal: it is
+    // the customer's text, never a reference to resolve.
+    await owner`update projects set name = 'ref:backend'
+      where id = ${target.projects[0]!}`;
+    const { copy } = await applyUpdate(target, requestId);
+    expect(copy.slides.map((slide) => slide.name)).toEqual([
+      "Overview",
+      "ref:backend",
+    ]);
+    const [record] = await owner<{ record_id: string }[]>`
+      select record_id from data_template_records
+      where workspace_id = ${target.workspaceId}
+        and key = ${`preparation:ops:state:${target.connections[0]}`}`;
+    const [preparation] = await owner<{ graph: unknown }[]>`
+      select graph from data_preparations
+      where workspace_id = ${target.workspaceId} and id = ${record!.record_id}`;
+    expect(JSON.stringify(preparation!.graph)).toContain('"ref:backend"');
+    expect((await updates().list(target.actor)).installs[0]).toMatchObject({
+      updateAvailable: false,
+    });
+  });
+
   it("refuses a plan or an apply over the row limit, never 'up to date' (#913)", async () => {
     const target = await setup();
     const { requestId } = await install(target, developerTemplate);

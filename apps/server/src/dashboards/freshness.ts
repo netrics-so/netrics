@@ -1059,8 +1059,9 @@ export async function mappedProductApps(
       );
     }
     for (const [product, keys] of cache.products.get(key) ?? []) {
+      // Appended one by one: a spread is bound by the argument limit.
       const known = apps.get(product);
-      if (known) known.push(...keys);
+      if (known) for (const app of keys) known.push(app);
       else apps.set(product, [...keys]);
     }
   }
@@ -1077,7 +1078,9 @@ export async function mappedProductApps(
  * A Developer Portfolio's links table is the customer's over `defaults`,
  * the default links the model's pinned preparations carry (#913): a table
  * row overrides one (an empty project unlinks), so a project's freshness
- * covers the resources its rows read.
+ * covers the resources its rows read. A resource the pinned versions link
+ * to several projects (a rollout under way, #923) is in each of them
+ * unless a row overrides it.
  */
 async function readMapping(
   tx: Transaction,
@@ -1085,7 +1088,7 @@ async function readMapping(
   mapping: string,
   now: Date,
   policy: DataPolicy,
-  defaults?: ReadonlyMap<string, string>,
+  defaults?: ReadonlyMap<string, ReadonlySet<string>>,
 ): Promise<Map<string, string[]> | null> {
   let rows: Record<string, unknown>[];
   try {
@@ -1102,9 +1105,9 @@ async function readMapping(
     rethrowWorkspaceGone(caught);
     return null;
   }
-  // As resolveStoreProducts: an app's first mapping row decides, over the
-  // defaults.
-  const effective = new Map(defaults ?? []),
+  // As resolveStoreProducts: an app's first mapping row decides, over each
+  // of the defaults.
+  const effective = new Map<string, ReadonlySet<string>>(defaults ?? []),
     seen = new Set<string>();
   for (const row of rows) {
     const key = row.app_key,
@@ -1112,15 +1115,18 @@ async function readMapping(
     if (typeof key !== "string" || typeof product !== "string") continue;
     if (seen.has(key)) continue;
     seen.add(key);
-    effective.set(key, product);
+    effective.set(key, new Set([product]));
   }
   // One array per product, appended in place.
   const products = new Map<string, string[]>();
-  for (const [key, product] of effective) {
-    if (!product.startsWith(PRODUCT_PREFIX) || !APP_KEY.test(key)) continue;
-    const keys = products.get(product);
-    if (keys) keys.push(key);
-    else products.set(product, [key]);
+  for (const [key, linked] of effective) {
+    if (!APP_KEY.test(key)) continue;
+    for (const product of linked) {
+      if (!product.startsWith(PRODUCT_PREFIX)) continue;
+      const keys = products.get(product);
+      if (keys) keys.push(key);
+      else products.set(product, [key]);
+    }
   }
   return products;
 }
