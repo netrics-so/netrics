@@ -36,8 +36,11 @@ import {
   relevantFreshnessRows,
   selectedResourcesOf,
 } from "../sync/freshness.js";
-import { graphDefaultLinks } from "./developer-portfolio.js";
-import { modelSourceDatasets, type ModelRelease } from "./model-sources.js";
+import {
+  modelSourceDatasets,
+  type ModelRelease,
+  type PinnedDefaultLinks,
+} from "./model-sources.js";
 
 // A widget's freshness (ADR 0025 sections 6 and 7): the freshness streams
 // its data depends on, resolved per (connection, stream, resources), and
@@ -632,14 +635,15 @@ export async function modelFreshnessDependencies(
   read?: ScopeRead,
   choices?: FilterChoices,
 ): Promise<FreshnessDependency[]> {
+  const sources = await modelSourceDatasets(tx, workspaceId, release);
   return sourceFreshnessDependencies(
     tx,
     workspaceId,
-    (await modelSourceDatasets(tx, workspaceId, release)).all,
+    sources.all,
     slideScope,
     exclusions,
     deviceScope,
-    read,
+    read && { ...read, defaultLinks: sources.defaultLinks },
     undefined,
     choices,
   );
@@ -887,8 +891,6 @@ async function isStoreTemplateModel(
     const installs = await tx
       .select({
         mapping: sql<string>`coalesce(${schema.dataTemplateInstalls.result}->>'mappingDatasetId', ${schema.dataTemplateInstalls.result}->>'linksDatasetId')`,
-        // A Developer Portfolio's links table (#876, #913).
-        links: sql<boolean>`${schema.dataTemplateInstalls.result} ? 'linksDatasetId'`,
       })
       .from(schema.dataTemplateInstalls)
       .where(
@@ -903,8 +905,6 @@ async function isStoreTemplateModel(
     const mappings = new Set(installs.map((install) => install.mapping));
     if (!cache) return mappings.size > 0;
     for (const id of unknown) cache.isMapping.set(id, mappings.has(id));
-    for (const install of installs)
-      if (install.links) cache.links.add(install.mapping);
   }
   return datasets.some((id) => cache?.isMapping.get(id));
 }
@@ -919,6 +919,12 @@ export interface ScopeRead {
    * screen's payload resolves the same products for every widget.
    */
   cache?: ScopeMappingCache;
+  /**
+   * The default links the model's pinned preparations carry, by links
+   * table (modelSourceDatasets, #913): a Developer Portfolio's links table
+   * is the customer's over them.
+   */
+  defaultLinks?: PinnedDefaultLinks;
 }
 
 /**
@@ -928,14 +934,12 @@ export interface ScopeRead {
  */
 export interface ScopeMappingCache {
   isMapping: Map<string, boolean>;
-  /** The mappings that are a Developer Portfolio's links table (#913). */
-  links: Set<string>;
   products: Map<string, Map<string, string[]> | null>;
   policy?: DataPolicy;
 }
 
 export function createScopeMappingCache(): ScopeMappingCache {
-  return { isMapping: new Map(), links: new Set(), products: new Map() };
+  return { isMapping: new Map(), products: new Map() };
 }
 
 /** The scope values that name a linked product (store-template-service). */
@@ -1018,8 +1022,6 @@ export async function mappedProductApps(
     for (const install of await tx
       .select({
         mapping: sql<string>`coalesce(${schema.dataTemplateInstalls.result}->>'mappingDatasetId', ${schema.dataTemplateInstalls.result}->>'linksDatasetId')`,
-        // A Developer Portfolio's links table (#876, #913).
-        links: sql<boolean>`${schema.dataTemplateInstalls.result} ? 'linksDatasetId'`,
       })
       .from(schema.dataTemplateInstalls)
       .where(
@@ -1030,32 +1032,37 @@ export async function mappedProductApps(
             unknown,
           ),
         ),
-      )) {
+      ))
       cache.isMapping.set(install.mapping, true);
-      if (install.links) cache.links.add(install.mapping);
-    }
   }
   const mappings = datasets.filter((id) => cache.isMapping.get(id));
   for (const mapping of mappings) {
-    if (!cache.products.has(mapping)) {
+    // Over the default links of the pinned preparation versions (#913):
+    // cached by those pins, as two releases may pin different versions.
+    const defaults = read.defaultLinks?.get(mapping);
+    const key = defaults ? `${mapping}@${defaults.pins}` : mapping;
+    if (!cache.products.has(key)) {
       // The policy's query timeout, as dashboard data reads set it.
       await tx.execute(
         sql`select set_config('statement_timeout', ${String(policy.queryTimeoutMs ?? 0)}, true)`,
       );
       cache.products.set(
-        mapping,
+        key,
         await readMapping(
           tx,
           workspaceId,
           mapping,
           read.now,
           policy,
-          cache.links.has(mapping),
+          defaults?.links,
         ),
       );
     }
-    for (const [product, keys] of cache.products.get(mapping) ?? [])
-      apps.set(product, [...(apps.get(product) ?? []), ...keys]);
+    for (const [product, keys] of cache.products.get(key) ?? []) {
+      const known = apps.get(product);
+      if (known) known.push(...keys);
+      else apps.set(product, [...keys]);
+    }
   }
   return apps;
 }
@@ -1067,10 +1074,10 @@ export async function mappedProductApps(
  * nothing, so a product scope then leaves every selected resource. Read in
  * a savepoint, so a failed statement does not abort the widget's own.
  *
- * A Developer Portfolio's links table is the customer's over the default
- * links its published preparations carry (#913): those are read first,
- * and a table row overrides them (an empty project unlinks), so a
- * project's freshness covers the resources its numbers read.
+ * A Developer Portfolio's links table is the customer's over `defaults`,
+ * the default links the model's pinned preparations carry (#913): a table
+ * row overrides one (an empty project unlinks), so a project's freshness
+ * covers the resources its rows read.
  */
 async function readMapping(
   tx: Transaction,
@@ -1078,29 +1085,26 @@ async function readMapping(
   mapping: string,
   now: Date,
   policy: DataPolicy,
-  /** A Developer Portfolio's links table, over its default links. */
-  links: boolean,
+  defaults?: ReadonlyMap<string, string>,
 ): Promise<Map<string, string[]> | null> {
-  let rows: Record<string, unknown>[], defaults: Map<string, string>;
+  let rows: Record<string, unknown>[];
   try {
-    [rows, defaults] = await tx.transaction(async (savepoint) => [
-      (
-        await createDataLoader(savepoint, workspaceId, now, {
-          policy,
-          allowPendingResults: true,
-        }).load(mapping)
-      ).rows,
-      links
-        ? await publishedDefaultLinks(savepoint, workspaceId, mapping)
-        : new Map<string, string>(),
-    ]);
+    rows = await tx.transaction(
+      async (savepoint) =>
+        (
+          await createDataLoader(savepoint, workspaceId, now, {
+            policy,
+            allowPendingResults: true,
+          }).load(mapping)
+        ).rows,
+    );
   } catch (caught) {
     rethrowWorkspaceGone(caught);
     return null;
   }
   // As resolveStoreProducts: an app's first mapping row decides, over the
   // defaults.
-  const effective = new Map(defaults),
+  const effective = new Map(defaults ?? []),
     seen = new Set<string>();
   for (const row of rows) {
     const key = row.app_key,
@@ -1110,52 +1114,13 @@ async function readMapping(
     seen.add(key);
     effective.set(key, product);
   }
+  // One array per product, appended in place.
   const products = new Map<string, string[]>();
-  for (const [key, product] of effective)
-    if (product.startsWith(PRODUCT_PREFIX) && APP_KEY.test(key))
-      products.set(product, [...(products.get(product) ?? []), key]);
+  for (const [key, product] of effective) {
+    if (!product.startsWith(PRODUCT_PREFIX) || !APP_KEY.test(key)) continue;
+    const keys = products.get(product);
+    if (keys) keys.push(key);
+    else products.set(product, [key]);
+  }
   return products;
-}
-
-/**
- * The default links (developer-portfolio, graphDefaultLinks) of the
- * published preparations that read `mapping` (#913): what a Developer
- * Portfolio's numbers relate resources to projects by where its links
- * table has no row. An App Portfolio's preparations carry none.
- */
-async function publishedDefaultLinks(
-  tx: Transaction,
-  workspaceId: string,
-  mapping: string,
-): Promise<Map<string, string>> {
-  const rows = await tx
-    .select({ graph: schema.dataPreparationVersions.graph })
-    .from(schema.dataPreparations)
-    .innerJoin(
-      schema.dataPreparationVersions,
-      and(
-        eq(schema.dataPreparationVersions.workspaceId, workspaceId),
-        eq(
-          schema.dataPreparationVersions.preparationId,
-          schema.dataPreparations.id,
-        ),
-        eq(
-          schema.dataPreparationVersions.version,
-          schema.dataPreparations.publishedVersion,
-        ),
-      ),
-    )
-    .where(
-      and(
-        eq(schema.dataPreparations.workspaceId, workspaceId),
-        sql`${schema.dataPreparationVersions.graph} @> ${JSON.stringify({
-          nodes: [{ type: "source", datasetId: mapping }],
-        })}::jsonb`,
-      ),
-    );
-  const links = new Map<string, string>();
-  for (const row of rows)
-    for (const [key, product] of Object.entries(graphDefaultLinks(row.graph)))
-      links.set(key, product);
-  return links;
 }

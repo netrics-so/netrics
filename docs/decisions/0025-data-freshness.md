@@ -309,7 +309,8 @@ it computes the widget's data:
   each connection (#767): a scope value naming a resource, or a linked
   product (`product:<id>`) resolved through its install's mapping table to
   its apps. A Developer Portfolio project (#876) resolves through its links
-  table over the default links its published preparations carry (#913):
+  table over the default links of the preparation versions the model's
+  release pins (#913):
   each resource of a connection in a project is that project's unless a
   table row links it elsewhere or unlinks it (an empty project), as the
   preparations relate the rows. The filters' chosen values (a viewer's choice, else the

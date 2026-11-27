@@ -33,12 +33,12 @@ const updateDashboardParamsSchema = z.object({
 });
 
 /**
- * A plan or an apply reads the install's items (its apps, or its projects,
- * links and default links) under the workspace's data policy: past its row
- * limit it is refused, never reported as up to date (#913).
+ * A plan or an apply reads the install's items under the workspace's data
+ * policy: past its row limit it is refused, never reported as up to date
+ * (#913). A template names its own further 413s (`limits`).
  */
 const ROW_LIMIT =
-  "data_source_row_limit: the install's items (apps, or projects, links and default links) are past the workspace's row limit; developer_default_links_limit: a connection has more selected resources than one default lookup holds";
+  "data_source_row_limit: the install's items are past the workspace's row limit";
 
 /**
  * The template-update routes under `path` (11E): the installs and whether
@@ -56,7 +56,10 @@ export function registerTemplateUpdateRoutes(
   label: string,
   /** How summaries name its newest version ("store template"). */
   noun: string,
+  /** The template's own 413s of a plan or an apply, after the row limit. */
+  limits?: string,
 ) {
+  const tooLarge = limits ? `${ROW_LIMIT}; ${limits}` : ROW_LIMIT;
   const failed = (error: unknown) =>
     error instanceof DataServiceError
       ? ([error.status, error.code] as const)
@@ -118,7 +121,7 @@ export function registerTemplateUpdateRoutes(
         tags: ["dashboards"],
         response: storeTemplatePlanSchema,
         errors: [403, 404, 409, 413, 503],
-        errorDescriptions: { 413: ROW_LIMIT },
+        errorDescriptions: { 413: tooLarge },
       }),
     },
     async (request, reply) => {
@@ -149,7 +152,7 @@ export function registerTemplateUpdateRoutes(
         body: storeTemplateApplyRequestSchema,
         response: storeTemplateUpdateSchema,
         errors: [400, 403, 404, 409, 413, 503],
-        errorDescriptions: { 413: ROW_LIMIT },
+        errorDescriptions: { 413: tooLarge },
         errorSchemas: {
           400: storeTemplateApplyErrorSchema,
           409: storeTemplateApplyErrorSchema,

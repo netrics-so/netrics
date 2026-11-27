@@ -25,6 +25,14 @@ import {
  * install, and its template updates (the App Portfolio's update routes,
  * for this template's installs only).
  */
+/**
+ * The Developer Portfolio's own 413s (#913): each lookup a source's
+ * preparation carries holds at most 9,999 entries (the expression
+ * engine's JSON limit).
+ */
+const LOOKUP_LIMITS =
+  "developer_default_links_limit: a connection has more selected resources in its project than one default lookup holds (9,999); developer_project_names_limit: a connection's resources are linked to more projects than one name lookup holds (9,999)";
+
 export function registerDeveloperTemplateRoutes(
   app: FastifyInstance,
   deps: {
@@ -95,7 +103,7 @@ export function registerDeveloperTemplateRoutes(
             response: developerTemplateResultSchema,
             errors: [400, 403, 404, 409, 413, 503],
             errorDescriptions: {
-              413: "data_source_row_limit: the connections' resources are past the workspace's row limit; developer_default_links_limit: a connection has more selected resources in its project than one default lookup holds (9,999)",
+              413: `data_source_row_limit: the connections' resources are past the workspace's row limit; ${LOOKUP_LIMITS}`,
             },
           }),
         },
@@ -132,6 +140,7 @@ export function registerDeveloperTemplateRoutes(
         updates,
         "Developer Portfolio",
         "Developer Portfolio template",
+        LOOKUP_LIMITS,
       );
       registerTemplateDashboardRoutes(
         scope,

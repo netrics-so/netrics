@@ -159,7 +159,12 @@ export async function queryDashboardItems(
             slideScope,
             input.binding.exclusions,
             deviceScope,
-            { now, defaults, cache: freshnessReader.scopeMappings },
+            {
+              now,
+              defaults,
+              cache: freshnessReader.scopeMappings,
+              defaultLinks: sources.defaultLinks,
+            },
             input.binding.filter,
             { filters, values },
           ),

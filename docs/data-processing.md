@@ -1075,9 +1075,10 @@ named by its projects table (`product_id` → `product_name`): the App
 Portfolio's table columns and product values, so its store preparations
 read the same tables and a project slide's freshness resolves its
 resources through the links table as an app slide's does (`linksDatasetId`
-beside `mappingDatasetId`, ADR 0025), over the default links its published
-preparations carry (#913), so freshness covers the resources the numbers
-read. The install seeds the projects table
+beside `mappingDatasetId`, ADR 0025), over the default links of the
+preparation versions the model's release pins (#913, cached by those
+pins), so freshness covers the resources the numbers read, also while a
+newer version is published but not yet read by the model. The install seeds the projects table
 with the workspace's projects (not archived) and the links table with the
 request's explicit links and, for App Store and Google Play connections in
 a project, their selected apps (the App Portfolio's preparations read the
@@ -1099,7 +1100,11 @@ before anything is built. The simpler of the two options in #913: a lookup
 split over several literals would still end at the engine's expression
 limit and grow every preparation version by megabytes, while 9,999
 resources of one connection is far past any real Railway, Vercel, Hetzner,
-PostHog or Search Console account.
+PostHog or Search Console account. The name lookups of a source (its
+projects' current and seeded names, which the editable links table can add
+projects to) hold at most 9,999 projects too: past that, 413
+`developer_project_names_limit` when the install or an update reads its
+inputs.
 
 **Project names** (version 2, #913). A project is named by its current
 workspace name unless the projects table overrides it. The install records

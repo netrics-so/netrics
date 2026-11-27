@@ -36,6 +36,8 @@ export const apiErrorsEn = {
     store_template_baseline_unavailable:
       "Updates aren’t available for this dashboard: it was set up before templates had versions, and a store connection it used was deleted since. The dashboard keeps working as it is.",
     store_template_up_to_date: "This dashboard is already up to date.",
+    developer_project_names_limit:
+      "The links table links one connection's resources to more than 9,999 projects, more than the portfolio can name. Remove links from the “Resource project links” table in Data & measures.",
     developer_default_links_limit:
       "A connection has more than 9,999 selected resources in its project, more than the portfolio can link by default. Select fewer resources in the connection's settings, or take the connection out of the project.",
     store_template_update_available:

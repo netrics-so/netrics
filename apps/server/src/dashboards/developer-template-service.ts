@@ -420,7 +420,9 @@ async function projectResources(
  * connection's resources to (#913): a workspace rename reaches every
  * project the dashboard names. A connection with more default links than
  * one lookup holds (DEVELOPER_DEFAULT_LINKS_MAX) is refused with 413
- * `developer_default_links_limit` before anything is built.
+ * `developer_default_links_limit`, and one whose resources the defaults and
+ * the table link to more projects than one name lookup holds with 413
+ * `developer_project_names_limit`, before anything is built.
  */
 export async function developerDefaults(
   tx: Transaction,
@@ -438,13 +440,18 @@ export async function developerDefaults(
     policy,
   );
   const defaults: DeveloperDefaults = { links: {}, names: {} };
-  const counts = new Map<string, number>();
+  const counts = new Map<string, number>(),
+    defaultProducts = new Map<string, Set<string>>();
   for (const resource of resources) {
     const count = (counts.get(resource.connectionId) ?? 0) + 1;
     if (count > DEVELOPER_DEFAULT_LINKS_MAX)
       reject("developer_default_links_limit", 413);
     counts.set(resource.connectionId, count);
     const product = projectProduct(resource.projectId);
+    defaultProducts.set(
+      resource.connectionId,
+      (defaultProducts.get(resource.connectionId) ?? new Set()).add(product),
+    );
     defaults.links[`${resource.connectionId}:${resource.resourceId}`] = product;
     defaults.names[product] = projects.get(resource.projectId)!;
   }
@@ -477,6 +484,18 @@ export async function developerDefaults(
           [...products].sort(),
         ]),
     );
+  // Every lookup a source's preparation carries (its links, and its
+  // projects' current and seeded names, which the links table can add to)
+  // must fit the expression engine's JSON limit (#913).
+  // (sourceDefaults: a source's names are those of its default links'
+  // projects and of the projects the table links its resources to.)
+  for (const connection of connections) {
+    const products = new Set(linked.get(connection.id));
+    for (const product of defaultProducts.get(connection.id) ?? [])
+      products.add(product);
+    if (products.size > DEVELOPER_DEFAULT_LINKS_MAX)
+      reject("developer_project_names_limit", 413);
+  }
   return defaults;
 }
 
