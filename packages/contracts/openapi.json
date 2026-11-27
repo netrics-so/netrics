@@ -66063,6 +66063,27 @@
               }
             }
           },
+          "413": {
+            "description": "data_source_row_limit: the install's items (apps, or projects, links and default links) are past the workspace's row limit; developer_default_links_limit: a connection has more selected resources than one default lookup holds",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "data_source_row_limit: the install's items (apps, or projects, links and default links) are past the workspace's row limit; developer_default_links_limit: a connection has more selected resources than one default lookup holds"
+                }
+              }
+            }
+          },
           "503": {
             "description": "Took too long; try again later",
             "content": {
@@ -66454,7 +66475,7 @@
             }
           },
           "413": {
-            "description": "Request body too large",
+            "description": "data_source_row_limit: the install's items (apps, or projects, links and default links) are past the workspace's row limit; developer_default_links_limit: a connection has more selected resources than one default lookup holds",
             "content": {
               "application/json": {
                 "schema": {
@@ -66469,7 +66490,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "Request body too large"
+                  "description": "data_source_row_limit: the install's items (apps, or projects, links and default links) are past the workspace's row limit; developer_default_links_limit: a connection has more selected resources than one default lookup holds"
                 }
               }
             }
@@ -71051,7 +71072,7 @@
             }
           },
           "413": {
-            "description": "Request body too large",
+            "description": "data_source_row_limit: the connections' resources are past the workspace's row limit; developer_default_links_limit: a connection has more selected resources in its project than one default lookup holds (9,999)",
             "content": {
               "application/json": {
                 "schema": {
@@ -71066,7 +71087,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "Request body too large"
+                  "description": "data_source_row_limit: the connections' resources are past the workspace's row limit; developer_default_links_limit: a connection has more selected resources in its project than one default lookup holds (9,999)"
                 }
               }
             }
@@ -72077,6 +72098,27 @@
               }
             }
           },
+          "413": {
+            "description": "data_source_row_limit: the install's items (apps, or projects, links and default links) are past the workspace's row limit; developer_default_links_limit: a connection has more selected resources than one default lookup holds",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "data_source_row_limit: the install's items (apps, or projects, links and default links) are past the workspace's row limit; developer_default_links_limit: a connection has more selected resources than one default lookup holds"
+                }
+              }
+            }
+          },
           "503": {
             "description": "Took too long; try again later",
             "content": {
@@ -72468,7 +72510,7 @@
             }
           },
           "413": {
-            "description": "Request body too large",
+            "description": "data_source_row_limit: the install's items (apps, or projects, links and default links) are past the workspace's row limit; developer_default_links_limit: a connection has more selected resources than one default lookup holds",
             "content": {
               "application/json": {
                 "schema": {
@@ -72483,7 +72525,7 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "Request body too large"
+                  "description": "data_source_row_limit: the install's items (apps, or projects, links and default links) are past the workspace's row limit; developer_default_links_limit: a connection has more selected resources than one default lookup holds"
                 }
               }
             }

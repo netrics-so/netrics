@@ -94,6 +94,9 @@ export function registerDeveloperTemplateRoutes(
             body: developerTemplateRequestSchema,
             response: developerTemplateResultSchema,
             errors: [400, 403, 404, 409, 413, 503],
+            errorDescriptions: {
+              413: "data_source_row_limit: the connections' resources are past the workspace's row limit; developer_default_links_limit: a connection has more selected resources in its project than one default lookup holds (9,999)",
+            },
           }),
         },
         async (request, reply) => {

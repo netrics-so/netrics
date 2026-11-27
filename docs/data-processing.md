@@ -1062,7 +1062,7 @@ no data record changes), and the website links, which are the products'
 [#876](https://github.com/netrics-so/netrics/issues/876) (milestone 13.1): a
 second template installed and updated like the App Portfolio
 (`.../dashboard-templates/developer`, template id `developer_portfolio`,
-version 1). It reads any subset of Railway, Vercel, Hetzner Cloud, HTTP
+version 2). It reads any subset of Railway, Vercel, Hetzner Cloud, HTTP
 checks, PostHog, Search Console, App Store Connect and Google Play
 connections; a source left out leaves its preparations, model and widgets
 out, and an install with only Railway, or only App Store, is a complete
@@ -1075,7 +1075,9 @@ named by its projects table (`product_id` → `product_name`): the App
 Portfolio's table columns and product values, so its store preparations
 read the same tables and a project slide's freshness resolves its
 resources through the links table as an app slide's does (`linksDatasetId`
-beside `mappingDatasetId`, ADR 0025). The install seeds the projects table
+beside `mappingDatasetId`, ADR 0025), over the default links its published
+preparations carry (#913), so freshness covers the resources the numbers
+read. The install seeds the projects table
 with the workspace's projects (not archived) and the links table with the
 request's explicit links and, for App Store and Google Play connections in
 a project, their selected apps (the App Portfolio's preparations read the
@@ -1089,7 +1091,27 @@ source's preparations (a JSON lookup, after the links table). The links
 table is the customer's over them: a row links a resource elsewhere, and a
 row with an empty project unlinks it for good, so a default the customer
 removed is never proposed again. A resource without either is its own
-entry, as an app without a product is.
+entry, as an app without a product is. One default lookup holds at most
+9,999 links (the expression engine's JSON limit is 10,000 nodes): an
+install, or an update's plan and apply, refuses a connection with more
+selected resources in its project with 413 `developer_default_links_limit`
+before anything is built. The simpler of the two options in #913: a lookup
+split over several literals would still end at the engine's expression
+limit and grow every preparation version by megabytes, while 9,999
+resources of one connection is far past any real Railway, Vercel, Hetzner,
+PostHog or Search Console account.
+
+**Project names** (version 2, #913). A project is named by its current
+workspace name unless the projects table overrides it. The install records
+the names it seeded the table with (`seededNames`): a row still saying its
+seeded name is no override, so a workspace rename reaches the slide names
+and the project labels of every model (the store preparations' too) as a
+template update; a row the customer changed keeps their name. The current
+names are those of the projects the defaults and the links table link to.
+An install of version 1 has no record of its seeds: its update to version
+2 takes a row equal to the project's current workspace name as seeded, and
+keeps any other row as an override, so no customer name is lost (a rename
+made before that update stays until the customer edits the row).
 
 A link added, changed or removed, or a project renamed, is offered as a
 template update (as changed apps are), whose plan shows the slide changes.
@@ -1128,7 +1150,10 @@ Vercel's effective cost; Hetzner's net monthly price as of the last sync);
 models never convert currencies, so `cost` is read per currency and a
 table's total is one per currency. Days are UTC for every source, PostHog
 included. A Vercel project whose production points at an older build than
-the newest ready one is "up · rolled back" (the state widget's flag).
+the newest ready one is "up · rolled back" (the state widget's flag). A
+Vercel state is dated by the state it reports (version 2, #913): a build
+in progress since it was created, "up" since the live deployment was
+ready, "failed" since the newest build ended; "down" has no time.
 Active users are yesterday's complete UTC day (owner decision B): DAU, and
 WAU and MAU as PostHog reports them for that day, summed over projects,
 never over days. Search Console finalizes its days two to three days late:
@@ -1166,6 +1191,11 @@ named by the install (`omittedProjects`).
 record and reads each table once). Updates use the App Portfolio's engine
 (`store-template-updates.ts` with a template family): the same plan, apply,
 copy, swap and swap back, under the template's own routes and web pages.
+A plan or an apply that cannot read the install's tables or defaults under
+the workspace's row limit answers 413 `data_source_row_limit`, never "up
+to date"; the list of installs then keeps the stored items (#913). The App
+Portfolio's product routes (identity read, edit, icon retry) find App
+Portfolio installs only: a Developer Portfolio install ID is 404 there.
 
 ## Non-store campaign example
 

@@ -32,6 +32,7 @@ import {
   projectProduct,
 } from "./developer-template-service.js";
 import { presentDashboard } from "./service.js";
+import { createStoreProductService } from "./store-template-products.js";
 
 /**
  * The Developer Portfolio (#876): installs with any subset of its sources,
@@ -212,7 +213,7 @@ describe("Developer Portfolio installs", { timeout: TIMEOUT_MS }, () => {
       where workspace_id = ${target.id}`;
     expect(install).toEqual({
       template_id: "developer_portfolio",
-      template_version: 1,
+      template_version: 2,
     });
     const dashboard = await withWorkspace(
       db,
@@ -477,6 +478,182 @@ describe("Developer Portfolio installs", { timeout: TIMEOUT_MS }, () => {
       [30, "2026-11-21"],
       [7, "2026-11-20"],
     ]);
+  });
+
+  it("lists each connection's own resources as install options", async () => {
+    const target = await workspace(["vercel", "railway"]);
+    await withWorkspace(db, { workspaceId: target.id }, async (tx) => {
+      await upsertConnectionResources(tx, {
+        workspaceId: target.id,
+        connectionId: target.connections.vercel,
+        resources: [
+          { id: "prj_b", name: "b-web", kind: "project" },
+          { id: "prj_a", name: "a-web", kind: "project" },
+        ],
+        now: new Date(NOW),
+      });
+      await upsertConnectionResources(tx, {
+        workspaceId: target.id,
+        connectionId: target.connections.railway,
+        resources: [{ id: "rw-1", name: "api", kind: "project" }],
+        now: new Date(NOW),
+      });
+    });
+    const options = await service().options(actor(target.id));
+    expect(
+      Object.fromEntries(
+        options.connections.map((connection) => [
+          connection.connectorId,
+          connection.resources,
+        ]),
+      ),
+    ).toEqual({
+      // By name, each connection's own.
+      vercel: [
+        { id: "prj_a", name: "a-web" },
+        { id: "prj_b", name: "b-web" },
+      ],
+      railway: [{ id: "rw-1", name: "api" }],
+    });
+  });
+
+  it("refuses a connection with more default links than one lookup holds (#913)", async () => {
+    const target = await workspace(["railway"], { assign: { railway: "api" } });
+    const resources = (count: number) =>
+      owner`insert into connection_resources
+          (connection_id, workspace_id, resource_id, name, kind)
+        select ${target.connections.railway}, ${target.id},
+          'rw-' || n, 'rw-' || n, 'project'
+        from generate_series(1, ${count}) n
+        on conflict do nothing`;
+    // The expression engine's JSON limit: 9,999 entries fit, one more not.
+    await resources(10_000);
+    const install = () =>
+      service().install(actor(target.id), {
+        requestId: randomUUID(),
+        name: "Ops",
+        connections: [target.connections.railway],
+        links: [],
+      });
+    await expect(install()).rejects.toMatchObject({
+      code: "developer_default_links_limit",
+      status: 413,
+    });
+    expect(await counts(target.id)).toMatchObject({
+      preparations: 0,
+      dashboards: 0,
+    });
+    await owner`delete from connection_resources
+      where connection_id = ${target.connections.railway}
+        and resource_id = 'rw-10000'`;
+    await expect(install()).resolves.toMatchObject({
+      dashboardId: expect.any(String),
+    });
+  });
+
+  it("refuses a Developer Portfolio install on the App Portfolio's product routes (#913)", async () => {
+    const target = await workspace(["app-store-connect"]);
+    const { linksDatasetId } = await service().install(actor(target.id), {
+      requestId: randomUUID(),
+      name: "Apps",
+      connections: [target.connections["app-store-connect"]],
+      links: [],
+    });
+    const [install] = await owner<{ request_id: string }[]>`
+      select request_id from data_template_installs
+      where workspace_id = ${target.id} and result->>'linksDatasetId' = ${linksDatasetId}`;
+    const products = createStoreProductService({
+      db,
+      now: () => new Date(NOW),
+    });
+    const notFound = { code: "store_template_not_found", status: 404 };
+    await expect(
+      products.read(actor(target.id), install!.request_id),
+    ).rejects.toMatchObject(notFound);
+    await expect(
+      products.retryIcons(actor(target.id), install!.request_id),
+    ).rejects.toMatchObject(notFound);
+    await expect(
+      products.update(actor(target.id), install!.request_id, { products: [] }),
+    ).rejects.toMatchObject(notFound);
+    expect(
+      await owner`select 1 from data_template_products
+        where workspace_id = ${target.id}`,
+    ).toHaveLength(0);
+  });
+
+  it("resolves a project's freshness through its default links and the links table over them (#913)", async () => {
+    const target = await workspace(["railway", "vercel"], {
+      assign: { railway: "api", vercel: "web" },
+    });
+    await owner`insert into connection_resources
+        (connection_id, workspace_id, resource_id, name, kind)
+      values (${target.connections.railway}, ${target.id}, 'rw-1', 'api', 'project'),
+        (${target.connections.vercel}, ${target.id}, 'prj_a', 'a', 'project'),
+        (${target.connections.vercel}, ${target.id}, 'prj_b', 'b', 'project')`;
+    const result = await service().install(actor(target.id), {
+      requestId: randomUUID(),
+      name: "Ops",
+      connections: [target.connections.railway, target.connections.vercel],
+      links: [],
+    });
+    const resolve = () =>
+      withWorkspace(db, { workspaceId: target.id }, (tx) =>
+        mappedProductApps(tx, target.id, new Set([result.linksDatasetId]), {
+          now: new Date(NOW),
+        }),
+      );
+    // The defaults the published preparations read: each connection's
+    // resources are its project's.
+    const before = await resolve();
+    expect(before.get(projectProduct(target.projects.web))?.sort()).toEqual([
+      `${target.connections.vercel}:prj_a`,
+      `${target.connections.vercel}:prj_b`,
+    ]);
+    expect(before.get(projectProduct(target.projects.api))).toEqual([
+      `${target.connections.railway}:rw-1`,
+    ]);
+    // The customer moves Railway's project to the web shop and unlinks a
+    // Vercel project: the table's rows win over the defaults.
+    const data = createDataService(db, () => new Date(NOW));
+    const links = await data.readManual(
+      actor(target.id),
+      result.linksDatasetId,
+      {
+        offset: 0,
+        limit: 1000,
+      },
+    );
+    await data.saveManual(
+      actor(target.id),
+      {
+        definition: links.definition,
+        records: [
+          {
+            values: {
+              app_key: `${target.connections.railway}:rw-1`,
+              product_id: projectProduct(target.projects.web),
+            },
+          },
+          {
+            values: {
+              app_key: `${target.connections.vercel}:prj_b`,
+              product_id: "",
+            },
+          },
+        ],
+        generationId: links.generationId,
+      },
+      result.linksDatasetId,
+    );
+    const after = await resolve();
+    expect(after.get(projectProduct(target.projects.web))?.sort()).toEqual(
+      [
+        `${target.connections.vercel}:prj_a`,
+        `${target.connections.railway}:rw-1`,
+      ].sort(),
+    );
+    expect(after.has(projectProduct(target.projects.api))).toBe(false);
   });
 
   it("refuses connections of other connectors and links to unknown projects", async () => {

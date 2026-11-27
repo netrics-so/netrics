@@ -43,6 +43,7 @@ import {
 } from "../data/service.js";
 import {
   DEVELOPER_AUDIENCE_METRICS,
+  DEVELOPER_DEFAULT_LINKS_MAX,
   developerProjectSlides,
   developerSourceDatasets,
   developerTemplateCopy,
@@ -319,7 +320,8 @@ const NO_DATA = new Set([
 ]);
 
 /** A workspace project's value in the tables, filters and slide scopes. */
-export const projectProduct = (projectId: string) => "product:" + projectId;
+const PRODUCT_PREFIX = "product:";
+export const projectProduct = (projectId: string) => PRODUCT_PREFIX + projectId;
 
 type TableRow = Record<string, unknown>;
 
@@ -411,12 +413,21 @@ async function projectResources(
   };
 }
 
-/** The workspace's default links of the install's non-store sources. */
+/**
+ * The workspace's default links of the install's non-store sources, and
+ * the current names of the projects they and the links table (`links`,
+ * the install's rows) link to, with the projects the table links each
+ * connection's resources to (#913): a workspace rename reaches every
+ * project the dashboard names. A connection with more default links than
+ * one lookup holds (DEVELOPER_DEFAULT_LINKS_MAX) is refused with 413
+ * `developer_default_links_limit` before anything is built.
+ */
 export async function developerDefaults(
   tx: Transaction,
   workspaceId: string,
   connections: readonly Pick<DeveloperSource, "id" | "connectorId">[],
   policy: DataPolicy,
+  links: readonly TableRow[] = [],
 ): Promise<DeveloperDefaults> {
   const { projects, resources } = await projectResources(
     tx,
@@ -427,12 +438,84 @@ export async function developerDefaults(
     policy,
   );
   const defaults: DeveloperDefaults = { links: {}, names: {} };
+  const counts = new Map<string, number>();
   for (const resource of resources) {
+    const count = (counts.get(resource.connectionId) ?? 0) + 1;
+    if (count > DEVELOPER_DEFAULT_LINKS_MAX)
+      reject("developer_default_links_limit", 413);
+    counts.set(resource.connectionId, count);
     const product = projectProduct(resource.projectId);
     defaults.links[`${resource.connectionId}:${resource.resourceId}`] = product;
     defaults.names[product] = projects.get(resource.projectId)!;
   }
+  // As the preparations join the table: an app key's first row decides.
+  const installed = new Set(connections.map((connection) => connection.id));
+  const linked = new Map<string, Set<string>>(),
+    seen = new Set<string>();
+  for (const row of links) {
+    const key = typeof row.app_key === "string" ? row.app_key : "";
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    const connectionId = key.slice(0, key.indexOf(":")),
+      product = typeof row.product_id === "string" ? row.product_id : "";
+    const name = product.startsWith(PRODUCT_PREFIX)
+      ? projects.get(product.slice(PRODUCT_PREFIX.length))
+      : undefined;
+    if (!installed.has(connectionId) || name === undefined) continue;
+    defaults.names[product] = name;
+    linked.set(
+      connectionId,
+      (linked.get(connectionId) ?? new Set()).add(product),
+    );
+  }
+  if (linked.size)
+    defaults.linked = Object.fromEntries(
+      [...linked]
+        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+        .map(([connectionId, products]) => [
+          connectionId,
+          [...products].sort(),
+        ]),
+    );
   return defaults;
+}
+
+/**
+ * The names an earlier install (version 1) seeded into its projects table
+ * that a row still says, read when it is updated (#913): a row equal to its
+ * project's current workspace name. A row that differs is the customer's
+ * or a rename's since; it is kept as an override, so no edit is lost.
+ */
+async function derivedSeededNames(
+  tx: Transaction,
+  workspaceId: string,
+  projectRows: readonly TableRow[],
+): Promise<Record<string, string>> {
+  const current = new Map(
+    (
+      await tx
+        .select({ id: schema.projects.id, name: schema.projects.name })
+        .from(schema.projects)
+        .where(
+          and(
+            eq(schema.projects.workspaceId, workspaceId),
+            isNull(schema.projects.archivedAt),
+          ),
+        )
+    ).map((project) => [projectProduct(project.id), project.name]),
+  );
+  const seeded = new Map<string, string>();
+  for (const row of projectRows)
+    if (
+      typeof row.product_id === "string" &&
+      typeof row.product_name === "string" &&
+      !seeded.has(row.product_id) &&
+      current.get(row.product_id) === row.product_name
+    )
+      seeded.set(row.product_id, row.product_name);
+  return Object.fromEntries(
+    [...seeded].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+  );
 }
 
 /**
@@ -465,49 +548,114 @@ async function storeDefaultLinks(
  * no slide. The data policy's statement timeout the read sets is restored
  * after it.
  */
-export async function readDeveloperProjects(
+export function readDeveloperProjects(input: {
+  connections: Pick<DeveloperSource, "id" | "connectorId">[];
+  defaults: DeveloperDefaults;
+  tables: { projects: TableRow[]; links: TableRow[] };
+  /** The names the projects table was seeded with (version 2, #913). */
+  seeded?: Record<string, string>;
+}): DeveloperProjectIdentity[] {
+  return developerProjectIdentities(
+    input.tables,
+    input.connections,
+    input.defaults,
+    input.seeded,
+  );
+}
+
+/**
+ * An install's projects and links tables, read in tx under the data
+ * policy (whose statement timeout the read sets is restored after it); a
+ * table that is gone or not there yet has no rows.
+ */
+export async function readDeveloperTables(
+  tx: Transaction,
+  workspaceId: string,
+  result: { projectsDatasetId: string; linksDatasetId: string },
+  now: Date,
+  policy: DataPolicy,
+): Promise<{ projects: TableRow[]; links: TableRow[] }> {
+  const [timeout] = await tx.execute(
+    sql`select current_setting('statement_timeout') as value`,
+  );
+  await tx.execute(
+    sql`select set_config('statement_timeout', ${String(policy.queryTimeoutMs ?? 0)}, true)`,
+  );
+  const loader = createDataLoader(tx, workspaceId, now, {
+    policy,
+    allowPendingResults: true,
+  });
+  const rows = async (datasetId: string) => {
+    try {
+      return (await loader.load(datasetId)).rows;
+    } catch (error) {
+      rethrowWorkspaceGone(error);
+      if (error instanceof DataServiceError && NO_DATA.has(error.code))
+        return [];
+      throw error;
+    }
+  };
+  const tables = {
+    projects: await rows(result.projectsDatasetId),
+    links: await rows(result.linksDatasetId),
+  };
+  await tx.execute(
+    sql`select set_config('statement_timeout', ${String(timeout!.value)}, true)`,
+  );
+  return tables;
+}
+
+/**
+ * What a Developer Portfolio update reads fresh for a plan (#876, #913):
+ * the install's tables, the workspace's defaults over them, the names the
+ * projects table was seeded with (stored from version 2; derived for an
+ * earlier install) and the projects its slides are built from.
+ */
+export async function readDeveloperItems(
   tx: Transaction,
   workspaceId: string,
   input: {
     result: { projectsDatasetId: string; linksDatasetId: string };
     connections: Pick<DeveloperSource, "id" | "connectorId">[];
-    defaults: DeveloperDefaults;
-    tables?: { projects: TableRow[]; links: TableRow[] };
+    seededNames?: Record<string, string>;
   },
   now: Date,
   policy: DataPolicy,
-): Promise<DeveloperProjectIdentity[]> {
-  let tables = input.tables;
-  if (!tables) {
-    const [timeout] = await tx.execute(
-      sql`select current_setting('statement_timeout') as value`,
-    );
-    await tx.execute(
-      sql`select set_config('statement_timeout', ${String(policy.queryTimeoutMs ?? 0)}, true)`,
-    );
-    const loader = createDataLoader(tx, workspaceId, now, {
-      policy,
-      allowPendingResults: true,
-    });
-    const rows = async (datasetId: string) => {
-      try {
-        return (await loader.load(datasetId)).rows;
-      } catch (error) {
-        rethrowWorkspaceGone(error);
-        if (error instanceof DataServiceError && NO_DATA.has(error.code))
-          return [];
-        throw error;
-      }
-    };
-    tables = {
-      projects: await rows(input.result.projectsDatasetId),
-      links: await rows(input.result.linksDatasetId),
-    };
-    await tx.execute(
-      sql`select set_config('statement_timeout', ${String(timeout!.value)}, true)`,
-    );
-  }
-  return developerProjectIdentities(tables, input.connections, input.defaults);
+  /** Whether the template builds from seeded names (version 2). */
+  seeds: boolean,
+): Promise<{
+  defaults: DeveloperDefaults;
+  seededNames?: Record<string, string>;
+  apps: DeveloperProjectIdentity[];
+}> {
+  const tables = await readDeveloperTables(
+    tx,
+    workspaceId,
+    input.result,
+    now,
+    policy,
+  );
+  const defaults = await developerDefaults(
+    tx,
+    workspaceId,
+    input.connections,
+    policy,
+    tables.links,
+  );
+  const seededNames = !seeds
+    ? undefined
+    : (input.seededNames ??
+      (await derivedSeededNames(tx, workspaceId, tables.projects)));
+  return {
+    defaults,
+    ...(seededNames ? { seededNames } : {}),
+    apps: readDeveloperProjects({
+      connections: input.connections,
+      defaults,
+      tables,
+      ...(seededNames ? { seeded: seededNames } : {}),
+    }),
+  };
 }
 
 /**
@@ -519,6 +667,12 @@ export function developerProjectIdentities(
   tables: { projects: TableRow[]; links: TableRow[] },
   connections: Pick<DeveloperSource, "id" | "connectorId">[],
   defaults: DeveloperDefaults = { links: {}, names: {} },
+  /**
+   * The names the projects table was seeded with (#913): a row still
+   * saying its seeded name is no override, so the project's current name
+   * (the defaults') wins, as the preparations name it (projectNameOf).
+   */
+  seeded?: Record<string, string>,
 ): DeveloperProjectIdentity[] {
   const connectors = new Map(
     connections.map((connection) => [connection.id, connection.connectorId]),
@@ -548,7 +702,11 @@ export function developerProjectIdentities(
     if (
       typeof row.product_id === "string" &&
       typeof row.product_name === "string" &&
-      row.product_name.trim()
+      row.product_name.trim() &&
+      !(
+        seeded?.[row.product_id] === row.product_name &&
+        defaults.names[row.product_id] !== undefined
+      )
     )
       names.set(row.product_id, row.product_name);
   const projects: DeveloperProjectIdentity[] = [...widgets].map(
@@ -671,22 +829,26 @@ export function createDeveloperTemplateService(deps: {
               ),
             )
             .orderBy(asc(schema.projects.name), asc(schema.projects.id));
+          // Each connection's resources in one pass over the rows (in
+          // their order, each resource once), not one pass per connection.
+          const byConnection = new Map<
+            string,
+            Map<string, { id: string; name: string }>
+          >();
+          for (const resource of resources) {
+            let own = byConnection.get(resource.connection_id);
+            if (!own)
+              byConnection.set(resource.connection_id, (own = new Map()));
+            own.set(resource.resource_id, {
+              id: resource.resource_id,
+              name: resource.name,
+            });
+          }
           return {
             connections: connections.map((connection) => ({
               ...connection,
               connectorId: connection.connectorId as DeveloperTemplateConnector,
-              resources: [
-                ...new Map(
-                  resources
-                    .filter(
-                      (resource) => resource.connection_id === connection.id,
-                    )
-                    .map((resource) => [
-                      resource.resource_id,
-                      { id: resource.resource_id, name: resource.name },
-                    ]),
-                ).values(),
-              ],
+              resources: [...(byConnection.get(connection.id)?.values() ?? [])],
             })),
             projects,
           };
@@ -790,12 +952,6 @@ export function createDeveloperTemplateService(deps: {
                     policy,
                   )
                 ).filter((row) => !linked.has(String(row.app_key)));
-                const workspaceDefaults = await developerDefaults(
-                  tx,
-                  actor.workspaceId,
-                  sources,
-                  policy,
-                );
                 // One batch service for the whole install (#668).
                 const data = createDataService(tx, now, defaults, undefined, {
                     batch: true,
@@ -828,6 +984,23 @@ export function createDeveloperTemplateService(deps: {
                     String(a.app_key).localeCompare(String(b.app_key)),
                   )
                   .map((values) => ({ values }));
+                // The defaults, and the current names of the projects
+                // they and the table's rows link to (#913).
+                const workspaceDefaults = await developerDefaults(
+                  tx,
+                  actor.workspaceId,
+                  sources,
+                  policy,
+                  linkRows.map((row) => row.values),
+                );
+                // What the projects table says until the customer edits
+                // it: a row still saying it is no override (#913).
+                const seededNames = Object.fromEntries(
+                  projectRows.map((row) => [
+                    row.values.product_id,
+                    row.values.product_name,
+                  ]),
+                );
                 const projectsTable = await data.saveManual(actor, {
                   definition: sourceDatasetSchema.parse({
                     key: "developer_projects_" + input.requestId,
@@ -894,24 +1067,16 @@ export function createDeveloperTemplateService(deps: {
                   groups: null,
                   // As just written: not read back.
                   defaults: workspaceDefaults,
-                  apps: await readDeveloperProjects(
-                    tx,
-                    actor.workspaceId,
-                    {
-                      result: {
-                        projectsDatasetId: projectsTable.datasetId,
-                        linksDatasetId: linksTable.datasetId,
-                      },
-                      connections: sources,
-                      defaults: workspaceDefaults,
-                      tables: {
-                        projects: projectRows.map((row) => row.values),
-                        links: linkRows.map((row) => row.values),
-                      },
+                  ...(template.version >= 2 ? { seededNames } : {}),
+                  apps: readDeveloperProjects({
+                    connections: sources,
+                    defaults: workspaceDefaults,
+                    tables: {
+                      projects: projectRows.map((row) => row.values),
+                      links: linkRows.map((row) => row.values),
                     },
-                    now(),
-                    policy,
-                  ),
+                    ...(template.version >= 2 ? { seeded: seededNames } : {}),
+                  }),
                 };
                 const ids = {
                   "dataset:mapping": linksTable.datasetId,

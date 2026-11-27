@@ -12,8 +12,7 @@ import {
   type DeveloperTemplateInputs,
 } from "./developer-template.js";
 import {
-  readDeveloperProjects,
-  developerDefaults,
+  readDeveloperItems,
   withDeveloperSourceDatasets,
 } from "./developer-template-service.js";
 import type { StoreTemplateDefinition } from "./store-template.js";
@@ -35,6 +34,8 @@ export function developerTemplateFamily(deps: {
   registry: ConnectorRegistry;
   now?: () => Date;
   policy?: DataPolicy;
+  /** The template plans build (the newest unless given). */
+  template?: StoreTemplateDefinition;
 }): TemplateFamily {
   const policy = deps.policy ?? DEFAULT_DATA_POLICY,
     now = deps.now ?? (() => new Date());
@@ -55,7 +56,8 @@ export function developerTemplateFamily(deps: {
         ),
       ),
     // The workspace's defaults and the projects as they are now, under the
-    // workspace's effective data policy (as the install reads them).
+    // workspace's effective data policy (as the install reads them), and
+    // from version 2 the names the projects table was seeded with (#913).
     readItems: async (tx, workspaceId, install, raw) => {
       const inputs = asDeveloperInputs(raw);
       const { policy: effective } = await resolveDataPolicy(
@@ -63,24 +65,25 @@ export function developerTemplateFamily(deps: {
         workspaceId,
         policy,
       );
-      const defaults = await developerDefaults(
-        tx,
-        workspaceId,
-        inputs.connections,
-        effective,
-      );
-      const apps = await readDeveloperProjects(
+      const seeds = (deps.template ?? developerTemplate).version >= 2;
+      const { defaults, seededNames, apps } = await readDeveloperItems(
         tx,
         workspaceId,
         {
           result: developerTemplateResultSchema.parse(install.result),
           connections: inputs.connections,
-          defaults,
+          ...(inputs.seededNames ? { seededNames: inputs.seededNames } : {}),
         },
         now(),
         effective,
+        seeds,
       );
-      return asStoreInputs({ ...inputs, defaults, apps });
+      return asStoreInputs({
+        ...inputs,
+        defaults,
+        ...(seeds ? { seededNames } : {}),
+        apps,
+      });
     },
   };
 }
