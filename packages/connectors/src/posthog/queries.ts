@@ -44,7 +44,9 @@ export const projectsSchema = pageSchema(
 
 const seriesSchema = z
   .object({
-    data: z.array(z.number().nullable()).optional(),
+    // A single-number formula insight answers `data: null` with its
+    // `aggregated_value` (PostHog's trends_query_runner, #888 item 4).
+    data: z.array(z.number().nullable()).nullable().optional(),
     days: z.array(z.string()).optional(),
     label: z.string().nullable().optional(),
     count: z.number().nullable().optional(),

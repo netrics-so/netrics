@@ -393,3 +393,77 @@ describe("a project the key may not query (#884 review 2)", () => {
     }
   });
 });
+
+describe("the project picker of a key limited to projects (#888 review)", () => {
+  it("checks the stored selection, not the projects it leaves out", async () => {
+    const created = await call(
+      "POST",
+      `/v1/workspaces/${workspaceId}/connections`,
+      {
+        connectorId: "posthog",
+        name: "Named projects",
+        config: { host: "posthog.fourth.example", projects: "1000, 1001" },
+        credentials: { token: KEY },
+      },
+    );
+    expect(created.statusCode, created.body).toBe(200);
+    const id = connectionResponseSchema.parse(created.json()).connection.id;
+    // Only 1001 is synced; the key then loses 1000.
+    await owner`
+      update connections
+      set config = config || ${owner.json({ resourceSelection: ["1001"] })}
+      where id = ${id}`;
+    refused.add("1000");
+    try {
+      const before = seen.length;
+      const preview = await call(
+        "POST",
+        `/v1/workspaces/${workspaceId}/connections/${id}/preview`,
+        { config: { host: "posthog.fourth.example", projects: "1000, 1001" } },
+      );
+      expect(preview.statusCode, preview.body).toBe(200);
+      const parsed = storedConnectionPreviewResponseSchema.parse(
+        preview.json(),
+      );
+      expect(parsed.check).toEqual({ ok: true });
+      expect(parsed.selection).toEqual(["1001"]);
+      expect(
+        seen
+          .slice(before)
+          .some((request) => request.host === "posthog.fourth.example"),
+      ).toBe(true);
+    } finally {
+      refused.clear();
+    }
+  });
+});
+
+describe("the picker names projects as a sync does (#888 review)", () => {
+  it("discovers a project under the spelling its stored selection uses", async () => {
+    const created = await call(
+      "POST",
+      `/v1/workspaces/${workspaceId}/connections`,
+      {
+        connectorId: "posthog",
+        name: "Two spellings",
+        config: { host: "posthog.fifth.example", projects: "01000, 1000" },
+        credentials: { token: KEY },
+      },
+    );
+    expect(created.statusCode, created.body).toBe(200);
+    const id = connectionResponseSchema.parse(created.json()).connection.id;
+    await owner`
+      update connections
+      set config = config || ${owner.json({ resourceSelection: ["1000"] })}
+      where id = ${id}`;
+    const preview = await call(
+      "POST",
+      `/v1/workspaces/${workspaceId}/connections/${id}/preview`,
+      { config: { host: "posthog.fifth.example", projects: "01000, 1000" } },
+    );
+    expect(preview.statusCode, preview.body).toBe(200);
+    const parsed = storedConnectionPreviewResponseSchema.parse(preview.json());
+    expect(parsed.check).toEqual({ ok: true });
+    expect(parsed.resources.map((resource) => resource.id)).toEqual(["1000"]);
+  });
+});

@@ -51,7 +51,9 @@ describe.each(FIRST_PARTY.map((manifest) => [manifest.id, manifest] as const))(
   (_id, manifest) => {
     it("validate against the SDK version required by their capabilities", () => {
       expect(manifest.sdkVersion).toBe(
-        manifest.configuredHosts?.some((entry) => entry.includes("[]"))
+        manifest.configuredHosts?.some((entry) => entry.includes("[]")) ||
+          // Per-request fetch timeouts (#888, #901 item 1).
+          manifest.id === "posthog"
           ? "^0.2.21"
           : manifest.configuredHosts?.length
             ? "^0.2.20"

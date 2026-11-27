@@ -41,6 +41,8 @@ const PROJECTS = [
 
 /** Requests the stand-in for Vercel answered. */
 let providerRequests = 0;
+/** Projects the token no longer sees. */
+const lost = new Set<string>();
 
 /** Vercel's project list for the token; anything else is refused. */
 const provider: ConnectorRuntime = {
@@ -64,8 +66,9 @@ const provider: ConnectorRuntime = {
       return answer(403, {
         error: { code: "forbidden", message: "Not authorized" },
       });
+    const visible = PROJECTS.filter((project) => !lost.has(project.id));
     return answer(200, {
-      projects: PROJECTS.map((project) => ({
+      projects: visible.map((project) => ({
         id: project.id,
         name: project.name,
         accountId: "team_fixture",
@@ -73,7 +76,7 @@ const provider: ConnectorRuntime = {
           ? { enabledAt: 1_700_000_000_000 }
           : undefined,
       })),
-      pagination: { count: PROJECTS.length, next: null },
+      pagination: { count: visible.length, next: null },
     });
   },
 } as ConnectorRuntime;
@@ -600,5 +603,31 @@ describe("the synced projects are shown, and at least one is required (#854)", (
     expect((await detail()).resourceSelection).toEqual([
       { id: "prj_alpha", name: "alpha-site" },
     ]);
+  });
+});
+
+describe("a token that lost its selected project (#888 review)", () => {
+  it("still offers the projects it reads in the picker", async () => {
+    await owner`
+      update connections
+      set config = config || ${owner.json({ resourceSelection: ["prj_alpha"] })}
+      where id = ${connectionId}`;
+    lost.add("prj_alpha");
+    try {
+      const response = await call("POST", `${connectionUrl()}/preview`, {
+        config: {},
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      const preview = storedConnectionPreviewResponseSchema.parse(
+        response.json(),
+      );
+      expect(preview.check.ok).toBe(true);
+      expect(preview.selection).toEqual(["prj_alpha"]);
+      expect(preview.resources.map((resource) => resource.id)).toContain(
+        "prj_beta",
+      );
+    } finally {
+      lost.clear();
+    }
   });
 });
