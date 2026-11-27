@@ -158,6 +158,8 @@ export const customApiDe: Catalog<typeof customApiEn> = {
         "Füge einen Wert mit '{'Klammern'}' ein: Verbindungswerte, Start und Ende des Zeitraums oder den Seitenwert.",
       placeholderBodyHelp:
         "Füge einen Wert mit '{'Klammern'}' in einen Textwert des Bodys ein: Verbindungswerte, Start und Ende des Zeitraums. Seitenwerte kommen über den Schritt Seiten in den Body.",
+      placeholderPostPathHelp:
+        "Füge einen Wert mit '{'Klammern'}' in den Pfad ein: Verbindungswerte, Start und Ende des Zeitraums. Eine POST-Anfrage bleibt auf ihrem Endpunkt: Seitenwerte kommen in die URL-Parameter oder über den Schritt Seiten in den Body.",
       insert: "Wert einfügen",
       insertInto: "Einfügen in",
       targets: {
@@ -369,6 +371,15 @@ export const customApiDe: Catalog<typeof customApiEn> = {
         laterOffset: "{path}: der nächste Offset, jeweils um {limit} höher",
         laterLimit: "{path}: {limit} bei jeder Anfrage",
         laterCursor: "Cursor bei {path}: aus der vorigen Antwort",
+        firstUrl: "Seitenwerte in der URL der ersten Anfrage:",
+        urlOmitted: "{param}: weggelassen, es gibt noch keinen Cursor",
+        laterUrlNumber:
+          "URL-Parameter {param}: die nächste Seitennummer, jeweils um 1 höher",
+        laterUrlFixed: "URL-Parameter {param}: {value} bei jeder Anfrage",
+        laterUrlOffset:
+          "URL-Parameter {param}: der nächste Offset, jeweils um {limit} höher",
+        laterUrlCursor:
+          "URL-Parameter {param}: der Cursor aus der vorigen Antwort",
       },
       title: "Test",
       ok: "Die Anfrage hat funktioniert.",

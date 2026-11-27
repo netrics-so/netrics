@@ -405,6 +405,12 @@ interface RequestScope {
   environments: readonly { id: string; baseUrl: string }[];
   auth: CustomApiAuth;
   variables: readonly { id: string; secret: boolean }[];
+  /**
+   * The non-secret connection values a new definition's first connection
+   * takes from the draft (#887); absent for a saved definition, whose
+   * version saves no values and creates no connection.
+   */
+  values?: Readonly<Record<string, string>>;
 }
 
 type RequestStream = Pick<
@@ -420,12 +426,20 @@ function scopeOfDefinition(definition: CustomApiDefinition): RequestScope {
   };
 }
 
-function scopeOf(state: BuilderState): RequestScope {
-  return {
+function scopeOf(
+  state: BuilderState,
+  original: CustomApiDefinition | undefined,
+): RequestScope {
+  const scope: RequestScope = {
     environments: environmentsOf(state),
     auth: state.auth,
     variables: variablesOf(state),
   };
+  if (original) return scope;
+  const values: Record<string, string> = {};
+  for (const v of state.variables)
+    if (v.id && !v.secret) values[v.id] = v.value;
+  return { ...scope, values };
 }
 
 /**
@@ -434,8 +448,9 @@ function scopeOf(state: BuilderState): RequestScope {
  * environment's base URL, the method, path, query parameters, header
  * templates, body template, pagination and window, the login's settings
  * (type and placement; the state never holds a credential) and the
- * connection values the request uses. Null for any other request: GET or
- * GraphQL needs no confirmation.
+ * connection variables the request uses, with the non-secret values the
+ * first connection of a new definition takes (#887). Null for any other
+ * request: GET or GraphQL needs no confirmation.
  */
 export function readOnlyFingerprint(
   scope: RequestScope,
@@ -457,7 +472,11 @@ export function readOnlyFingerprint(
     auth: scope.auth,
     variables: scope.variables
       .filter((v) => used.has(v.id))
-      .map((v) => [v.id, v.secret]),
+      .map((v) =>
+        scope.values && !v.secret
+          ? [v.id, v.secret, scope.values[v.id] ?? ""]
+          : [v.id, v.secret],
+      ),
     method: request.method,
     path: request.path,
     query: request.query,
@@ -535,7 +554,8 @@ function confirmed(
 
 /**
  * Drops every read-only confirmation whose request changed (ADR 0030 §2):
- * a base URL, the login settings, a connection value the request uses, or
+ * a base URL, the login settings, a connection variable the request uses
+ * (and, for a new definition, its value), or
  * the stream's method, path, query, headers, body, pagination or window.
  * Applied after every edit, so a confirmation never comes back by
  * changing a setting back.
@@ -546,7 +566,7 @@ export function withReadOnlyChecked(
 ): BuilderState {
   const keys = Object.keys(state.readOnly);
   if (keys.length === 0) return state;
-  const scope = scopeOf(state);
+  const scope = scopeOf(state, original);
   const streams = new Map(streamsOf(state, original).map((s) => [s.key, s]));
   const next: Record<string, string> = {};
   for (const key of keys) {
@@ -571,7 +591,7 @@ export function confirmReadOnly(
   if (!on) return { ...state, readOnly: rest };
   const stream = streamsOf(state, original).find((s) => s.key === streamKey);
   const fingerprint = stream
-    ? readOnlyFingerprint(scopeOf(state), stream)
+    ? readOnlyFingerprint(scopeOf(state, original), stream)
     : null;
   return fingerprint === null
     ? { ...state, readOnly: rest }
@@ -589,7 +609,7 @@ export function readOnlyRequests(
   state: BuilderState,
   original?: CustomApiDefinition,
 ): ReadOnlyRequest[] {
-  const scope = scopeOf(state);
+  const scope = scopeOf(state, original);
   return streamsOf(state, original)
     .filter((s) => readOnlyFingerprint(scope, s) !== null)
     .map((s) => {
@@ -664,7 +684,7 @@ export function definitionOf(
   state: BuilderState,
   original?: CustomApiDefinition,
 ): CustomApiDefinition {
-  const scope = scopeOf(state);
+  const scope = scopeOf(state, original);
   return {
     schemaVersion: CUSTOM_API_SCHEMA_VERSION,
     name: state.name.trim(),
@@ -931,6 +951,64 @@ export function bodyPageWrites(
       first: pagination.firstPage === "omit" ? "omit" : "null",
     });
   return writes;
+}
+
+/** A page value the paging sets as a URL parameter (#887). */
+export interface UrlPageParam {
+  value: "number" | "size" | "offset" | "limit" | "cursor";
+  param: string;
+  /** What the first request sends; null: the parameter is left out. */
+  first: string | null;
+  /** The value is the same on every request. */
+  fixed: boolean;
+}
+
+/**
+ * The URL parameters a pagination sets, with what the first request sends,
+ * as the connector's paginator sets them: page numbers count up from the
+ * start, offsets from 0, the cursor is left out until a response gives one.
+ */
+export function urlPageParams(
+  pagination: CustomApiPagination | undefined,
+): UrlPageParam[] {
+  const params: UrlPageParam[] = [];
+  if (pagination?.type === "page_number") {
+    params.push({
+      value: "number",
+      param: pagination.param,
+      first: String(pagination.start),
+      fixed: false,
+    });
+    if (pagination.sizeParam !== undefined && pagination.size !== undefined)
+      params.push({
+        value: "size",
+        param: pagination.sizeParam,
+        first: String(pagination.size),
+        fixed: true,
+      });
+  } else if (pagination?.type === "offset") {
+    if (pagination.offsetParam !== undefined)
+      params.push({
+        value: "offset",
+        param: pagination.offsetParam,
+        first: "0",
+        fixed: false,
+      });
+    if (pagination.limitParam !== undefined)
+      params.push({
+        value: "limit",
+        param: pagination.limitParam,
+        first: String(pagination.limit),
+        fixed: true,
+      });
+  } else if (pagination?.type === "cursor" && pagination.param !== undefined)
+    params.push({
+      value: "cursor",
+      param: pagination.param,
+      first: null,
+      fixed: false,
+    });
+  return params;
 }
 
 /**
@@ -1563,9 +1641,13 @@ function requestIssues(state: BuilderState): string[] {
     problems.variables === "limits"
   )
     issues.add("issues.bodyLimits");
+  // A window placeholder without a window is the Paging step's (#887):
+  // pagingIssues reports it, so the step that turns the window on stays
+  // reachable; the test and the save still refuse it.
   if (state.stream.method === "POST")
     for (const issue of requestCheckIssues(state)) {
       const [first, second] = issue.path;
+      if (issue.code === "placeholder_window_without_window") continue;
       if (
         first === "auth" ||
         (first === "request" &&

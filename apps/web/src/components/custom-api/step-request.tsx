@@ -48,6 +48,31 @@ export function insertionTarget(target: Target, state: BuilderState): Target {
   }
 }
 
+/**
+ * The placeholders "Insert value" offers for where it inserts (#887): a
+ * body takes no page values (ADR 0030 §1), nor does a POST path, which
+ * stays on its endpoint between pages; the URL parameters and headers
+ * take every one.
+ */
+export function placeholdersFor(target: Target, state: BuilderState): string[] {
+  const shown = insertionTarget(target, state);
+  return shown.kind === "json" ||
+    shown.kind === "variables" ||
+    (shown.kind === "path" && state.stream.method === "POST")
+    ? bodyPlaceholders(state)
+    : availablePlaceholders(state);
+}
+
+/** The help under "Insert value", for where it inserts. */
+function placeholderHelpKey(target: Target, state: BuilderState) {
+  const shown = insertionTarget(target, state);
+  if (shown.kind === "json" || shown.kind === "variables")
+    return "placeholderBodyHelp";
+  return shown.kind === "path" && state.stream.method === "POST"
+    ? "placeholderPostPathHelp"
+    : "placeholderHelp";
+}
+
 function insertAt(text: string, value: string, start: number, end: number) {
   return text.slice(0, start) + value + text.slice(end);
 }
@@ -79,14 +104,9 @@ export function StepRequest({
     start: state.stream.path.length,
     end: state.stream.path.length,
   });
-  // The body takes no page values (ADR 0030 §1): its list leaves them out.
-  const [inBody, setInBody] = useState(false);
-  const shown = insertionTarget(cursor.current.target, state);
-  const intoBody =
-    inBody && (shown.kind === "json" || shown.kind === "variables");
-  const placeholders = intoBody
-    ? bodyPlaceholders(state)
-    : availablePlaceholders(state);
+  // The list follows the insertion target (the ref doesn't re-render).
+  const [focused, setFocused] = useState<Target>(cursor.current.target);
+  const placeholders = placeholdersFor(focused, state);
   const track =
     (target: Target) =>
     (event: { currentTarget: HTMLInputElement | HTMLTextAreaElement }) => {
@@ -96,8 +116,13 @@ export function StepRequest({
         start: input.selectionStart ?? input.value.length,
         end: input.selectionEnd ?? input.value.length,
       };
-      const body = target.kind === "json" || target.kind === "variables";
-      if (body !== inBody) setInBody(body);
+      setFocused((current) =>
+        current.kind === target.kind &&
+        ("index" in current ? current.index : -1) ===
+          ("index" in target ? target.index : -1)
+          ? current
+          : target,
+      );
     };
   const setRequest = (
     patch: Partial<Pick<BuilderState["stream"], "path" | "query" | "headers">>,
@@ -115,7 +140,7 @@ export function StepRequest({
             start: state.stream.path.length,
             end: state.stream.path.length,
           };
-    if (target !== cursor.current.target) setInBody(false);
+    if (target !== cursor.current.target) setFocused(target);
     update((current) => {
       if (target.kind === "json" || target.kind === "variables") {
         const typed = current.stream.body[target.kind];
@@ -254,9 +279,7 @@ export function StepRequest({
             <option key={name} value={name}>{`{{${name}}}`}</option>
           ))}
         </select>
-        <p className="help">
-          {t(intoBody ? "placeholderBodyHelp" : "placeholderHelp")}
-        </p>
+        <p className="help">{t(placeholderHelpKey(focused, state))}</p>
       </div>
 
       <fieldset className="field">

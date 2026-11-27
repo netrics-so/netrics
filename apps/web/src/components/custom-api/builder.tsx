@@ -36,7 +36,7 @@ import {
   afterSecretsSent,
   builderErrorMessage,
   defaultClient,
-  draftReady,
+  testReady,
   ensureDraft,
   moveToStep,
   readOnlyChallenge,
@@ -108,6 +108,41 @@ export function keptTestConfirmation<
 >(confirmed: T | null, state: BuilderState): T | null {
   return confirmed && confirmed.fingerprint === draftTestFingerprint(state)
     ? confirmed
+    : null;
+}
+
+/**
+ * A finished test applied to the state as it is now (#887). Without an
+ * edit since the test started, the test's state; otherwise the newer
+ * edits stay and only what the test learned is taken (the stored secret
+ * names and the result), so neither an edit nor an invalidated
+ * confirmation is overwritten by the snapshot the test was sent from.
+ */
+export function stateAfterTest(
+  current: BuilderState,
+  sent: BuilderState,
+  result: BuilderState,
+  original?: CustomApiDefinitionResponse["definition"]["document"],
+): BuilderState {
+  if (current === sent) return result;
+  return withReadOnlyChecked(
+    { ...current, secretsSet: result.secretsSet, lastTest: result.lastTest },
+    original,
+  );
+}
+
+/**
+ * The test confirmation to remember after a confirmed test was sent: only
+ * while nothing was edited during the test, so a confirmation dropped by
+ * an edit (even one undone since) never comes back (#887).
+ */
+export function confirmationAfterTest(
+  hash: string | undefined,
+  current: BuilderState,
+  sent: BuilderState,
+): Pick<PendingChallenge, "hash" | "fingerprint"> | null {
+  return hash && current === sent
+    ? { hash, fingerprint: draftTestFingerprint(sent) }
     : null;
 }
 
@@ -211,6 +246,11 @@ export function CustomApiBuilder({
   // Secrets typed but not saved yet: only here, never stored.
   const [secretInputs, setSecretInputs] = useState<Record<string, string>>({});
   const done = useRef(false);
+  /** The state as last rendered: a finished test checks it for newer edits. */
+  const latest = useRef(state);
+  useEffect(() => {
+    latest.current = state;
+  }, [state]);
   /** The page is leaving on purpose (the OAuth redirect): no leave prompt. */
   const leaving = useRef(false);
   const editing = definition !== undefined;
@@ -411,7 +451,7 @@ export function CustomApiBuilder({
     setError(null);
     setChallenge(null);
     setState(from);
-    if (!draftReady(from)) {
+    if (!testReady(from)) {
       setTestError(t("issues.definitionInvalid"));
       return;
     }
@@ -428,12 +468,16 @@ export function CustomApiBuilder({
         secretInputs,
         readOnlyConfirmation,
       );
-      setState(result.state);
-      if (readOnlyConfirmation)
-        setConfirmedTest({
-          hash: readOnlyConfirmation,
-          fingerprint: draftTestFingerprint(from),
-        });
+      // Edits made while the test ran stay (#887).
+      const remembered = confirmationAfterTest(
+        readOnlyConfirmation,
+        latest.current,
+        from,
+      );
+      setState((current) =>
+        stateAfterTest(current, from, result.state, definition?.document),
+      );
+      if (remembered) setConfirmedTest(remembered);
       const after = afterSecretsSent(result, secretsLost);
       if (after.clearInputs) setSecretInputs({});
       setSecretsLost(after.secretsLost);
@@ -446,7 +490,7 @@ export function CustomApiBuilder({
         setChallenge({ hash, pages, fingerprint: draftTestFingerprint(from) });
         return;
       }
-      setState(refused(cause, from));
+      setState((current) => refused(cause, current));
       setTestError(message(cause));
     } finally {
       setPending(null);

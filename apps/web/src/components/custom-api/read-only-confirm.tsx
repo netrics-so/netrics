@@ -10,6 +10,7 @@ import type {
 import {
   bodyPageWrites,
   firstPageBody,
+  urlPageParams,
   type ReadOnlyRequest,
 } from "@/lib/custom-api-builder";
 import { useT } from "@/lib/i18n/client";
@@ -19,8 +20,8 @@ type Request = CustomApiDraftDefinition["stream"]["request"];
 /**
  * The exact request a read-only confirmation is about (ADR 0030 §2): the
  * method and the address at each base URL, the query parameters and
- * header templates, the page values written into the body, and the body
- * template. Templates only: never a value or a secret.
+ * header templates, the page values set as URL parameters or written
+ * into the body (first and later requests), and the body template. Templates only: never a value or a secret.
  */
 export function RequestPreview({
   request,
@@ -42,6 +43,8 @@ export function RequestPreview({
       ? (firstPageBody(request.body, pagination) ?? request.body.value)
       : null;
   const limit = pagination?.type === "offset" ? pagination.limit : 0;
+  // Page values the paginator adds to the URL (#887): not in request.query.
+  const urlParams = urlPageParams(pagination);
   const query = Object.entries(request.query ?? {});
   const headers = Object.entries(request.headers ?? {});
   return (
@@ -78,6 +81,22 @@ export function RequestPreview({
           ))}
         </dl>
       ) : null}
+      {urlParams.length ? (
+        <dl>
+          <dt>{t("firstUrl")}</dt>
+          {urlParams.map(({ param, first }) => (
+            <dd key={param}>
+              {first === null ? (
+                t("urlOmitted", { param })
+              ) : (
+                <code>
+                  {param}={first}
+                </code>
+              )}
+            </dd>
+          ))}
+        </dl>
+      ) : null}
       {writes.length ? <p>{t("firstRequest")}</p> : null}
       <pre>
         <code>{JSON.stringify(body, null, 2)}</code>
@@ -91,9 +110,20 @@ export function RequestPreview({
             })}
           </p>
         ))}
-      {writes.length ? (
+      {writes.length || urlParams.length ? (
         <dl>
           <dt>{t("laterRequests")}</dt>
+          {urlParams.map(({ param, value, first }) => (
+            <dd key={`url-${param}`}>
+              {value === "cursor"
+                ? t("laterUrlCursor", { param })
+                : value === "offset"
+                  ? t("laterUrlOffset", { param, limit })
+                  : value === "number"
+                    ? t("laterUrlNumber", { param })
+                    : t("laterUrlFixed", { param, value: first ?? "" })}
+            </dd>
+          ))}
           {writes.map((write) => (
             <dd key={write.path}>
               {write.value === "cursor"
