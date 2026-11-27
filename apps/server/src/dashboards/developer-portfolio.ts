@@ -79,9 +79,41 @@ export interface DeveloperSource {
 export interface DeveloperDefaults {
   /** `<connectionId>:<resourceId>` → `product:<projectId>`. */
   links: Record<string, string>;
-  /** `product:<projectId>` → the project's name. */
+  /**
+   * `product:<projectId>` → the project's current name: the projects the
+   * defaults link to and, from version 2, those the links table links a
+   * resource to (#913).
+   */
   names: Record<string, string>;
+  /**
+   * The workspace projects the links table links each connection's
+   * resources to (`product:<projectId>`), whose current names its
+   * preparations carry from version 2 (#913).
+   */
+  linked?: Record<string, string[]>;
 }
+
+/** The template versions the builders build (developer-template.ts). */
+export type DeveloperTemplateVersion = 1 | 2;
+
+/**
+ * How a version builds (developer-template.ts): its number, and the
+ * project names the install seeded into its projects table (version 2,
+ * #913): a row still saying its seeded name is no override, so the
+ * project's current workspace name wins over it.
+ */
+export interface DeveloperBuild {
+  version: DeveloperTemplateVersion;
+  seeded?: Record<string, string>;
+}
+
+/**
+ * The most entries one default lookup (a JSON literal) holds: the
+ * expression engine's JSON limit is 10,000 nodes, the object and one per
+ * entry (#913). An install or update refuses a connection with more
+ * default links (`developer_default_links_limit`, 413).
+ */
+export const DEVELOPER_DEFAULT_LINKS_MAX = 9_999;
 
 /** The widgets a project's slide can show, in reading order. */
 export const DEVELOPER_PROJECT_WIDGETS = [
@@ -378,7 +410,47 @@ interface FamilySpec {
   columns: [string, string, DataExpression][];
 }
 
-function stateSpec(source: DeveloperSource, t: Copy): FamilySpec | null {
+/**
+ * When a Vercel project's production entered the state it reports
+ * (version 2, #913): a running build since it was created, "up" since the
+ * live deployment was ready, "failed" since the newest build ended (or was
+ * created); otherwise ("down") unknown. Version 1 showed the live
+ * deployment's ready time for every state, so a build in progress looked
+ * as old as the deployment it replaces.
+ */
+function vercelChangedAt(version: DeveloperTemplateVersion): DataExpression {
+  if (version === 1)
+    return call(
+      "coalesce",
+      field("live_ready_at"),
+      field("latest_ready_at"),
+      field("latest_created_at"),
+    );
+  const when = (
+    state: string,
+    then: DataExpression,
+    otherwise: DataExpression,
+  ) => call("if", call("eq", field("state"), text(state)), then, otherwise);
+  return when(
+    "building",
+    field("latest_created_at"),
+    when(
+      "up",
+      call("coalesce", field("live_ready_at"), field("live_created_at")),
+      when(
+        "failed",
+        call("coalesce", field("latest_ready_at"), field("latest_created_at")),
+        nullOf("timestamp"),
+      ),
+    ),
+  );
+}
+
+function stateSpec(
+  source: DeveloperSource,
+  t: Copy,
+  version: DeveloperTemplateVersion,
+): FamilySpec | null {
   const key = (expression: DataExpression) =>
     call("concat", text(source.id + ":"), expression);
   const common = (
@@ -424,12 +496,7 @@ function stateSpec(source: DeveloperSource, t: Copy): FamilySpec | null {
         columns: common(
           field("project_name"),
           field("project_id"),
-          call(
-            "coalesce",
-            field("live_ready_at"),
-            field("latest_ready_at"),
-            field("latest_created_at"),
-          ),
+          vercelChangedAt(version),
           field("rolled_back"),
         ),
       };
@@ -599,29 +666,73 @@ function costsSpec(source: DeveloperSource, t: Copy): FamilySpec | null {
 
 /**
  * The defaults of one source: its own resources' links and their
- * projects' names, so a source's preparation changes only when its own
- * defaults do.
+ * projects' names (from version 2 also the names of the projects the links
+ * table links its resources to, and their seeded names), so a source's
+ * preparation changes only when its own projects do.
  */
-function sourceDefaults(
-  source: DeveloperSource,
+export function sourceDefaults(
+  source: Pick<DeveloperSource, "id">,
   defaults: DeveloperDefaults | undefined,
-): DeveloperDefaults | undefined {
+  build: DeveloperBuild = { version: 1 },
+): SourceNaming | undefined {
   if (!defaults) return undefined;
   const links = Object.fromEntries(
     Object.entries(defaults.links)
       .filter(([key]) => key.startsWith(source.id + ":"))
       .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
   );
-  const names = Object.fromEntries(
-    [...new Set(Object.values(links))]
-      .sort()
-      .flatMap((product) =>
-        defaults.names[product] !== undefined
-          ? [[product, defaults.names[product]!]]
-          : [],
+  // Version 2 (#913): also the projects the links table links the
+  // source's resources to, so a rename reaches them too.
+  const products = [
+    ...new Set([
+      ...Object.values(links),
+      ...(build.version >= 2 ? (defaults.linked?.[source.id] ?? []) : []),
+    ]),
+  ].sort();
+  const pick = (map: Record<string, string> | undefined) =>
+    Object.fromEntries(
+      products.flatMap((product) =>
+        map?.[product] !== undefined ? [[product, map[product]!]] : [],
       ),
+    );
+  return {
+    links,
+    names: pick(defaults.names),
+    ...(build.version >= 2 ? { seeded: pick(build.seeded) } : {}),
+  };
+}
+
+/** One source's defaults as its preparation carries them. */
+interface SourceNaming {
+  links: Record<string, string>;
+  names: Record<string, string>;
+  /** Version 2: the seeded names of the source's projects (#913). */
+  seeded?: Record<string, string>;
+}
+
+/**
+ * A project's name (version 2, #913): the projects table's row where it
+ * overrides (it no longer says the name the install seeded), else the
+ * project's current workspace name, else the row; `rest` after them.
+ * Version 1: the row, then the current name.
+ */
+export function projectNameOf(
+  row: DataExpression,
+  productId: DataExpression,
+  naming: Pick<SourceNaming, "names" | "seeded"> | undefined,
+  rest: DataExpression[],
+): DataExpression {
+  const current = defaultsOf(naming?.names, productId, nullOf("string"));
+  // Without seeded names every row is the customer's.
+  if (!naming?.seeded || !Object.keys(naming.seeded).length)
+    return call("coalesce", row, current, ...rest);
+  const override = call(
+    "if",
+    call("eq", row, defaultsOf(naming.seeded, productId, nullOf("string"))),
+    nullOf("string"),
+    row,
   );
-  return { links, names };
+  return call("coalesce", override, current, row, ...rest);
 }
 
 /** `map[key]` as text (a JSON literal looked up), else `otherwise`. */
@@ -641,12 +752,68 @@ function defaultsOf(
   );
 }
 
+/**
+ * The default links a published preparation of this template carries
+ * (`<connectionId>:<resourceId>` → `product:<projectId>`): the JSON lookup
+ * its `product_id` step reads the app key in (projectNodes), any version.
+ * What a project slide's freshness resolves its resources through, next
+ * to the links table (#913). Another graph has none.
+ */
+export function graphDefaultLinks(graph: unknown): Record<string, string> {
+  const links: Record<string, string> = {};
+  const nodes = (graph as { nodes?: unknown } | null)?.nodes;
+  if (!Array.isArray(nodes)) return links;
+  const visit = (expression: unknown) => {
+    if (!expression || typeof expression !== "object") return;
+    const node = expression as {
+      kind?: unknown;
+      fn?: unknown;
+      args?: unknown;
+    };
+    if (node.kind !== "call" || !Array.isArray(node.args)) return;
+    const [lookup, key] = node.args as {
+      kind?: unknown;
+      type?: unknown;
+      value?: unknown;
+      fieldId?: unknown;
+    }[];
+    if (
+      node.fn === "json_get" &&
+      lookup?.kind === "literal" &&
+      lookup.type === "json" &&
+      lookup.value &&
+      typeof lookup.value === "object" &&
+      !Array.isArray(lookup.value) &&
+      key?.kind === "field" &&
+      key.fieldId === "app_key"
+    ) {
+      for (const [appKey, product] of Object.entries(lookup.value))
+        if (typeof product === "string") links[appKey] = product;
+      return;
+    }
+    for (const arg of node.args) visit(arg);
+  };
+  for (const node of nodes as {
+    id?: unknown;
+    type?: unknown;
+    fieldId?: unknown;
+    expression?: unknown;
+  }[])
+    if (
+      node?.type === "calculate" &&
+      node.id === "calculate_product_id" &&
+      node.fieldId === "product_id"
+    )
+      visit(node.expression);
+  return links;
+}
+
 /** The nodes that relate rows to projects, after the family's columns. */
 function projectNodes(
   source: DeveloperSource,
   input: string,
   resourceName: DataExpression | null,
-  ids: { links: string; projects: string; defaults?: DeveloperDefaults },
+  ids: { links: string; projects: string; defaults?: SourceNaming },
   t: Copy,
 ): { nodes: PreparationNode[]; output: string } {
   const nodes: PreparationNode[] = [
@@ -744,12 +911,14 @@ function projectNodes(
   calculate(
     "product_name",
     t.project,
-    call(
-      "coalesce",
+    projectNameOf(
       field("project.product_name"),
-      defaultsOf(ids.defaults?.names, field("product_id"), nullOf("string")),
-      resourceName ? field("link_resource_name") : field("resource.name"),
-      field("link_resource"),
+      field("product_id"),
+      ids.defaults,
+      [
+        resourceName ? field("link_resource_name") : field("resource.name"),
+        field("link_resource"),
+      ],
     ),
   );
   const provider = PROVIDER[source.connectorId]!;
@@ -819,19 +988,21 @@ export function familyColumns(family: DeveloperFamily): string[] {
 export function buildDeveloperPreparation(
   source: DeveloperSource,
   family: DeveloperFamily,
-  ids: { links: string; projects: string; defaults?: DeveloperDefaults },
+  ids: { links: string; projects: string; defaults?: SourceNaming },
   locale: Locale,
   /** The workspace's default links; none: the links table alone. */
   defaults?: DeveloperDefaults,
+  /** The version building it (version 1 unless given). */
+  build: DeveloperBuild = { version: 1 },
 ): PreparationGraph {
   const t = developerTemplateCopy(locale);
-  const own = sourceDefaults(source, defaults);
+  const own = sourceDefaults(source, defaults, build);
   if (family === "audience")
     return audiencePreparation(source, { ...ids, defaults: own }, t);
   ids = { ...ids, defaults: own };
   const spec =
     family === "state"
-      ? stateSpec(source, t)
+      ? stateSpec(source, t, build.version)
       : family === "deploys"
         ? deploysSpec(source, t)
         : costsSpec(source, t);
@@ -917,7 +1088,7 @@ export function buildDeveloperPreparation(
  */
 function audiencePreparation(
   source: DeveloperSource,
-  ids: { links: string; projects: string; defaults?: DeveloperDefaults },
+  ids: { links: string; projects: string; defaults?: SourceNaming },
   t: Copy,
 ): PreparationGraph {
   const metrics = DEVELOPER_AUDIENCE_METRICS[source.connectorId];

@@ -535,7 +535,7 @@ export async function dashboardProductApps(
     return await tx.transaction(async (savepoint) => {
       const found =
         releases ?? (await publishedReleases(savepoint, workspaceId, modelIds));
-      const ids = await releasesSourceDatasets(
+      const { all: ids, defaultLinks } = await releasesSourceDatasets(
         savepoint,
         workspaceId,
         modelIds.flatMap((id) => {
@@ -546,7 +546,10 @@ export async function dashboardProductApps(
       const [{ timeout } = { timeout: "0" }] = await savepoint.execute<{
         timeout: string;
       }>(sql`select current_setting('statement_timeout') as timeout`);
-      const apps = await mappedProductApps(savepoint, workspaceId, ids, read);
+      const apps = await mappedProductApps(savepoint, workspaceId, ids, {
+        ...read,
+        defaultLinks,
+      });
       await savepoint.execute(
         sql`select set_config('statement_timeout', ${timeout}, true)`,
       );
@@ -658,7 +661,12 @@ export async function queryDashboardMeasure(
             slideScope,
             input.binding.exclusions,
             deviceScope,
-            { now, defaults, cache: freshnessReader.scopeMappings },
+            {
+              now,
+              defaults,
+              cache: freshnessReader.scopeMappings,
+              defaultLinks: sources.defaultLinks,
+            },
             input.binding.filter,
             { filters, values },
           ),

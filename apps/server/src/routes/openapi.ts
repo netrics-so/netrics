@@ -40,6 +40,8 @@ export interface RouteDoc {
   errors?: ErrorStatus[];
   /** A richer error body for some statuses (it still has `error`). */
   errorSchemas?: Partial<Record<ErrorStatus, z.ZodType>>;
+  /** A route's own description of an error status (else the common one). */
+  errorDescriptions?: Partial<Record<ErrorStatus, string>>;
   /** Public route (no session): no 401 documented. */
   public?: boolean;
   /** Admin API: instance-admin session or a scoped service bearer token. */
@@ -87,7 +89,10 @@ export function routeSchema(doc: RouteDoc) {
     const schema =
       status === 401 ? undefined : doc.errorSchemas?.[status as ErrorStatus];
     response[status] = (schema ?? errorResponseSchema).describe(
-      ERROR_DESCRIPTIONS[status],
+      (status === 401
+        ? undefined
+        : doc.errorDescriptions?.[status as ErrorStatus]) ??
+        ERROR_DESCRIPTIONS[status],
     );
   }
   return {

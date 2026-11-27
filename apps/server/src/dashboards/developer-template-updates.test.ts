@@ -22,7 +22,10 @@ import {
   TEST_DATABASE_SETUP_TIMEOUT_MS,
   type TestDatabase,
 } from "../test-db.js";
-import { developerTemplate } from "./developer-template.js";
+import {
+  developerTemplate,
+  developerTemplateV1,
+} from "./developer-template.js";
 import {
   createDeveloperTemplateService,
   projectProduct,
@@ -66,7 +69,7 @@ const older: StoreTemplateDefinition = {
     return record;
   },
 };
-/** The current builders as version 2. */
+/** The current builders as a version after `older`. */
 const newer: StoreTemplateDefinition = { ...developerTemplate, version: 2 };
 
 const updates = (template?: StoreTemplateDefinition) =>
@@ -234,8 +237,8 @@ describe("Developer Portfolio updates", { timeout: TIMEOUT_MS }, () => {
     expect(listed.installs).toHaveLength(1);
     expect(listed.installs[0]).toMatchObject({
       requestId,
-      templateVersion: 1,
-      latestVersion: 1,
+      templateVersion: 2,
+      latestVersion: 2,
       updateAvailable: false,
     });
     await expect(updates().plan(target.actor, requestId)).rejects.toMatchObject(
@@ -487,6 +490,128 @@ describe("Developer Portfolio updates", { timeout: TIMEOUT_MS }, () => {
     await expect(
       updates(newer).plan(target.actor, requestId),
     ).rejects.toMatchObject({ code: "data_source_row_limit", status: 413 });
+  });
+
+  it("updates a released version 1 install to version 2 (#913)", async () => {
+    const target = await setup();
+    const { requestId } = await install(target, developerTemplateV1);
+    const listed = await updates().list(target.actor);
+    expect(listed.installs[0]).toMatchObject({
+      templateVersion: 1,
+      latestVersion: 2,
+      updateAvailable: true,
+      newerVersion: true,
+    });
+    const { plan, update } = await applyUpdate(target, requestId);
+    // Vercel's state is dated by the state it reports: the data changes,
+    // the dashboard stays as it is (no copy to swap in).
+    expect(update.dashboards).toEqual([]);
+    expect(
+      plan.records.some((record) =>
+        record.items.some((item) =>
+          item.ref.startsWith(
+            `preparation:ops:state:${target.connections[1]}#`,
+          ),
+        ),
+      ),
+    ).toBe(true);
+    const [state] = await owner<{ graph: { nodes: { id: string }[] } }[]>`
+      select v.graph from data_preparations p
+      join data_preparation_versions v
+        on v.preparation_id = p.id and v.version = p.published_version
+      where p.workspace_id = ${target.workspaceId}
+        and p.id = (select record_id from data_template_records
+          where request_id = ${requestId}
+            and key = ${`preparation:ops:state:${target.connections[1]}`})`;
+    expect(JSON.stringify(state!.graph)).toContain('"building"');
+    // The names its projects table was seeded with (the workspace's, as
+    // the rows still say them) are stored from now on.
+    const [row] = await owner<
+      { template_version: number; inputs: { seededNames?: object } }[]
+    >`select template_version, inputs from data_template_installs
+      where request_id = ${requestId}`;
+    expect(row!.template_version).toBe(2);
+    expect(row!.inputs.seededNames).toEqual({
+      [projectProduct(target.projects[0]!)]: "Alpha",
+      [projectProduct(target.projects[1]!)]: "Beta",
+    });
+    expect((await updates().list(target.actor)).installs[0]).toMatchObject({
+      templateVersion: 2,
+      updateAvailable: false,
+    });
+  });
+
+  it("follows a workspace project's rename unless the customer named it (#913)", async () => {
+    const target = await setup();
+    const { requestId, result } = await install(target, developerTemplate);
+    await owner`update projects set name = 'Alpha renamed'
+      where id = ${target.projects[0]!}`;
+    // The seeded row says the old name: no override, so the rename is
+    // offered as an update.
+    expect((await updates().list(target.actor)).installs[0]).toMatchObject({
+      updateAvailable: true,
+      newerVersion: false,
+    });
+    const renamed = await applyUpdate(target, requestId);
+    expect(renamed.copy.slides.map((slide) => slide.name)).toEqual([
+      "Overview",
+      "Alpha renamed",
+    ]);
+    // The customer names the project in the projects table: theirs wins.
+    const data = createDataService(db, at);
+    const table = await data.readManual(
+      target.actor,
+      result.projectsDatasetId,
+      { offset: 0, limit: 1000 },
+    );
+    await data.saveManual(
+      target.actor,
+      {
+        definition: table.definition,
+        records: table.records.map((record) => ({
+          values:
+            record.values.product_id === projectProduct(target.projects[0]!)
+              ? { ...record.values, product_name: "Our shop" }
+              : record.values,
+        })),
+        generationId: table.generationId,
+      },
+      result.projectsDatasetId,
+    );
+    const named = await applyUpdate(target, requestId);
+    expect(named.copy.slides.map((slide) => slide.name)).toEqual([
+      "Overview",
+      "Our shop",
+    ]);
+    // A later rename leaves the customer's name.
+    await owner`update projects set name = 'Alpha again'
+      where id = ${target.projects[0]!}`;
+    const plan = await updates().plan(target.actor, requestId);
+    expect(
+      plan.records.some((record) => record.key === "dashboard:portfolio"),
+    ).toBe(false);
+  });
+
+  it("refuses a plan or an apply over the row limit, never 'up to date' (#913)", async () => {
+    const target = await setup();
+    const { requestId } = await install(target, developerTemplate);
+    await owner`update connections set project_id = ${target.projects[1]!}
+      where id = ${target.connections[1]!}`;
+    for (const id of ["prj_one", "prj_two", "prj_three"])
+      await addResource(target, target.connections[1]!, id);
+    await adminSetDataPolicy(db, target.workspaceId, { queryRows: 2 });
+    const rowLimit = { code: "data_source_row_limit", status: 413 };
+    await expect(updates().plan(target.actor, requestId)).rejects.toMatchObject(
+      rowLimit,
+    );
+    await expect(
+      updates().apply(target.actor, requestId, { basis: "x", decisions: [] }),
+    ).rejects.toMatchObject(rowLimit);
+    // The list of installs never fails for it.
+    expect((await updates().list(target.actor)).installs[0]).toMatchObject({
+      requestId,
+      updateAvailable: false,
+    });
   });
 
   it("refuses the App Portfolio's routes on a Developer Portfolio update", async () => {

@@ -9,9 +9,13 @@ import {
   executePreparation,
   slideLayoutProblem,
   STUDIO_LIMITS,
+  type DataTable,
 } from "@netrics/domain";
 
+import { createDefaultRegistry } from "../connectors.js";
+
 import {
+  DEVELOPER_DEFAULT_LINKS_MAX,
   DEVELOPER_PROJECT_WIDGETS,
   type DeveloperProjectIdentity,
   type DeveloperSource,
@@ -19,8 +23,10 @@ import {
 import {
   asStoreInputs,
   developerTemplate,
+  developerTemplateV1,
   type DeveloperTemplateInputs,
 } from "./developer-template.js";
+import { developerProjectIdentities } from "./developer-template-service.js";
 import type {
   StoreTemplateIds,
   StoreTemplateRecord,
@@ -75,16 +81,21 @@ const inputs = (
     links: { [`${ALL[0]!.id}:rw-1`]: project("Alpha").productId },
     names: { [project("Alpha").productId]: "Alpha" },
   },
+  // Version 2: the name the install seeded into the projects table.
+  seededNames: { [project("Alpha").productId]: "Alpha" },
 });
 
-function buildAll(input: DeveloperTemplateInputs) {
+function buildAll(
+  input: DeveloperTemplateInputs,
+  template = developerTemplate,
+) {
   const ids = {
     "dataset:mapping": uuidFor("links"),
     "dataset:products": uuidFor("projects"),
   } as StoreTemplateIds;
   const raw = asStoreInputs(input);
-  return developerTemplate.keys(raw).map((key) => {
-    const record = developerTemplate.build(key, raw, ids);
+  return template.keys(raw).map((key) => {
+    const record = template.build(key, raw, ids);
     ids[key] = uuidFor(key);
     return record;
   });
@@ -102,6 +113,67 @@ const dashboardOf = (records: StoreTemplateRecord[]) => {
  */
 const VERSION_HASHES: Record<number, string> = {
   1: "edde3dedbeb7bdffa45c778c3fdcb2abb875b8aeb13662bdde7e2d624af78c1a",
+  2: "37a33e63e4cd98297f02f15a8c9df665cbab97508769183011000117b4092034",
+};
+
+/** A manual table of string columns. */
+const table = (
+  columns: string[],
+  rows: Record<string, string>[],
+): DataTable => ({
+  fields: columns.map((id) => ({
+    id,
+    name: id,
+    type: "string",
+    nullable: false,
+  })),
+  rows,
+});
+
+/** A connector's source dataset as a table of `rows`. */
+const sourceTable = (
+  connectorId: DeveloperSource["connectorId"],
+  key: string,
+  rows: Record<string, unknown>[],
+): DataTable => ({
+  fields: createDefaultRegistry()
+    .get(connectorId)!
+    .manifest.datasets!.find((dataset) => dataset.key === key)!
+    .fields as DataTable["fields"],
+  rows,
+});
+
+/** A Railway service state of the project (resource) `projectId`. */
+const serviceState = (projectId: string, serviceId = "s1") => ({
+  project_id: projectId,
+  project_name: projectId,
+  service_id: serviceId,
+  service_name: "api",
+  environment_id: "e1",
+  environment_name: "production",
+  state: "up",
+  active_deployments: 1,
+  latest_deployment_id: null,
+  latest_status: null,
+  latest_created_at: null,
+  latest_status_updated_at: null,
+  checked_at: "2026-11-24T12:00:00.000Z",
+});
+
+/** One record's output rows over `tables`. */
+const run = (
+  template: typeof developerTemplate,
+  key: string,
+  input: DeveloperTemplateInputs,
+  tables: Map<string, DataTable>,
+) => {
+  const record = template.build(key, asStoreInputs(input), {
+    "dataset:mapping": "links",
+    "dataset:products": "projects",
+  } as StoreTemplateIds);
+  if (record.kind !== "preparation") throw new Error("no preparation");
+  return executePreparation(preparationGraphSchema.parse(record.graph), tables)
+    .outputs.output!.rows;
 };
 
 describe("Developer Portfolio template", () => {
@@ -111,6 +183,177 @@ describe("Developer Portfolio template", () => {
     );
     expect(sha256(JSON.stringify(records))).toBe(
       VERSION_HASHES[developerTemplate.version],
+    );
+  });
+
+  it("keeps every released version as it was built", () => {
+    // Installs remember their version: version 1 builds exactly as released.
+    expect(developerTemplateV1.version).toBe(1);
+    expect(
+      sha256(
+        JSON.stringify(
+          buildAll(
+            inputs(ALL, [
+              project("Alpha"),
+              project("Beta", ["state", "costs"]),
+            ]),
+            developerTemplateV1,
+          ),
+        ),
+      ),
+    ).toBe(VERSION_HASHES[1]);
+    expect(developerTemplate.version).toBeGreaterThan(1);
+  });
+
+  it("dates a Vercel production by the state it reports (#913)", () => {
+    const vercel = ALL[1]!;
+    const production = (values: Record<string, unknown>) => ({
+      project_id: "prj_web",
+      project_name: "web",
+      web_analytics: true,
+      latest_deployment_id: "dpl_new",
+      latest_state: null,
+      latest_created_at: null,
+      latest_ready_at: null,
+      live_deployment_id: "dpl_old",
+      live_created_at: "2026-11-20T09:00:00.000Z",
+      live_ready_at: "2026-11-20T09:05:00.000Z",
+      live_url: null,
+      rolled_back: false,
+      checked_at: "2026-11-24T12:00:00.000Z",
+      ...values,
+    });
+    const tables = new Map<string, DataTable>([
+      [
+        `pending:${vercel.id}:production_deployments`,
+        sourceTable("vercel", "production_deployments", [
+          // A new build running while the older one serves.
+          production({
+            project_id: "prj_building",
+            state: "building",
+            latest_state: "BUILDING",
+            latest_created_at: "2026-11-24T11:50:00.000Z",
+          }),
+          production({ project_id: "prj_up", state: "up" }),
+          production({
+            project_id: "prj_failed",
+            state: "failed",
+            latest_state: "ERROR",
+            latest_created_at: "2026-11-24T10:00:00.000Z",
+            latest_ready_at: "2026-11-24T10:03:00.000Z",
+          }),
+          // Down: when it went down is not known.
+          production({ project_id: "prj_down", state: "down" }),
+        ]),
+      ],
+      ["links", table(["app_key", "product_id"], [])],
+      ["projects", table(["product_id", "product_name"], [])],
+    ]);
+    const changed = Object.fromEntries(
+      run(
+        developerTemplate,
+        `preparation:ops:state:${vercel.id}`,
+        inputs([vercel]),
+        tables,
+      ).map((row) => [row.item_key, row.changed_at]),
+    );
+    expect(changed).toEqual({
+      [`${vercel.id}:prj_building`]: "2026-11-24T11:50:00.000Z",
+      [`${vercel.id}:prj_up`]: "2026-11-20T09:05:00.000Z",
+      [`${vercel.id}:prj_failed`]: "2026-11-24T10:03:00.000Z",
+      [`${vercel.id}:prj_down`]: null,
+    });
+  });
+
+  it("names a project by its current name unless the projects table overrides it (#913)", () => {
+    const railway = ALL[0]!,
+      alpha = project("Alpha").productId,
+      beta = project("Beta").productId;
+    // The install seeded both names; Alpha was renamed in the workspace
+    // since, and the customer named Beta themselves.
+    const input: DeveloperTemplateInputs = {
+      ...inputs([railway]),
+      defaults: {
+        links: {
+          [`${railway.id}:rw-1`]: alpha,
+          [`${railway.id}:rw-2`]: beta,
+        },
+        names: { [alpha]: "Alpha renamed", [beta]: "Beta" },
+      },
+      seededNames: { [alpha]: "Alpha", [beta]: "Beta" },
+    };
+    const projects = table(
+      ["product_id", "product_name"],
+      [
+        { product_id: alpha, product_name: "Alpha" },
+        { product_id: beta, product_name: "Beta by the customer" },
+      ],
+    );
+    const rows = run(
+      developerTemplate,
+      `preparation:ops:state:${railway.id}`,
+      input,
+      new Map([
+        [
+          `pending:${railway.id}:service_states`,
+          sourceTable("railway", "service_states", [
+            serviceState("rw-1"),
+            serviceState("rw-2", "s2"),
+          ]),
+        ],
+        ["links", table(["app_key", "product_id"], [])],
+        ["projects", projects],
+      ]),
+    );
+    expect(
+      Object.fromEntries(rows.map((row) => [row.product_id, row.product_name])),
+    ).toEqual({ [alpha]: "Alpha renamed", [beta]: "Beta by the customer" });
+    // The slides name them alike.
+    expect(
+      developerProjectIdentities(
+        { projects: projects.rows, links: [] },
+        [railway],
+        input.defaults,
+        input.seededNames,
+      ).map((entry) => entry.name),
+    ).toEqual(["Alpha renamed", "Beta by the customer"]);
+  });
+
+  it("builds default lookups up to the expression engine's JSON limit (#913)", () => {
+    const railway = ALL[0]!,
+      alpha = project("Alpha").productId;
+    const withLinks = (count: number) =>
+      run(
+        developerTemplate,
+        `preparation:ops:state:${railway.id}`,
+        {
+          ...inputs([railway]),
+          defaults: {
+            links: Object.fromEntries(
+              Array.from({ length: count }, (_, index) => [
+                `${railway.id}:rw-${index}`,
+                alpha,
+              ]),
+            ),
+            names: { [alpha]: "Alpha" },
+          },
+        },
+        new Map([
+          [
+            `pending:${railway.id}:service_states`,
+            sourceTable("railway", "service_states", [serviceState("rw-0")]),
+          ],
+          ["links", table(["app_key", "product_id"], [])],
+          ["projects", table(["product_id", "product_name"], [])],
+        ]),
+      );
+    expect(
+      withLinks(DEVELOPER_DEFAULT_LINKS_MAX).map((row) => row.product_id),
+    ).toEqual([alpha]);
+    // One more is past the engine's limit: installs and updates refuse a
+    // connection with that many (developer-template-service).
+    expect(() => withLinks(DEVELOPER_DEFAULT_LINKS_MAX + 1)).toThrow(
+      "data_json_limit",
     );
   });
 

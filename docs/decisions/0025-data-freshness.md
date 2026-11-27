@@ -308,7 +308,12 @@ it computes the widget's data:
   Resources are the apps the slide scope and a screen's scope pick on
   each connection (#767): a scope value naming a resource, or a linked
   product (`product:<id>`) resolved through its install's mapping table to
-  its apps. The filters' chosen values (a viewer's choice, else the
+  its apps. A Developer Portfolio project (#876) resolves through its links
+  table over the default links of the preparation versions the model's
+  release pins (#913):
+  each resource of a connection in a project is that project's unless a
+  table row links it elsewhere or unlinks it (an empty project), as the
+  preparations relate the rows. The filters' chosen values (a viewer's choice, else the
   default) and the dashboard's fixed values pick apps the same way (#776),
   so freshness covers the apps the rows cover; a filter the widget
   excludes picks nothing. A connection the scope names no app of adds no

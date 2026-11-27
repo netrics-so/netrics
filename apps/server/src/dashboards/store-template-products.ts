@@ -33,6 +33,7 @@ import {
 } from "../data/service.js";
 import { presentImage } from "../images/service.js";
 import { deriveInstallCompletion } from "./store-template-legacy.js";
+import { STORE_TEMPLATE_ID } from "./store-template.js";
 import {
   STORE_SOURCE_DATASETS,
   type StoreIconFetcher,
@@ -394,6 +395,9 @@ export async function readStoreProducts(
         and(
           eq(schema.dataTemplateInstalls.workspaceId, workspaceId),
           eq(schema.dataTemplateInstalls.requestId, requestId),
+          // The App Portfolio's products only: another template's install
+          // (a Developer Portfolio, #913) is not found here.
+          eq(schema.dataTemplateInstalls.templateId, STORE_TEMPLATE_ID),
         ),
       );
     if (!install) reject("store_template_not_found", 404);
