@@ -616,7 +616,7 @@ async function runSync(
         // be a lock wait on the connection row, which the sync_runs insert
         // needs too (its foreign key). The worker then gets the original
         // error instead of waiting as long as that lock is held.
-        await setIngestTimeout(tx, loaded.policy);
+        await setIngestTimeout(tx, loaded.policy, { keepStricter: true });
         let replaced = false;
         if (envelopeDigest) {
           // The connection row lock the client change writes under.
@@ -1562,7 +1562,9 @@ async function runSync(
           workspaceId,
           deps.dataPolicy,
         );
-        const previousTimeout = await setIngestTimeout(tx, policy);
+        const previousTimeout = await setIngestTimeout(tx, policy, {
+          keepStricter: true,
+        });
         await lockWorkspaceIngestion(tx, workspaceId);
         const [saved] = await tx
           .select({ config: schema.connections.config })

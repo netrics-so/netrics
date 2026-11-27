@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 
 import type { FastifyInstance } from "fastify";
+import { sql } from "drizzle-orm";
 import pino from "pino";
 import {
   afterAll,
@@ -35,6 +36,8 @@ import {
   createDatabase,
   createRawSqlClient,
   type Database,
+  MAX_STATEMENT_TIMEOUT_MS,
+  setIngestTimeout,
   type Sql,
 } from "@netrics/database";
 
@@ -957,5 +960,43 @@ describe("the connection detail", () => {
     expect(
       connectionDetailResponseSchema.parse(response.json()).freshness,
     ).toEqual([]);
+  });
+});
+
+describe("setIngestTimeout", () => {
+  const applied = (
+    roleTimeout: string,
+    queryTimeoutMs: number | null,
+    keepStricter: boolean,
+  ) =>
+    db.transaction(async (tx) => {
+      await tx.execute(
+        sql`select set_config('statement_timeout', ${roleTimeout}, true)`,
+      );
+      await setIngestTimeout(tx, { queryTimeoutMs }, { keepStricter });
+      const [row] = await tx.execute<{ timeout: string }>(
+        sql`select current_setting('statement_timeout') as timeout`,
+      );
+      return row?.timeout;
+    });
+
+  it("keeps a tighter nonzero limit on lock-wait paths", async () => {
+    expect(await applied("2s", 15_000, true)).toBe("2s");
+    expect(await applied("2s", null, true)).toBe("2s");
+    expect(await applied("0", 15_000, true)).toBe("15s");
+    expect(await applied("1min", 15_000, true)).toBe("15s");
+  });
+
+  it("keeps ingestion on the policy bound", async () => {
+    expect(await applied("2s", 15_000, false)).toBe("15s");
+  });
+
+  it("clamps the bound to PostgreSQL's range", async () => {
+    for (const keepStricter of [false, true]) {
+      const timeout = await applied("0", Number.MAX_SAFE_INTEGER, keepStricter);
+      expect(timeout).toBe(
+        (await applied("0", MAX_STATEMENT_TIMEOUT_MS, false)) ?? "unset",
+      );
+    }
   });
 });
