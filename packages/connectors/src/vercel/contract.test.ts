@@ -22,6 +22,8 @@ import {
 } from "@netrics/connector-sdk/testing";
 import { describe, expect, it } from "vitest";
 
+import { MAX_RATE_LIMIT_HOLD_MS } from "../rate-limit-hold.js";
+
 import { VercelApiError, VercelInvalidResponseError } from "./api.js";
 import { VERCEL_DATASETS, productionState } from "./datasets.js";
 import {
@@ -1743,6 +1745,27 @@ describe("vercel follow-ups (#894)", () => {
     );
     expectHostAccepts(next);
     expect(api.requests.length).toBeGreaterThan(asked);
+  });
+
+  it("a carried rate limit holds no longer than the host defers a run (#914)", async () => {
+    // A reset 30 days away: a longer hold would refuse every daily retry.
+    const api = fake({
+      failAfter: {
+        after: 2,
+        status: 429,
+        path: "/v7/deployments",
+        headers: { "retry-after": String(30 * 24 * 60 * 60) },
+      },
+    });
+    const first = await connector().sync(context(), RECENT, api.runtime);
+    expect(first.done).toBe(false);
+    const error = await connector()
+      .sync(context(), { ...RECENT, cursor: first.nextCursor }, api.runtime)
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(RateLimitedError);
+    expect((error as RateLimitedError).retryAt).toBe(
+      new Date(clock() + MAX_RATE_LIMIT_HOLD_MS).toISOString(),
+    );
   });
 
   it("4: a rolling release is not the promoted build production is compared with", async () => {

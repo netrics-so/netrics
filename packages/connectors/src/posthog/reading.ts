@@ -84,19 +84,22 @@ export function canonicalProjectId(id: string): string {
 }
 
 /**
- * The resource ID a project is reported under: the first of `spellings`
- * (the stored selection, then the configured Project IDs) that names it,
- * so a connection keeps the identity its selection, project links and
- * history are stored under; the canonical ID for a project the connection
- * never named (#888 review).
+ * The resource ID a project is reported under, by its canonical ID: the
+ * first of `spellings` (the stored selection, then the configured Project
+ * IDs) that names it, so a connection keeps the identity its selection,
+ * project links and history are stored under; the canonical ID for a
+ * project the connection never named (#888 review). The spellings are
+ * indexed once, so a large selection is not scanned per project (#914).
  */
-export function resourceIdOf(
-  canonical: string,
+export function resourceIdsOf(
   spellings: readonly string[],
-): string {
-  return (
-    spellings.find((id) => canonicalProjectId(id) === canonical) ?? canonical
-  );
+): (canonical: string) => string {
+  const first = new Map<string, string>();
+  for (const id of spellings) {
+    const canonical = canonicalProjectId(id);
+    if (!first.has(canonical)) first.set(canonical, id);
+  }
+  return (canonical) => first.get(canonical) ?? canonical;
 }
 
 /** The saved resource selection the host passes in `resourceSelection`. */
@@ -283,10 +286,10 @@ export async function listProjects(
   projectIds?: readonly string[],
   selection: readonly string[] = [],
 ): Promise<Project[]> {
-  const spellings = [...selection, ...(projectIds ?? [])];
+  const resourceIdOf = resourceIdsOf([...selection, ...(projectIds ?? [])]);
   if (projectIds) {
     return projectIds.map((configured) => {
-      const id = resourceIdOf(canonicalProjectId(configured), spellings);
+      const id = resourceIdOf(canonicalProjectId(configured));
       return { id, name: id, organizationId: "" };
     });
   }
@@ -320,7 +323,7 @@ export async function listProjects(
       projects.push(
         ...page.projects.map((project) => ({
           ...project,
-          id: resourceIdOf(project.id, spellings),
+          id: resourceIdOf(project.id),
         })),
       );
       offset = page.next;

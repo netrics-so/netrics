@@ -19,6 +19,8 @@ import {
 } from "@netrics/connector-sdk/testing";
 import { describe, expect, it } from "vitest";
 
+import { MAX_RATE_LIMIT_HOLD_MS } from "../rate-limit-hold.js";
+
 import {
   HetznerApiError,
   apiError,
@@ -784,6 +786,31 @@ describe("rate limits and failures", () => {
       later.runtime,
     );
     expect(later.requests[0]!.path).toBe("/volumes");
+  });
+
+  it("holds a carried rate limit no longer than the host defers a run (#914)", async () => {
+    // A limit that refills only after its reset 30 days away: a longer
+    // hold would refuse every daily retry.
+    const limited = Array.from({ length: 3 }, () => ({
+      status: 429,
+      body: fixture("error-429.json"),
+      path: /^\/volumes$/,
+      headers: {
+        "ratelimit-limit": "0.0001",
+        "ratelimit-remaining": "0",
+        "ratelimit-reset": String(Math.floor((clock() + 30 * DAY_MS) / 1000)),
+      },
+    }));
+    const { runtime } = fake({ failures: limited });
+    const first = await connector().sync(context(), WINDOW, runtime);
+    expect(first.done).toBe(false);
+    const error = await connector()
+      .sync(context(), { ...WINDOW, cursor: first.nextCursor }, fake().runtime)
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(RateLimitedError);
+    expect(Date.parse((error as RateLimitedError).retryAt)).toBe(
+      clock() + MAX_RATE_LIMIT_HOLD_MS,
+    );
   });
 
   it("bounds the requests of every page", async () => {

@@ -87,7 +87,6 @@ export {
 export {
   createPostHogConnector,
   posthogManifest,
-  MAX_RATE_LIMIT_HOLD_MS as POSTHOG_MAX_RATE_LIMIT_HOLD_MS,
   HOST_INVALID_CODE as POSTHOG_HOST_INVALID_CODE,
   HOST_INVALID_MESSAGE as POSTHOG_HOST_INVALID_MESSAGE,
   INSIGHTS_INVALID_CODE as POSTHOG_INSIGHTS_INVALID_CODE,
@@ -109,5 +108,6 @@ export {
   WORKSPACE_DENIED_CODE as RAILWAY_WORKSPACE_DENIED_CODE,
   WORKSPACE_DENIED_MESSAGE as RAILWAY_WORKSPACE_DENIED_MESSAGE,
 } from "./railway/index.js";
+export { MAX_RATE_LIMIT_HOLD_MS } from "./rate-limit-hold.js";
 export { createVercelConnector, vercelManifest } from "./vercel/index.js";
 export * from "./custom-api/index.js";

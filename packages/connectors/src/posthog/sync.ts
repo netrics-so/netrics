@@ -34,6 +34,7 @@ import {
 } from "@netrics/connector-sdk";
 
 import { boundFreshness } from "../freshness.js";
+import { rateLimitHold } from "../rate-limit-hold.js";
 
 import { PostHogApiError, type PostHogClient } from "./api.js";
 import {
@@ -66,7 +67,7 @@ import {
   canonicalProjectId,
   projectIdsOf,
   projectsPage,
-  resourceIdOf,
+  resourceIdsOf,
 } from "./reading.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -89,15 +90,6 @@ export const PAGE_TIME_BUDGET_MS = 20_000;
  * before the host's 60-second deadline for the call.
  */
 export const PAGE_DEADLINE_MS = 45_000;
-/**
- * The longest rate-limit hold a checkpoint keeps: the host defers a
- * rate-limited connection by at most a day (`rateLimitedRunAt` in
- * apps/server/src/sync/engine.ts, which the connectors package may not
- * import; apps/server's posthog-sync.test.ts pins the two together). A
- * longer hold would refuse every retry the host makes before it (#888
- * review).
- */
-export const MAX_RATE_LIMIT_HOLD_MS = 24 * 60 * 60 * 1000;
 /** Rows and bytes per dataset page, well inside ADR 0026's limits. */
 const PAGE_ROWS = 500;
 const PAGE_BYTES = DATASET_LIMITS.pageBytes / 2;
@@ -565,9 +557,11 @@ export async function syncPage(
   const selected = request.resources
     ? new Set(request.resources.map(canonicalProjectId))
     : null;
-  const spellings = [...(request.resources ?? []), ...(projectIds ?? [])];
   /** The resource ID of a project, by its canonical ID. */
-  const resourceOf = (canonical: string) => resourceIdOf(canonical, spellings);
+  const resourceOf = resourceIdsOf([
+    ...(request.resources ?? []),
+    ...(projectIds ?? []),
+  ]);
   if (!state) {
     const at = now();
     const startMs = startOfUtcDay(Date.parse(request.from));
@@ -905,10 +899,8 @@ export async function syncPage(
       if (steps === 0 || isFatal(error)) throw error;
       // A rate limit is the host's to wait for: the checkpoint carries it.
       if (error instanceof RateLimitedError) {
-        const retryAt = Date.parse(error.retryAt);
-        if (Number.isFinite(retryAt)) {
-          run.limitedUntil = Math.min(retryAt, now() + MAX_RATE_LIMIT_HOLD_MS);
-        }
+        const hold = rateLimitHold(error.retryAt, now());
+        if (hold !== undefined) run.limitedUntil = hold;
       }
       log?.warn("step failed, the next page repeats it", {
         error: error instanceof Error ? error.name : "unknown",

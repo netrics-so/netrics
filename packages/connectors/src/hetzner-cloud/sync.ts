@@ -46,6 +46,7 @@ import {
 } from "@netrics/connector-sdk";
 
 import { boundFreshness } from "../freshness.js";
+import { rateLimitHold } from "../rate-limit-hold.js";
 
 import { HetznerApiError, type HetznerGet } from "./api.js";
 import {
@@ -965,8 +966,10 @@ export async function syncPage(
       // failure ends the page with what it read: the next page starts with
       // the failed step, and a rate limit surfaces there as itself.
       if (steps === 0 || isFatal(error)) throw error;
+      // At most as long as the host defers a run (#914).
       if (error instanceof RateLimitedError) {
-        run.limitedUntil = Date.parse(error.retryAt);
+        const hold = rateLimitHold(error.retryAt, now());
+        if (hold !== undefined) run.limitedUntil = hold;
       }
       log?.warn("step failed, the next page repeats it", {
         error:

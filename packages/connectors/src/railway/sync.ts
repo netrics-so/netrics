@@ -35,6 +35,7 @@ import {
 } from "@netrics/connector-sdk";
 
 import { boundFreshness } from "../freshness.js";
+import { rateLimitHold } from "../rate-limit-hold.js";
 
 import { RailwayApiError, type RailwayQuery } from "./api.js";
 import {
@@ -877,8 +878,10 @@ export async function syncPage(
       out.states.length = marks[0];
       out.deployments.length = marks[1];
       out.observations.length = marks[2];
+      // At most as long as the host defers a run (#914).
       if (error instanceof RateLimitedError) {
-        run.retryAt = Date.parse(error.retryAt);
+        const hold = rateLimitHold(error.retryAt, now());
+        if (hold !== undefined) run.retryAt = hold;
       }
       break;
     }

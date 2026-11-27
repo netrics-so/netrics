@@ -48,6 +48,7 @@ import {
 import { z } from "zod";
 
 import { boundFreshness } from "../freshness.js";
+import { rateLimitHold } from "../rate-limit-hold.js";
 import { readPageCursor } from "../page-cursor.js";
 
 import {
@@ -1497,8 +1498,9 @@ export async function syncPage(
       if (steps === 0 || isFatal(error)) throw error;
       // A rate limit's reset holds for the next page too (#894).
       if (error instanceof RateLimitedError) {
-        const retryAt = Date.parse(error.retryAt);
-        if (Number.isFinite(retryAt)) run.retryAt = retryAt;
+        // At most as long as the host defers a run (#914).
+        const hold = rateLimitHold(error.retryAt, now());
+        if (hold !== undefined) run.retryAt = hold;
       }
       log?.warn("step failed, the next page repeats it", {
         error: error instanceof Error ? error.name : "unknown",
