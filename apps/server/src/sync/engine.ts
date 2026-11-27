@@ -431,6 +431,7 @@ async function runSync(
     const [state] = await tx
       .select({
         cursor: schema.connectionState.cursor,
+        cursorMidRun: schema.connectionState.cursorMidRun,
         nextFrom: schema.connectionState.nextFrom,
         backfillJobId: schema.connectionState.backfillJobId,
         backfillJobDatasets: schema.connectionState.backfillJobDatasets,
@@ -515,6 +516,13 @@ async function runSync(
    * run (the resources it reported, for example).
    */
   const previousCursor = fresh ? (state?.cursor ?? null) : null;
+  /**
+   * This attempt resumes a run that has not finished (#928): its start
+   * cursor is a page checkpoint, left by an earlier attempt of this job
+   * (a retry, a reclaimed job, a continuation) or of a job that ended
+   * before the run did. Its first page is never a run's first page.
+   */
+  const resumesPage = startCursor !== null && state?.cursorMidRun === true;
   /**
    * The datasets this backfill job reads (#617): taken when it starts, from
    * the connector this worker runs; a resumed attempt keeps only those its
@@ -1459,12 +1467,16 @@ async function runSync(
         }
         mergeSkips(recordSkips, skipsOfCall);
         // A skipped result reads nothing, so only a run's first page may
-        // be one (#921): after a committed page, of this job or of the job
-        // whose saved window this continuation resumes (page budget, rate
-        // limit), it would end the run over a window no page finished.
+        // be one (#921): after a committed page, of this attempt, of the
+        // job whose saved window this continuation resumes (page budget,
+        // rate limit), or of an attempt whose checkpoint this one resumes
+        // (a retry after a failure, a reclaimed job, #928), it would end
+        // the run over a window no page finished.
         if (
           result.skipped &&
-          (progress.pagesCommitted > 0 || continuation !== undefined)
+          (progress.pagesCommitted > 0 ||
+            continuation !== undefined ||
+            resumesPage)
         ) {
           throw new ContractViolationError(
             `connector "${manifest.id}" returned a skipped result after a committed page`,
@@ -1511,11 +1523,16 @@ async function runSync(
               workspaceId,
               pollIntervalSeconds,
               cursor: nextCursor,
+              cursorMidRun: true,
               ...backfillMarker,
             })
             .onConflictDoUpdate({
               target: schema.connectionState.connectionId,
-              set: { cursor: nextCursor, ...backfillMarker },
+              set: {
+                cursor: nextCursor,
+                cursorMidRun: true,
+                ...backfillMarker,
+              },
             });
           await saveRecordSkips(tx);
           return count;
@@ -1624,6 +1641,7 @@ async function runSync(
           lastSuccessAt: now,
           nextDueAt: computedNextDueAt,
           cursor: finalCursor,
+          cursorMidRun: false,
           nextFrom: finalNextFrom,
           ...backfillMarker,
           ...backfillRecordInsert,
@@ -1639,6 +1657,7 @@ async function runSync(
             lastSuccessAt: now,
             nextDueAt,
             cursor: finalCursor,
+            cursorMidRun: false,
             nextFrom: finalNextFrom,
             ...backfillMarker,
             ...backfillRecordSet,

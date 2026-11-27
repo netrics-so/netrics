@@ -12,6 +12,7 @@ function row(overrides: Partial<ConnectionStateRow>): ConnectionStateRow {
     nextDueAt: new Date("2026-11-19T10:40:00.000Z"),
     pollIntervalSeconds: 900,
     cursor: null,
+    cursorMidRun: false,
     nextFrom: null,
     backfillJobId: null,
     authState: "ok",

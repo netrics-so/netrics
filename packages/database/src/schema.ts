@@ -610,6 +610,11 @@ export const connectionState = pgTable(
     // The connector's opaque cursor: stored and handed back unchanged, never
     // read by the host (#758).
     cursor: text("cursor"),
+    // The cursor is a page checkpoint of a run that has not finished (#928):
+    // set with every page that commits before the last, cleared when a run
+    // succeeds. A run that starts from it resumes a page, never a run's
+    // first one, so the connector may not skip it.
+    cursorMidRun: boolean("cursor_mid_run").notNull().default(false),
     // Where the next incremental window starts (#758): the done result's
     // nextFrom, else the end of the last succeeded window. Null before the
     // first success; the last success stands in then.

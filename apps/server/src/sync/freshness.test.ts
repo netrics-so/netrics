@@ -85,6 +85,11 @@ let reply:
   | Error = {};
 /** Runs inside the connector call, e.g. a change saved meanwhile. */
 let during: (() => Promise<void>) | null = null;
+/**
+ * Runs when a reply with `afterPage` reaches its second page, before the
+ * reply: a failure, or a worker that never returns (#928).
+ */
+let atPageTwo: (() => Promise<void>) | null = null;
 
 const fixtureManifest: ConnectorManifest = {
   ...demoManifest,
@@ -120,6 +125,7 @@ function fixture(): Connector {
       const { afterPage, ...final } = reply;
       if (afterPage && request.cursor !== "page-2")
         return { observations: [], nextCursor: "page-2", done: false };
+      if (afterPage) await atPageTwo?.();
       // A skipped run returns the cursor it was given (SDK 0.2.23).
       const cursor =
         final.skipped && request.cursor ? { nextCursor: request.cursor } : {};
@@ -311,14 +317,23 @@ beforeEach(() => {
   clockMs = START;
   reply = {};
   during = null;
+  atPageTwo = null;
 });
 
 async function sync(
   connectionId: string,
   {
     payload = {},
+    jobId = randomUUID(),
+    attempts = 0,
     ...options
-  }: { dataPolicy?: DataPolicy; payload?: Record<string, unknown> } = {},
+  }: {
+    dataPolicy?: DataPolicy;
+    payload?: Record<string, unknown>;
+    /** A retried or reclaimed attempt runs the same job again. */
+    jobId?: string;
+    attempts?: number;
+  } = {},
 ) {
   const handlers = createJobHandlers({
     registry: registry(),
@@ -328,13 +343,13 @@ async function sync(
   });
   return handlers["connection.sync"]!({
     job: {
-      id: randomUUID(),
+      id: jobId,
       kind: "connection.sync",
       workspaceId,
       connectionId,
       payload,
       runAt: new Date(clockMs),
-      attempts: 0,
+      attempts,
       maxAttempts: 8,
       status: "running" as const,
       lockedBy: "test",
@@ -629,6 +644,96 @@ describe("a skipped run (SDK 0.2.23, #898)", () => {
     const [after] = await admin`
       select next_from from connection_state where connection_id = ${id}`;
     expect(after!.next_from).toEqual(before!.next_from);
+  });
+
+  it("is refused on the page a retry resumes after a failure (#928)", async () => {
+    const id = await createConnection("freshness-fixture");
+    reply = { freshness: [{ stream: "reviews" }], nextCursor: "round-1" };
+    await sync(id);
+    const [before] = await admin`
+      select next_from from connection_state where connection_id = ${id}`;
+    // Attempt 1 commits page 1, then fails on page 2 (transient).
+    clockMs = START + 7 * HOUR;
+    const jobId = randomUUID();
+    reply = { afterPage: true, skipped: true };
+    atPageTwo = () => Promise.reject(new Error("provider unavailable"));
+    await expect(sync(id, { jobId })).rejects.toThrow("provider unavailable");
+    expect(await lastRun(id)).toMatchObject({
+      status: "failed",
+      error_class: "transient",
+    });
+    // The retry resumes from the page-2 checkpoint without a continuation:
+    // a skip there would end a window no page finished.
+    atPageTwo = null;
+    await expect(sync(id, { jobId, attempts: 1 })).rejects.toBeInstanceOf(
+      NonRetryableJobError,
+    );
+    expect(await lastRun(id)).toMatchObject({
+      status: "failed",
+      error_class: "contract",
+    });
+    const [after] = await admin`
+      select next_from from connection_state where connection_id = ${id}`;
+    expect(after!.next_from).toEqual(before!.next_from);
+  });
+
+  it("is refused on the page a reclaimed job resumes after its worker died (#928)", async () => {
+    const id = await createConnection("freshness-fixture");
+    reply = { freshness: [{ stream: "reviews" }], nextCursor: "round-1" };
+    await sync(id);
+    // Attempt 1 commits page 1, then its worker never returns from page 2:
+    // nothing records a failure, and stale-job recovery requeues the job.
+    clockMs = START + 7 * HOUR;
+    const jobId = randomUUID();
+    reply = { afterPage: true, skipped: true };
+    let reachedPageTwo: () => void = () => {};
+    const atPage = new Promise<void>((resolve) => {
+      reachedPageTwo = resolve;
+    });
+    let releaseZombie: (error: Error) => void = () => {};
+    atPageTwo = () => {
+      reachedPageTwo();
+      return new Promise<void>((_, reject) => {
+        releaseZombie = reject;
+      });
+    };
+    const zombie = sync(id, { jobId });
+    await atPage;
+    atPageTwo = null;
+    await expect(sync(id, { jobId, attempts: 1 })).rejects.toBeInstanceOf(
+      NonRetryableJobError,
+    );
+    expect(await lastRun(id)).toMatchObject({
+      status: "failed",
+      error_class: "contract",
+    });
+    releaseZombie(new Error("worker gone"));
+    await expect(zombie).rejects.toThrow("worker gone");
+  });
+
+  it("is a new run's first page again once the resumed run finished (#928)", async () => {
+    const id = await createConnection("freshness-fixture");
+    reply = { freshness: [{ stream: "reviews" }], nextCursor: "round-1" };
+    await sync(id);
+    clockMs = START + HOUR;
+    const jobId = randomUUID();
+    reply = { afterPage: true };
+    atPageTwo = () => Promise.reject(new Error("provider unavailable"));
+    await expect(sync(id, { jobId })).rejects.toThrow("provider unavailable");
+    // The retry finishes the run from its checkpoint.
+    atPageTwo = null;
+    reply = {
+      afterPage: true,
+      freshness: [{ stream: "reviews" }],
+      nextCursor: "round-2",
+    };
+    await sync(id, { jobId, attempts: 1 });
+    expect(await lastRun(id)).toMatchObject({ status: "succeeded" });
+    // The next run starts from a finished run's cursor: its skip stands.
+    clockMs = START + 2 * HOUR;
+    reply = { skipped: true };
+    await sync(id);
+    expect(await lastRun(id)).toMatchObject({ status: "succeeded" });
   });
 });
 
