@@ -268,7 +268,11 @@ export const customApiVersionHistorySchema = z.object({
         /** Null: the author's account was deleted. */
         author: z.object({ id: z.uuid(), name: z.string() }).nullable(),
         current: z.boolean(),
-        /** An earlier version with an identical document (restores show this). */
+        /**
+         * An earlier version with the same content at today's schema
+         * version (restores show this), among the 100 versions before the
+         * page; null does not prove the content is new.
+         */
         sameAs: z.number().int().nullable(),
         summary: z.object({
           streams: z.number().int(),

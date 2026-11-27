@@ -5,7 +5,8 @@ import { rethrowWorkspaceGone } from "@netrics/database";
 // and JSON-escaped), and the body is bounded in array length, keys per
 // object, string length, depth and serialized size. Pure. Key-based
 // redaction (redactSecrets) is deliberately not applied: API data has keys
-// like "keyword" or "token_count" whose values are not secrets.
+// like "keyword" or "token_count" whose values are not secrets. A rendered
+// request body echoed as JSON, not as text, is replaced as a whole subtree.
 //
 // Bounding is one pass with a running byte budget: the work is bounded by
 // the budget, not by the size of the body (review of #820: re-serializing
@@ -32,7 +33,7 @@ export const CUSTOM_API_TEST_LIMITS = {
 export type JsonValue =
   string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
-const REDACTED = "[redacted]";
+export const REDACTED = "[redacted]";
 /** Shorter values would over-redact; real secrets are never this short. */
 const MIN_SECRET_LENGTH = 4;
 
@@ -50,8 +51,43 @@ export interface SecretSet {
    * into it (a 128 KiB body, percent-encoded, would outgrow V8's limit).
    */
   rendered: readonly string[];
-  /** The secret forms by plain search, both hex cases, when `pattern` is null. */
-  fallback: readonly string[];
+  /**
+   * The rendered bodies parsed, when they are a non-empty object or array:
+   * a provider that echoes the body as JSON rather than as text (`{"json":
+   * {…}}`) has each matching subtree replaced, keys in any order (#885).
+   */
+  echoes: readonly EchoTarget[];
+  /**
+   * The secret forms by plain search when `pattern` is null, longest
+   * first. The hex digits of a form's own percent-escapes match in any
+   * case, mixed ones (`%c3%BC`, `%cB`) included; every other character
+   * matches exactly, so a letter next to a secret never changes what
+   * matches (#885).
+   */
+  fallback: readonly FallbackForm[];
+}
+
+/** A rendered body, parsed, with its key lists taken once (#885). */
+export type EchoTarget =
+  | { kind: "scalar"; value: unknown }
+  | { kind: "array"; items: readonly EchoTarget[] }
+  | {
+      kind: "object";
+      keys: readonly string[];
+      entries: ReadonlyMap<string, EchoTarget>;
+    };
+
+/** A secret form for the plain search, with the positions that fold hex case. */
+export interface FallbackForm {
+  text: string;
+  /** 1 at the hex digits of the form's own `%XX` escapes. */
+  fold: Uint8Array;
+  /**
+   * The form without its first and last BOUNDARY characters, its escape
+   * digits in lower case, and its KMP failure table.
+   */
+  core: string;
+  failure: Int32Array;
 }
 
 /**
@@ -60,13 +96,6 @@ export interface SecretSet {
  * secrets: past this, plain search is used and nothing is compiled.
  */
 const MAX_PATTERN_CHARS = 262_144;
-
-/** A form as it is, and with its percent-escapes in lower and upper hex case. */
-function hexCases(form: string): string[] {
-  const lower = form.replace(/%[0-9A-Fa-f]{2}/g, (e) => e.toLowerCase());
-  const upper = form.replace(/%[0-9A-Fa-f]{2}/g, (e) => e.toUpperCase());
-  return [form, lower, upper];
-}
 
 const longestFirst = (values: Iterable<string>): string[] =>
   [...new Set(values)]
@@ -78,6 +107,114 @@ function replacePlain(text: string, values: readonly string[]): string {
   let out = text;
   for (const value of values)
     if (out.includes(value)) out = out.split(value).join(REDACTED);
+  return out;
+}
+
+/** The text with the hex digits of its `%XX` escapes in lower case; same length. */
+const lowerEscapes = (text: string): string =>
+  text.replace(/%[0-9A-Fa-f]{2}/g, (escape) => escape.toLowerCase());
+
+/**
+ * Characters at each end of a form compared on their own. Only there can
+ * a match start or end inside an escape of the text (`%ab…` for a form
+ * starting with "ab", or a form ending in `%a` before `%a3`); everywhere
+ * between, the form's escapes line up with the text's, since "%" is never
+ * a hex digit.
+ */
+const BOUNDARY = 2;
+
+export function fallbackForm(text: string): FallbackForm {
+  const fold = new Uint8Array(text.length);
+  for (const escape of text.matchAll(/%[0-9A-Fa-f]{2}/g)) {
+    fold[escape.index + 1] = 1;
+    fold[escape.index + 2] = 1;
+  }
+  const core = lowerEscapes(text).slice(
+    BOUNDARY,
+    Math.max(BOUNDARY, text.length - BOUNDARY),
+  );
+  const failure = new Int32Array(core.length);
+  for (let i = 1, k = 0; i < core.length; i++) {
+    while (k > 0 && core[i] !== core[k]) k = failure[k - 1]!;
+    if (core[i] === core[k]) k += 1;
+    failure[i] = k;
+  }
+  return { text, fold, core, failure };
+}
+
+/** A-F as a-f; every other code unit as it is. */
+const lowerHex = (code: number): number =>
+  code >= 65 && code <= 70 ? code + 32 : code;
+
+/** The form's boundary characters against the text at `at`: exact, or folded at its escape digits. */
+function boundaryMatches(
+  text: string,
+  at: number,
+  form: FallbackForm,
+  work: { comparisons: number },
+): boolean {
+  const m = form.text.length;
+  if (at < 0 || at + m > text.length) return false;
+  for (let k = 0; k < m; k++) {
+    if (k === BOUNDARY && m - BOUNDARY > k) k = m - BOUNDARY;
+    work.comparisons += 1;
+    const a = form.text.charCodeAt(k);
+    const b = text.charCodeAt(at + k);
+    if (a !== b && (!form.fold[k] || lowerHex(a) !== lowerHex(b))) return false;
+  }
+  return true;
+}
+
+/**
+ * Replaces every occurrence of each form, leftmost first, without
+ * overlaps. A form matches where each character equals the text's, the
+ * hex digits of the form's own escapes in either case; escapes outside a
+ * match keep their case. Linear in the text for each form: the core of
+ * the form is found by KMP in the text with its escape digits in lower
+ * case (inside a match the escapes of both line up, so this compares
+ * exactly what the rule says), and the BOUNDARY characters at each end are
+ * then compared on their own. `work` counts the character comparisons.
+ */
+export function replaceFallback(
+  text: string,
+  forms: readonly FallbackForm[],
+  work = { comparisons: 0 },
+): string {
+  let out = text;
+  for (const form of forms) {
+    const lowered = lowerEscapes(out);
+    const { core, failure } = form;
+    let next = "";
+    let from = 0;
+    const accept = (at: number): boolean => {
+      if (at < from || !boundaryMatches(out, at, form, work)) return false;
+      next += out.slice(from, at) + REDACTED;
+      from = at + form.text.length;
+      return true;
+    };
+    if (core.length === 0) {
+      // A form of at most 2 × BOUNDARY characters: every start, O(1) each.
+      for (let at = 0; at + form.text.length <= out.length;)
+        at = accept(at) ? from : at + 1;
+    } else {
+      let k = 0;
+      for (let i = BOUNDARY; i < out.length; i++) {
+        work.comparisons += 1;
+        while (k > 0 && lowered[i] !== core[k]) {
+          k = failure[k - 1]!;
+          work.comparisons += 1;
+        }
+        if (lowered[i] === core[k]) k += 1;
+        if (k < core.length) continue;
+        if (accept(i - core.length + 1 - BOUNDARY)) {
+          // The next match starts after this one: its core no earlier.
+          i = from + BOUNDARY - 1;
+          k = 0;
+        } else k = failure[k - 1]!;
+      }
+    }
+    if (from > 0) out = next + out.slice(from);
+  }
   return out;
 }
 
@@ -152,6 +289,7 @@ export function secretSetOf(
       return [body, json, json.replaceAll("/", "\\/")];
     }),
   );
+  const echoes = rendered.flatMap((body) => echoTargetOf(body) ?? []);
   const source = values.map(formPattern).join("|");
   let pattern: RegExp | null = null;
   if (values.length > 0 && source.length <= MAX_PATTERN_CHARS) {
@@ -167,10 +305,9 @@ export function secretSetOf(
     values,
     pattern,
     rendered: bodies,
+    echoes,
     fallback:
-      values.length > 0 && pattern === null
-        ? longestFirst(values.flatMap(hexCases))
-        : [],
+      values.length > 0 && pattern === null ? values.map(fallbackForm) : [],
   };
 }
 
@@ -179,7 +316,102 @@ export function redactText(text: string, secrets: SecretSet): string {
   // break the body's match.
   let out = replacePlain(text, secrets.rendered);
   if (secrets.pattern) out = out.replace(secrets.pattern, REDACTED);
-  return replacePlain(out, secrets.fallback);
+  return secrets.fallback.length === 0
+    ? out
+    : replaceFallback(out, secrets.fallback);
+}
+
+/**
+ * A parsed body as an echo target. The recursion follows the body, a
+ * template bounded in depth and size (CUSTOM_API_BODY_LIMITS).
+ */
+function echoTarget(value: unknown): EchoTarget {
+  if (Array.isArray(value))
+    return { kind: "array", items: value.map(echoTarget) };
+  if (value !== null && typeof value === "object") {
+    const entries = new Map<string, EchoTarget>();
+    for (const [key, item] of Object.entries(value))
+      entries.set(key, echoTarget(item));
+    return { kind: "object", keys: [...entries.keys()], entries };
+  }
+  return { kind: "scalar", value };
+}
+
+/** Whether `value` has exactly `count` own keys; stops counting past it. */
+function hasKeyCount(value: object, count: number): boolean {
+  let seen = 0;
+  for (const key in value)
+    if (Object.hasOwn(value, key) && ++seen > count) return false;
+  return seen === count;
+}
+
+/**
+ * Whether a JSON value equals `target`: the same keys in any order, the
+ * same items in order. The recursion follows the target, never the
+ * response; a container of another size is refused before any item.
+ */
+function sameJson(value: unknown, target: EchoTarget): boolean {
+  if (target.kind === "scalar") return value === target.value;
+  if (value === null || typeof value !== "object") return false;
+  if (target.kind === "array") {
+    if (!Array.isArray(value) || value.length !== target.items.length)
+      return false;
+    for (let i = 0; i < target.items.length; i++)
+      if (!sameJson(value[i], target.items[i]!)) return false;
+    return true;
+  }
+  if (Array.isArray(value) || !hasKeyCount(value, target.keys.length))
+    return false;
+  for (const key of target.keys)
+    if (
+      !Object.hasOwn(value, key) ||
+      !sameJson(
+        (value as Record<string, unknown>)[key],
+        target.entries.get(key)!,
+      )
+    )
+      return false;
+  return true;
+}
+
+/**
+ * Whether a value of a response equals a rendered body (#885): an object
+ * or array the provider echoed, shown as "[redacted]". Checked node by
+ * node by every bounded walk over a response, never by a pass of its own.
+ */
+export function isEchoedBody(value: unknown, secrets: SecretSet): boolean {
+  return matchesEcho(value, secrets.echoes);
+}
+
+/** Whether a value equals one of `targets` (see isEchoedBody). */
+export function matchesEcho(
+  value: unknown,
+  targets: readonly EchoTarget[],
+): boolean {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    targets.some((target) => sameJson(value, target))
+  );
+}
+
+/**
+ * A rendered body as an echo target; null unless it parses to a
+ * non-empty object or array (an empty one would match too much).
+ */
+export function echoTargetOf(rendered: string): EchoTarget | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rendered);
+  } catch (caught) {
+    rethrowWorkspaceGone(caught);
+    return null;
+  }
+  return parsed !== null &&
+    typeof parsed === "object" &&
+    Object.keys(parsed).length > 0
+    ? echoTarget(parsed)
+    : null;
 }
 
 /**
@@ -314,6 +546,7 @@ export function boundedPreview(
       });
     }
     if (typeof value !== "object") return scalar(null);
+    if (isEchoedBody(value, secrets)) return scalar(REDACTED);
     if (depth >= limits.depth) {
       const placed = scalar("… (nested deeper)");
       if (placed !== undefined) omitted.depth += 1;

@@ -5,9 +5,11 @@
 // `fetch`; the host passes its egress-guarded fetch.
 
 import type { ConnectorRuntime } from "@netrics/connector-sdk";
-import type {
-  CustomApiDefinition,
-  CustomApiStream,
+import {
+  readDataPath,
+  type CustomApiDefinition,
+  type CustomApiField,
+  type CustomApiStream,
 } from "@netrics/connector-sdk/custom-api";
 
 import type { CustomApiCredentials } from "../credentials.js";
@@ -19,7 +21,12 @@ import {
 import { customApiEnvironment, customApiEnvironmentHost } from "../manifest.js";
 import { CUSTOM_API_MESSAGES } from "../messages.js";
 import { nextPage, pageParams, type PageState } from "../pagination.js";
-import { jsonTooDeep, mapRecords, selectRecords } from "../records.js";
+import {
+  fieldPath,
+  jsonTooDeep,
+  mapRecords,
+  selectRecords,
+} from "../records.js";
 import { buildRequest, type BuiltRequest } from "../request.js";
 import {
   checkGraphqlErrors,
@@ -27,6 +34,7 @@ import {
   sendCustomApiRequest,
 } from "../connector.js";
 import { windowPlaceholders, type Chunk } from "../windows.js";
+import { hiddenOnPath, type HiddenValue } from "./suggest.js";
 
 export interface CustomApiPageTrace {
   page: number;
@@ -76,6 +84,36 @@ function parseBody(text: string): { json: boolean; value: unknown } {
   }
 }
 
+/**
+ * Sets each cell whose source path reaches into, or is, a hidden value of
+ * its record to that value's replacement; with `all`, every cell (the
+ * records themselves lie in a hidden value). Reads only along the paths.
+ */
+function hideCells(
+  rows: Record<string, unknown>[],
+  raws: readonly unknown[],
+  all: string | undefined,
+  fields: readonly CustomApiField[],
+  hidden: HiddenValue,
+): void {
+  rows.forEach((row, index) => {
+    for (const field of fields) {
+      if (all !== undefined) {
+        row[field.id] = all;
+        continue;
+      }
+      let value = raws[index];
+      let shown = hidden(value);
+      for (const segment of fieldPath(field)) {
+        if (shown !== undefined || value === undefined) break;
+        value = readDataPath(value, [segment]);
+        shown = hidden(value);
+      }
+      if (shown !== undefined) row[field.id] = shown;
+    }
+  });
+}
+
 export async function runCustomApiTestStream(input: {
   definition: Pick<
     CustomApiDefinition,
@@ -107,6 +145,13 @@ export async function runCustomApiTestStream(input: {
    * host's redaction set, never for the public trace (ADR 0030 §4).
    */
   onSend?: (built: BuiltRequest) => void;
+  /**
+   * Values of a response the host does not show (a request body sent and
+   * echoed as JSON, #885): a mapped cell read from one, or from inside
+   * one, is set to what this returns. Asked after `onSend`, so it knows
+   * the body of the request the page answers.
+   */
+  hidden?: HiddenValue;
   /** Clock (ms) for the deadline; tests pin it. */
   now?: () => number;
 }): Promise<CustomApiTestStreamResult> {
@@ -214,6 +259,14 @@ export async function runCustomApiTestStream(input: {
     const taken = selected.slice(0, room);
     records += taken.length;
     const mapped = mapRecords(mapping, taken, timeZone);
+    if (input.hidden)
+      hideCells(
+        mapped.rows,
+        mapped.sources.map((index) => taken[index]),
+        hiddenOnPath(body.value, stream.records, input.hidden),
+        stream.fields,
+        input.hidden,
+      );
     rows.push(...mapped.rows);
     skipped += mapped.skipped;
     for (const [id, n] of Object.entries(mapped.nulled))

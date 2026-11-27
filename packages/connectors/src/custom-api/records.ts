@@ -290,6 +290,8 @@ export function convertValue(
 
 export interface MappedPage {
   rows: Record<string, unknown>[];
+  /** For each row, the index of the record it was mapped from. */
+  sources: number[];
   skipped: number;
   /**
    * Records skipped by the field that skipped them, by field id (#834
@@ -303,7 +305,7 @@ export interface MappedPage {
 }
 
 const pathCache = new WeakMap<CustomApiField, DataPathSegment[]>();
-function fieldPath(field: CustomApiField): DataPathSegment[] {
+export function fieldPath(field: CustomApiField): DataPathSegment[] {
   let path = pathCache.get(field);
   if (!path) {
     path = parseDataPath(field.path);
@@ -320,6 +322,7 @@ export function mapRecords(
   timeZone: string,
 ): MappedPage {
   const rows: Record<string, unknown>[] = [];
+  const sources: number[] = [];
   const nulled: Record<string, number> = {};
   const skippedFields: Record<string, number> = {};
   let skipped = 0;
@@ -331,7 +334,7 @@ export function mapRecords(
   const money = stream.fields.flatMap((field) =>
     field.currencyField === undefined ? [] : [field.currencyField],
   );
-  records: for (const raw of raws) {
+  records: for (const [index, raw] of raws.entries()) {
     const row: Record<string, unknown> = {};
     const nulledHere: string[] = [];
     for (const field of stream.fields) {
@@ -369,8 +372,9 @@ export function mapRecords(
     }
     for (const id of nulledHere) nulled[id] = (nulled[id] ?? 0) + 1;
     rows.push(row);
+    sources.push(index);
   }
-  return { rows, skipped, skippedFields, nulled };
+  return { rows, sources, skipped, skippedFields, nulled };
 }
 
 /** Non-recursive scan of the body text; true when nesting exceeds CUSTOM_API_LIMITS.jsonDepth. */

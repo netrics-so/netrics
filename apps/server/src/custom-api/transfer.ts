@@ -73,6 +73,10 @@ type ImportFailure = {
  * replaced by the importer's (ADR 0030 §2): an exported confirmation is
  * its author's, not the importer's. Returns a copy; the paths of the
  * JSON bodies it found, for the refusal.
+ *
+ * Only the objects on the way to a body are copied (shallow): the file is
+ * not validated yet, and a deep copy of it (structuredClone) overflows the
+ * stack on deeply nested values well under the upload limit (#885).
  */
 function withImporterConfirmation(
   raw: unknown,
@@ -80,23 +84,21 @@ function withImporterConfirmation(
 ): { definition: unknown; jsonBodies: string[] } {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw))
     return { definition: raw, jsonBodies: [] };
-  const definition = structuredClone(raw) as Record<string, unknown>;
+  const isObject = (value: unknown): value is Record<string, unknown> =>
+    value !== null && typeof value === "object" && !Array.isArray(value);
+  const definition: Record<string, unknown> = { ...raw };
   const jsonBodies: string[] = [];
   const streams = definition.streams;
   if (Array.isArray(streams))
-    streams.forEach((stream: unknown, index) => {
-      const request = (stream as { request?: unknown } | null)?.request;
-      const body = (request as { body?: unknown } | null | undefined)?.body;
-      if (
-        body === null ||
-        typeof body !== "object" ||
-        (body as { kind?: unknown }).kind !== "json"
-      )
-        return;
-      const json = body as Record<string, unknown>;
+    definition.streams = streams.map((stream: unknown, index) => {
+      if (!isObject(stream) || !isObject(stream.request)) return stream;
+      const body = stream.request.body;
+      if (!isObject(body) || body.kind !== "json") return stream;
+      const json: Record<string, unknown> = { ...body };
       delete json.readOnlyConfirmed;
       if (confirmed) json.readOnlyConfirmed = true;
       jsonBodies.push(`definition.streams.${index}.request.body`);
+      return { ...stream, request: { ...stream.request, body: json } };
     });
   return { definition, jsonBodies };
 }

@@ -99,9 +99,13 @@ most 10 drafts are open per workspace.
 ## Versions, updates, export and import
 
 - **History.** `GET …/definitions/:id/versions?before=` lists versions
-  newest first, 20 per page, with author, time and `sameAs` (the nearest
-  earlier version with the identical document, by the stored canonical
-  hash). `GET …/versions/:version` reads one. Viewers may read both.
+  newest first, 20 per page, with author, time and `sameAs`: an earlier
+  version with the same content, compared at today's schema version (a
+  version stored at an older schema version is upgraded first, as a
+  restore compares it). Only the 100 versions before the page's oldest
+  entry are compared, so `null` does not prove the content is new: an
+  identical version further back is not named. `GET …/versions/:version`
+  reads one. Viewers may read both.
 - **Restore.** `POST …/versions/:version/restore { baseVersion }` saves the
   old document as a new version (versions are immutable), through the same
   save path: validation, dataset versions, limits, the stale check (409

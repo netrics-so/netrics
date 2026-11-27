@@ -895,6 +895,102 @@ describe("read-only POST test requests (ADR 0030)", () => {
     expect(JSON.stringify(body.log)).not.toContain("ItemsQuery");
   });
 
+  it("redacts the body it sent when the API echoes it as JSON, in the preview and the suggestions (#885)", async () => {
+    const id = await newDraft();
+    const window = {
+      start: "2024-03-01T00:00:00.000Z",
+      end: "2024-03-02T00:00:00.000Z",
+    };
+    const definition = windowedDraft("/query-echo-json");
+    const unconfirmed = await testRequest(id, {
+      definition,
+      variables: { tenant: "acme" },
+      window,
+    });
+    const { readOnlyConfirmation } = unconfirmed.json() as {
+      readOnlyConfirmation: string;
+    };
+    const res = await testRequest(id, {
+      definition,
+      variables: { tenant: "acme" },
+      window,
+      readOnlyConfirmation,
+    });
+    const body = parsed(res);
+    expect(body.ok, JSON.stringify(body.error)).toBe(true);
+    expect(JSON.parse(fixture.requests[0]!.body!)).toMatchObject({
+      kind: "ItemsQuery",
+      from: "2024-03-01",
+    });
+    expect(body.response!.body).toEqual({
+      items: [{ id: 1, request: "[redacted]" }],
+      json: "[redacted]",
+    });
+    expect(body.suggestions.map((s) => [s.path, s.samples])).toEqual([
+      ["id", ["1"]],
+      ["request", ["[redacted]"]],
+    ]);
+    expect(res.body).not.toContain("ItemsQuery");
+    expect(body.recordArrays.map((a) => a.path)).toEqual(["items"]);
+  });
+
+  it("redacts mapped cells read from a body the API echoes as JSON (#930 review)", async () => {
+    const window = {
+      start: "2024-03-01T00:00:00.000Z",
+      end: "2024-03-02T00:00:00.000Z",
+    };
+    const run = async (records: string, fields: unknown[]) => {
+      const id = await newDraft();
+      const base = windowedDraft("/query-echo-json");
+      const definition = {
+        ...base,
+        stream: { ...base.stream, records, fields },
+      };
+      const unconfirmed = await testRequest(id, {
+        definition,
+        variables: { tenant: "acme" },
+        window,
+      });
+      const { readOnlyConfirmation } = unconfirmed.json() as {
+        readOnlyConfirmation: string;
+      };
+      const res = await testRequest(id, {
+        definition,
+        variables: { tenant: "acme" },
+        window,
+        readOnlyConfirmation,
+      });
+      const body = parsed(res);
+      expect(body.ok, JSON.stringify(body.error)).toBe(true);
+      expect(res.body).not.toContain("ItemsQuery");
+      return body.rows;
+    };
+    // Fields under an echoed value of the record: those cells only.
+    expect(
+      await run("items", [
+        ...ID_FIELD,
+        {
+          id: "query_kind",
+          name: "Kind",
+          path: "request.kind",
+          type: "string",
+        },
+        {
+          id: "page_limit",
+          name: "Limit",
+          path: "request.page.limit",
+          type: "integer",
+        },
+      ]),
+    ).toEqual([{ id: 1, query_kind: "[redacted]", page_limit: "[redacted]" }]);
+    // Records that are the echoed body: every cell.
+    expect(
+      await run("json", [
+        { id: "query_kind", name: "Kind", path: "kind", type: "string" },
+      ]),
+    ).toEqual([{ query_kind: "[redacted]" }]);
+  });
+
   it("redacts a large non-ASCII body it sent without a 500 (review round 2)", async () => {
     const id = await newDraft();
     const window = {

@@ -1,12 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   boundedPreview,
   CUSTOM_API_TEST_LIMITS,
   redactText,
+  fallbackForm,
+  replaceFallback,
   redactUrl,
   secretSetOf,
 } from "./preview.js";
+import {
+  previewRecordArrays,
+  previewRows,
+  previewSuggestions,
+} from "./test-request.js";
 
 // The builder's test response is redacted by value and bounded (#806,
 // Review Focus 2 and 3).
@@ -51,6 +58,130 @@ describe("redaction of large values (ADR 0030 review)", () => {
     expect(redactText(text, secrets!)).toBe(
       "a [redacted] b [redacted] c [redacted] [redacted]",
     );
+  });
+
+  it("matches percent-escapes in mixed hex case when the pattern would be too large (#885)", () => {
+    const huge = Array.from(
+      { length: 20 },
+      (_, i) => `${i}-${"ü€/ +".repeat(1_600)}`,
+    );
+    const secrets = secretSetOf(
+      {},
+      Object.fromEntries(huge.map((value, i) => [`v${i}`, value])),
+    );
+    expect(secrets.pattern).toBeNull();
+    let escape = 0;
+    // `%c3%BC`, `%C3%bc`, `%e2%8A%AC`…: each escape in another case,
+    // and digits within one escape mixed too (`%cB`).
+    const mixed = (value: string) =>
+      encodeURIComponent(value).replace(/%[0-9A-F]{2}/g, (e) => {
+        escape += 1;
+        return escape % 3 === 0
+          ? e.toLowerCase()
+          : escape % 3 === 1
+            ? e
+            : `%${e[1]!.toLowerCase()}${e[2]}`;
+      });
+    const text = `a ${mixed(huge[4]!)} b ${mixed(huge[11]!)} c`;
+    expect(text).toMatch(/%c3%BC|%C3%bc|%c3%Bc|%C3%BC%e2/);
+    expect(redactText(text, secrets)).toBe("a [redacted] b [redacted] c");
+    // Nothing else changes: escapes outside a secret keep their case.
+    expect(redactText(`x%c3%BCy ${mixed(huge[0]!)}`, secrets)).toBe(
+      "x%c3%BCy [redacted]",
+    );
+  });
+
+  it("searches in time linear in the text, also for a mostly encoded secret (#930 review)", () => {
+    const huge = Array.from(
+      { length: 20 },
+      (_, i) => `${i}-${"ü€/ +".repeat(1_600)}`,
+    );
+    // 500 "ü" and a "z": an encoded form of 3,001 characters whose only
+    // literals are "%" and the final "z".
+    const secret = `${"ü".repeat(500)}z`;
+    const secrets = secretSetOf(
+      {},
+      {
+        ...Object.fromEntries(huge.map((value, i) => [`v${i}`, value])),
+        secret,
+      },
+    );
+    expect(secrets.pattern).toBeNull();
+    const form = secrets.fallback.find(
+      (f) => f.text === encodeURIComponent(secret),
+    )!;
+    // Escapes in either case, never followed by the "z".
+    const text = "%c3%BC%C3%bc".repeat(2_000);
+    const work = { comparisons: 0 };
+    expect(replaceFallback(text, [form], work)).toBe(text);
+    expect(work.comparisons).toBeLessThanOrEqual(
+      3 * (text.length + form.text.length),
+    );
+    // And it still finds the secret, in mixed case, after such a run.
+    const found = `${text}${encodeURIComponent(secret).toLowerCase()}!`;
+    expect(replaceFallback(found, [form])).toBe(`${text}[redacted]!`);
+  });
+
+  it("matches exactly what a character-by-character comparison matches (#930 review)", () => {
+    // Reference: leftmost, non-overlapping, each character equal or, at
+    // the hex digits of the form's own escapes, equal in either case.
+    const reference = (text: string, form: string): string => {
+      const fold = new Set<number>();
+      for (const e of form.matchAll(/%[0-9A-Fa-f]{2}/g))
+        fold.add(e.index + 1).add(e.index + 2);
+      const same = (at: number) =>
+        [...form].every(
+          (c, k) =>
+            c === text[at + k] ||
+            (fold.has(k) && c.toLowerCase() === text[at + k]!.toLowerCase()),
+        );
+      let out = "";
+      let at = 0;
+      while (at < text.length) {
+        if (at + form.length <= text.length && same(at)) {
+          out += "[redacted]";
+          at += form.length;
+        } else out += text[at++];
+      }
+      return out;
+    };
+    let seed = 885;
+    const random = (n: number) => {
+      seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648;
+      return seed % n;
+    };
+    const alphabet = "%%%aAbB3cx";
+    const pick = (length: number) =>
+      Array.from({ length }, () => alphabet[random(alphabet.length)]).join("");
+    for (let run = 0; run < 3_000; run++) {
+      const form = pick(4 + random(6));
+      const text = pick(random(40));
+      expect(
+        replaceFallback(text, [fallbackForm(form)]),
+        `${form} in ${text}`,
+      ).toBe(reference(text, form));
+    }
+  });
+
+  it("folds the hex case of escapes only, never of letters next to a secret (#930 review)", () => {
+    const huge = Array.from(
+      { length: 20 },
+      (_, i) => `${i}-${"ü€/ +".repeat(1_600)}`,
+    );
+    const secrets = secretSetOf(
+      {},
+      {
+        ...Object.fromEntries(huge.map((value, i) => [`v${i}`, value])),
+        short: "abücd",
+      },
+    );
+    expect(secrets.pattern).toBeNull();
+    // "%" just before the secret's leading "ab" reads as an escape "%ab".
+    for (const text of ["%ab%c3%bccd", "%ab%C3%BCcd", "%%ab%c3%BCcd"])
+      expect(redactText(text, secrets)).not.toMatch(/ab%c3%bccd/i);
+    expect(redactText("%ab%c3%bccd", secrets)).toBe("%[redacted]");
+    // Letters of the secret keep their case: "AB%C3%BCcd" is another value.
+    expect(redactText("AB%C3%BCcd", secrets)).toBe("AB%C3%BCcd");
   });
 });
 
@@ -302,5 +433,141 @@ describe("boundedPreview", () => {
       truncated: false,
       omitted: { arrays: 0, strings: 0, depth: 0, bytes: 0 },
     });
+  });
+});
+
+describe("structured echo of rendered bodies (#885)", () => {
+  const sent = {
+    kind: "ItemsQuery",
+    tenant: "acme-tenant",
+    page: { offset: 0, limit: 10 },
+    tags: ["a", "b"],
+  };
+  const secrets = secretSetOf({}, {}, [], [JSON.stringify(sent)]);
+  // The provider parsed the body and answers it as JSON, keys reordered.
+  const echoed = () => ({
+    tags: ["a", "b"],
+    page: { limit: 10, offset: 0 },
+    tenant: "acme-tenant",
+    kind: "ItemsQuery",
+  });
+
+  it("redacts the body echoed as an object or array, at any depth", () => {
+    const body = {
+      items: [{ id: 1, request: echoed() }],
+      json: echoed(),
+      list: [[echoed()]],
+      // Parts of the body and look-alikes stay.
+      page: { limit: 10, offset: 0 },
+      near: { ...echoed(), extra: true },
+      other: { ...echoed(), tags: ["b", "a"] },
+    };
+    const out = boundedPreview(body, secrets).body as Record<string, unknown>;
+    expect(out.items).toEqual([{ id: 1, request: "[redacted]" }]);
+    expect(out.json).toBe("[redacted]");
+    expect(out.list).toEqual([["[redacted]"]]);
+    expect(out.page).toEqual({ limit: 10, offset: 0 });
+    expect(out.near).toMatchObject({ kind: "ItemsQuery", extra: true });
+    expect(out.other).toMatchObject({ tags: ["b", "a"] });
+  });
+
+  it("redacts echoed bodies in the field suggestions, leaving the records", () => {
+    const records = [
+      { id: 1, request: echoed(), page: { limit: 10 } },
+      // Deeper than the leaf depth: the sample is the object serialized.
+      { id: 2, a: { b: { c: { d: { e: echoed() } } } } },
+    ];
+    const out = previewSuggestions(
+      { items: records },
+      "items",
+      records,
+      secrets,
+    );
+    expect(out.map((s) => [s.path, s.samples])).toEqual([
+      ["id", ["1", "2"]],
+      ["request", ["[redacted]"]],
+      ["page.limit", ["10"]],
+      ["a.b.c.d", ['{"e":"[redacted]"}']],
+    ]);
+    expect(records[0]!.request).toEqual(echoed());
+    expect(JSON.stringify(out)).not.toContain("ItemsQuery");
+  });
+
+  it("types a redacted echo by the value it hides: json, not string (#930 review)", () => {
+    const records = [{ id: 1, request: echoed() }];
+    const out = previewSuggestions(
+      { items: records },
+      "items",
+      records,
+      secrets,
+    );
+    expect(out.find((s) => s.path === "request")).toMatchObject({
+      type: "json",
+      samples: ["[redacted]"],
+    });
+  });
+
+  it("suggests nothing from records inside an echoed body (#930 review)", () => {
+    const query = {
+      kind: "Search",
+      criteria: { from: "2024-03-01", region: "eu-west" },
+    };
+    const own = secretSetOf({}, {}, [], [JSON.stringify(query)]);
+    const body = {
+      json: {
+        criteria: { region: "eu-west", from: "2024-03-01" },
+        kind: "Search",
+      },
+    };
+    const records = [body.json.criteria];
+    expect(previewSuggestions(body, "json.criteria", records, own)).toEqual([]);
+    // The selected value itself echoed.
+    expect(previewSuggestions(body, "json", [body.json], own)).toEqual([]);
+  });
+
+  it("finds record arrays without walking the whole body (#930 review)", () => {
+    let reads = 0;
+    const items = new Proxy(
+      Array.from({ length: 50_000 }, (_, id) => ({ id })),
+      {
+        get(target, key, receiver) {
+          if (typeof key === "string" && /^[0-9]+$/.test(key)) reads += 1;
+          return Reflect.get(target, key, receiver) as unknown;
+        },
+      },
+    );
+    const out = previewRecordArrays({ items, json: echoed() }, secrets);
+    expect(out).toEqual([{ path: "items", length: 50_000 }]);
+    expect(reads).toBeLessThanOrEqual(CUSTOM_API_TEST_LIMITS.arrayItems);
+  });
+
+  it("keeps the rows after a row that equals the sent body (#930 review)", () => {
+    const own = secretSetOf({}, {}, [], ['{"id":1}']);
+    const out = previewRows([{ id: 1 }, { id: 2 }], own);
+    expect(out.rows).toEqual([{ id: "[redacted]" }, { id: 2 }]);
+  });
+
+  it("rejects objects of another size without listing the sent body's keys (#930 review)", () => {
+    const keys = vi.spyOn(Object, "keys");
+    try {
+      const body = Array.from({ length: 40 }, (_, i) => ({ x: i }));
+      keys.mockClear();
+      boundedPreview(body, secrets);
+      const ofTarget = keys.mock.calls.filter(
+        ([value]) =>
+          value !== null &&
+          typeof value === "object" &&
+          Object.hasOwn(value as object, "tenant"),
+      );
+      expect(ofTarget).toHaveLength(0);
+    } finally {
+      keys.mockRestore();
+    }
+  });
+
+  it("never treats an empty or scalar body as an echo", () => {
+    const scalars = secretSetOf({}, {}, [], ["{}", "[]", "12345"]);
+    const body = { a: {}, b: [], c: 12345 };
+    expect(boundedPreview(body, scalars).body).toEqual(body);
   });
 });

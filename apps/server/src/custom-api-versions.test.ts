@@ -13,6 +13,7 @@ import {
   type CustomApiTestApp,
 } from "./custom-api/test-helpers.js";
 import { canonicalSha256 } from "./custom-api/canonical-json.js";
+import { CUSTOM_API_HISTORY_SAME_AS_LOOKBACK } from "./custom-api/versions.js";
 import { TEST_DATABASE_SETUP_TIMEOUT_MS } from "./test-db.js";
 
 // Version history and rollback of custom API definitions (#808): who
@@ -193,6 +194,55 @@ describe("custom API version history", () => {
     expect(res.statusCode, res.body).toBe(409);
     expect(errorOf(res)).toBe("custom_api_version_unchanged");
   });
+
+  it("marks identical content stored at an older schema version as the same (#885)", async () => {
+    const definition = await create();
+    await save(definition.id, 1, shop(90));
+    await save(definition.id, 2, shop(60));
+    // Version 1 as a version-1 server stored it: another stored hash,
+    // the same content as version 3.
+    const [stored] = await t.admin<{ document: Doc }[]>`
+      select document from custom_api_definition_versions
+      where definition_id = ${definition.id} and version = 1`;
+    const v1 = { ...stored!.document, schemaVersion: 1 };
+    await t.admin`
+      update custom_api_definition_versions
+      set document = ${t.admin.json(v1 as never)},
+          document_sha256 = ${canonicalSha256(v1)}, schema_version = 1
+      where definition_id = ${definition.id} and version = 1`;
+    // Version 4 differs; version 5 equals version 2 at today's schema.
+    await save(definition.id, 3, shop(120));
+    await save(definition.id, 4, shop(90));
+    const page = await history(definition.id);
+    expect(page.versions.map((v) => [v.version, v.sameAs])).toEqual([
+      [5, 2],
+      [4, null],
+      [3, 1],
+      [2, null],
+      [1, null],
+    ]);
+  });
+
+  it("looks back a bounded number of versions for the same content (#930 review)", async () => {
+    const definition = await create();
+    const back = CUSTOM_API_HISTORY_SAME_AS_LOOKBACK;
+    // Versions 2 … back + 21 all differ; the last one equals version 1,
+    // which lies beyond the lookback of the first page (oldest: 3).
+    const newest = back + 22;
+    for (let version = 1; version < newest - 1; version++)
+      await save(definition.id, version, shop(1_000 + version));
+    await save(definition.id, newest - 1, shop(60));
+    const first = await history(definition.id);
+    expect(first.versions[0]).toMatchObject({ version: newest, sameAs: null });
+    expect(first.versions.at(-1)!.version).toBe(newest - 19);
+    // The same content inside the lookback is found.
+    await save(definition.id, newest, shop(1_000 + newest - 2));
+    const again = await history(definition.id);
+    expect(again.versions[0]).toMatchObject({
+      version: newest + 1,
+      sameAs: newest - 1,
+    });
+  }, 60_000);
 
   it("upgrades an older schema version while restoring", async () => {
     // Only schema version 1 exists: an older shape is a version-1

@@ -30,6 +30,7 @@ import {
   customApiEnvironmentHost,
   customApiSecretValues,
   findRecordArrays,
+  hiddenOnPath,
   readPath,
   runCustomApiTestStream,
   shortPath,
@@ -65,9 +66,14 @@ import { customOAuthFailureMessage } from "../oauth/tokens.js";
 import {
   boundedPreview,
   CUSTOM_API_TEST_LIMITS,
+  echoTargetOf,
+  isEchoedBody,
+  matchesEcho,
+  REDACTED,
   redactText,
   redactUrl,
   secretSetOf,
+  type EchoTarget,
   type JsonValue,
   type SecretSet,
 } from "./preview.js";
@@ -216,7 +222,50 @@ export function testChunk(
  * The mapped preview rows: at most 100, bounded together to
  * CUSTOM_API_TEST_LIMITS.rowsBytes (each row gets what is left of it).
  */
-function previewRows(
+/** The arrays that may hold the records, paths redacted. */
+export function previewRecordArrays(
+  body: unknown,
+  secrets: SecretSet,
+): { path: string; length: number }[] {
+  return findRecordArrays(body, undefined, echoed(secrets)).map(
+    ({ path, length }) => ({
+      path: shortPath(redactText(path, secrets)),
+      length,
+    }),
+  );
+}
+
+/** A request body the API echoed as JSON is one redacted value (#885). */
+const echoed =
+  (secrets: SecretSet) =>
+  (value: unknown): string | undefined =>
+    isEchoedBody(value, secrets) ? REDACTED : undefined;
+
+/**
+ * Field suggestions from the first records, redacted. Records inside an
+ * echoed request body (the records path or a value on the way to it)
+ * suggest nothing; an echo inside a record is one redacted value.
+ */
+export function previewSuggestions(
+  body: unknown,
+  recordsPath: string,
+  records: readonly unknown[],
+  secrets: SecretSet,
+) {
+  if (
+    secrets.echoes.length > 0 &&
+    hiddenOnPath(body, recordsPath, echoed(secrets)) !== undefined
+  )
+    return [];
+  return suggestFields(
+    records,
+    CUSTOM_API_TEST_LIMITS.rows,
+    (text) => redactText(text, secrets),
+    echoed(secrets),
+  );
+}
+
+export function previewRows(
   rows: readonly Record<string, unknown>[],
   secrets: SecretSet,
 ): { rows: Record<string, JsonValue>[]; truncated: boolean } {
@@ -228,8 +277,12 @@ function previewRows(
       truncated = true;
       break;
     }
+    // A row equal to a request body sent keeps its columns, each
+    // redacted, so it is not mistaken for a cut by the budget.
     const bounded = boundedPreview(
-      row,
+      isEchoedBody(row, secrets)
+        ? Object.fromEntries(Object.keys(row).map((key) => [key, REDACTED]))
+        : row,
       secrets,
       Math.min(left, CUSTOM_API_TEST_LIMITS.previewBytes),
     );
@@ -506,6 +559,9 @@ export function createCustomApiTestRequestService(
         // (ADR 0030 §4), matched by plain search apart from the secrets'
         // pattern; they never enter the public trace.
         const sentBodies = new Set<string>();
+        // The bodies sent so far as echo targets, for the mapped rows of
+        // each page (#885): a page answers a request already sent.
+        const sentEchoes: EchoTarget[] = [];
         const secretsWith = (rendered: Iterable<string>): SecretSet =>
           secretSetOf(
             envelope,
@@ -551,8 +607,14 @@ export function createCustomApiTestRequestService(
             },
             onPage: (trace) => traces.push(trace),
             onSend: (built) => {
-              if (built.body !== undefined) sentBodies.add(built.body);
+              if (built.body === undefined || sentBodies.has(built.body))
+                return;
+              sentBodies.add(built.body);
+              const target = echoTargetOf(built.body);
+              if (target) sentEchoes.push(target);
             },
+            hidden: (value) =>
+              matchesEcho(value, sentEchoes) ? REDACTED : undefined,
           });
         } catch (error) {
           failure = errorOf(
@@ -616,21 +678,17 @@ export function createCustomApiTestRequestService(
                     bytes: first.bytes,
                   }
                 : null,
-            recordArrays: first
-              ? findRecordArrays(firstBody).map(({ path, length }) => ({
-                  path: shortPath(redactText(path, secrets)),
-                  length,
-                }))
-              : [],
+            recordArrays: first ? previewRecordArrays(firstBody, secrets) : [],
             records: {
               path: definition.stream.records,
               count: records.length,
               found: recordsAt.found,
             },
-            suggestions: suggestFields(
+            suggestions: previewSuggestions(
+              firstBody,
+              definition.stream.records,
               records,
-              CUSTOM_API_TEST_LIMITS.rows,
-              (text) => redactText(text, secrets),
+              secrets,
             ),
             rows: rows.rows,
             mapping: {
