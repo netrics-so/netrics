@@ -748,6 +748,26 @@ describe("the state widget (#875)", () => {
     expect(list!.counts.unknown).toBe(121);
   });
 
+  it("limits discovery over distinct values, not their spellings (#900)", async () => {
+    // 128 casings of one value sort before ZOMBIE.
+    const casings = Array.from({ length: 128 }, (_, index) =>
+      [..."degraded"]
+        .map((char, at) => ((index >> at) & 1 ? char.toUpperCase() : char))
+        .join(""),
+    ).slice(0, 128);
+    const id = await fleetModel("casings", [
+      ...casings.map((state, index) => ({ host: `h${pad(index)}`, state })),
+      { host: "zzz", state: "ZOMBIE" },
+    ]);
+    const dashboard = await saved([fleetWidget(id, {})]);
+    const [list] = (await data(dashboard.id)).states;
+    expect(list!.sourceValues).toHaveLength(2);
+    expect(list!.sourceValues).toContain("ZOMBIE");
+    expect(list!.sourceValues.map((value) => value.toLowerCase())).toContain(
+      "degraded",
+    );
+  });
+
   it("reads a model with 100 measures (#900)", async () => {
     const hosts = await manualDataset(
       "measured",

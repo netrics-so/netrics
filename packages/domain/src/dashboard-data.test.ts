@@ -1470,7 +1470,7 @@ describe("stateModelQuery (#875)", () => {
     expect(first.totalRows).toBe(3);
     expect(first.rankCounts).toEqual({ 1: 1, 5: 1, 6: 1 });
     expect(read({ kind: "sourceValues" }).rows.map((row) => row.rank)).toEqual([
-      1, 1,
+      2, 2,
     ]);
   });
 

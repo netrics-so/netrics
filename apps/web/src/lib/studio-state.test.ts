@@ -284,4 +284,15 @@ describe("follow-ups of the final review (#900)", () => {
     });
     expect(stateModels([flagged]).map((m) => m.modelId)).toEqual(["flagged"]);
   });
+
+  it("keeps the preferred name when only text fields can be the state", () => {
+    const plain = model("plain", [
+      ["condition_id", "Condition ID", "string"],
+      ["host", "Host", "string"],
+    ]);
+    expect(stateBindingFor(plain)).toMatchObject({
+      nameDimensionId: "host",
+      stateDimensionId: "condition_id",
+    });
+  });
 });

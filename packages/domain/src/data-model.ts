@@ -128,12 +128,14 @@ export interface ModelQuery {
  * case-insensitively, then exactly, nameless last, then in the groups'
  * own order. Each result row carries its rank, and `rankCounts` counts
  * every group per rank, so a page, its total and its counts share one
- * grain. `key` names the ranking in snapshot and page keys. Never with
- * `orderBy` or windowed measures.
+ * grain. `key` names the ranking in snapshot and page keys. `ranker`
+ * makes the rank function of one run, which sees every group once, in the
+ * groups' own order (it may remember what it saw). Never with `orderBy`
+ * or windowed measures.
  */
 export interface ModelQueryRank {
   key: string;
-  of: (values: Readonly<DataRow>) => number;
+  ranker: () => (values: Readonly<DataRow>) => number;
   tieBreak?: string;
 }
 export interface ModelQueryOrder {
@@ -757,7 +759,7 @@ export function querySemanticModel(
   if (
     query.rank !== undefined &&
     (query.orderBy !== undefined ||
-      typeof query.rank.of !== "function" ||
+      typeof query.rank.ranker !== "function" ||
       (query.rank.tieBreak !== undefined &&
         !query.groupBy.includes(query.rank.tieBreak)))
   )
@@ -1528,7 +1530,8 @@ export function querySemanticModel(
   let rankCounts: Record<number, number> | undefined;
   if (query.rank) {
     if (windowPlan) dataFail("model_result_order_invalid");
-    const { of, tieBreak } = query.rank;
+    const { tieBreak } = query.rank;
+    const of = query.rank.ranker();
     rankOf = new Map();
     rankCounts = {};
     for (const [key, values] of orderedGroups) {
@@ -1573,7 +1576,9 @@ export function querySemanticModel(
       if (a.name !== b.name) return a.name! < b.name! ? -1 : 1;
       return a.position - b.position;
     });
-    orderedGroups.splice(0, orderedGroups.length, ...keyed.map((k) => k.entry));
+    // In place, element by element: spreading every group into one call
+    // overflows the argument limit on large models (#900).
+    keyed.forEach((k, index) => (orderedGroups[index] = k.entry));
   }
   for (const [key, values] of orderedGroups.slice(start, end)) {
     const evaluate = evaluatorOf(key);

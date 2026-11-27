@@ -64,12 +64,13 @@ struct StateWidgetView: View {
      * (at least a cell, at most 160 u), with the name above and the
      * qualifier line below while they leave the word a cell; the qualifier
      * line goes first, then the name. A rollback is never dropped (#900):
-     * without room for its line, it joins the word and only the time of the
-     * change is lost.
+     * without room for its line, it joins the word ("Up · rolled back", at
+     * most as large as fits `width`) and only the time of the change is
+     * lost; when even that would not fit, its line stays and the name goes.
      */
     static func singlePlan(
         height: Double, sizes: [StudioTextRole: Double], hasName: Bool, hasQualifier: Bool,
-        rolledBack: Bool = false
+        rolledBack: Bool = false, width: Double = .infinity, folded: String = ""
     ) -> SinglePlan {
         let cell = sizes[.cell] ?? StudioLayout.Minimum.cell
         let change = sizes[.change] ?? StudioLayout.Minimum.change
@@ -83,13 +84,25 @@ struct StateWidgetView: View {
             // The word's line with its symbol: a little taller than text alone.
             return (height - used) / wordLine
         }
+        // The folded word's line ("Online · zurückgesetzt"): its icon and gap
+        // (0.85 and 0.25 of the word's size) and the text beside them, so
+        // the largest word size at which it fits `width`.
+        let foldMax = width / (1.1 + StudioLayout.estimateTextWidth(folded, fontSize: 1, weight: .semibold))
         var name = hasName
         var qualifier = hasQualifier
-        if qualifier && word(name, qualifier) < cell { qualifier = false }
+        if qualifier && word(name, qualifier) < cell {
+            // A rollback whose folded word would not fit keeps its own line
+            // and drops the optional name instead (#900).
+            if rolledBack && foldMax < cell && name && word(false, true) >= cell {
+                name = false
+            } else {
+                qualifier = false
+            }
+        }
         if name && word(name, qualifier) < cell { name = false }
-        return SinglePlan(
-            word: max(cell, min(160, word(name, qualifier))), showName: name, showQualifier: qualifier,
-            rollbackInWord: rolledBack && !qualifier)
+        let fold = rolledBack && !qualifier
+        let size = max(cell, min(160, word(name, qualifier), fold ? foldMax : .infinity))
+        return SinglePlan(word: size, showName: name, showQualifier: qualifier, rollbackInWord: fold)
     }
 
     /** The single form's word: "Up", or "Up · rolled back" when the plan folds the rollback in. */
@@ -126,7 +139,7 @@ struct StateWidgetView: View {
                     height: box.height - labelLayout.height - (footer == nil ? 0 : layout.footerHeight))
             } else if options.single, let item = data.items.first {
                 single(
-                    item, sizes: sizes,
+                    item, sizes: sizes, width: box.width,
                     height: box.height - labelLayout.height - (footer == nil ? 0 : layout.footerHeight))
             } else {
                 list(layout)
@@ -192,7 +205,9 @@ struct StateWidgetView: View {
         .accessibilityLabel(text)
     }
 
-    private func single(_ item: StateWidgetItem, sizes: [StudioTextRole: Double], height: Double) -> some View {
+    private func single(
+        _ item: StateWidgetItem, sizes: [StudioTextRole: Double], width: Double, height: Double
+    ) -> some View {
         let tone = item.state.tone(rolledBack: item.rolledBack)
         let color = Self.color(tone, env)
         let cell = sizes[.cell] ?? StudioLayout.Minimum.cell
@@ -204,7 +219,8 @@ struct StateWidgetView: View {
         ].compactMap { $0 }.joined(separator: " · ")
         let plan = Self.singlePlan(
             height: height, sizes: sizes, hasName: item.name != nil, hasQualifier: !qualifier.isEmpty,
-            rolledBack: item.rolledBack)
+            rolledBack: item.rolledBack, width: width,
+            folded: StateBoard.stateText(item, language: env.language))
         let word = plan.word
         return VStack(alignment: .leading, spacing: env.pt(StudioRender.stackGap)) {
             if plan.showName, let name = item.name {

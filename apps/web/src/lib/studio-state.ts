@@ -79,7 +79,6 @@ export function stateBindingFor(
     ...new Set([
       ...values.filter((dimension) => matches(dimension, STATE_NAME)),
       ...stateFlagDimensions(model),
-      ...[...values].reverse(),
     ]),
   ];
   let state: CatalogDimension | undefined;
@@ -90,6 +89,15 @@ export function stateBindingFor(
       state = candidate;
       break;
     }
+  }
+  if (!state) {
+    // Only text fields left (#900): the preferred name first, the state
+    // the last other one, so an ID never names the items when a plain
+    // field can.
+    name = pickName("");
+    state = [...values]
+      .reverse()
+      .find((dimension) => dimension.id !== name?.id);
   }
   if (!state || !name) return null;
   const changed = stateChangedDimensions(model).find((dimension) =>

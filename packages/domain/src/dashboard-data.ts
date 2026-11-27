@@ -11,6 +11,7 @@ import { compareMeasureFilter } from "./compare-measure.js";
 import {
   isMappableServiceStateValue,
   serviceStateClassifier,
+  serviceStateKey,
   serviceStateRank,
   type ServiceState,
 } from "./service-state.js";
@@ -672,9 +673,10 @@ export function stateGroupBy(binding: StateWidgetBinding): string[] {
 /**
  * What a state query reads (#875, #900): `items` (default) the items
  * ranked over every match, at most `limit`, with every item counted per
- * rank; `sourceValues` the distinct state values, those the Studio can map
- * (unknown and mappable, `isMappableServiceStateValue`) ranked 0 and
- * first, at most `limit`.
+ * rank; `sourceValues` the distinct state values, one spelling of each
+ * `serviceStateKey` the Studio can map (unknown and mappable,
+ * `isMappableServiceStateValue`) ranked 0 and first, at most `limit`
+ * distinct ones (#900).
  */
 export interface StateQueryRead {
   kind?: "items" | "sourceValues";
@@ -741,18 +743,29 @@ export function stateModelQuery(
       rank: discovery
         ? {
             key: `state-values:${overridesKey(overrides)}`,
-            of: (group) => {
-              const value = group[binding.stateDimensionId];
-              return isMappableServiceStateValue(value) &&
-                classify(value) === "unknown"
-                ? 0
-                : 1;
+            // One spelling per key (#900): the first of each in the
+            // groups' order ranks 0, its other spellings after it, so the
+            // limit counts distinct values.
+            ranker: () => {
+              const seen = new Set<string>();
+              return (group) => {
+                const value = group[binding.stateDimensionId];
+                if (
+                  !isMappableServiceStateValue(value) ||
+                  classify(value) !== "unknown"
+                )
+                  return 2;
+                const key = serviceStateKey(String(value));
+                if (seen.has(key)) return 1;
+                seen.add(key);
+                return 0;
+              };
             },
             tieBreak: binding.stateDimensionId,
           }
         : {
             key: `state-items:${overridesKey(overrides)}`,
-            of: stateItemRank(binding, overrides),
+            ranker: () => stateItemRank(binding, overrides),
             tieBreak: binding.nameDimensionId,
           },
     },

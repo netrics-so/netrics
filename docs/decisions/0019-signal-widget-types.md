@@ -853,8 +853,9 @@ most urgent of every match, each item's state is read from its rank, never
 re-derived, and `counts` is the rank counts. A second read groups the
 distinct state values, those the Studio can map ranked first
 (unknown, text or a number, a key of at most 60 characters,
-`isMappableServiceStateValue`) before its limit of 100, and lists at most
-30 of them by key (`sourceValues`). Classification runs once per group in
+`isMappableServiceStateValue`), one spelling of each `serviceStateKey`
+(its other spellings rank after), before its limit of 100, so the limit
+counts distinct values, and lists at most 30 of them (`sourceValues`). Classification runs once per group in
 code, never per row in an aggregate filter, so 30,000 healthy services
 stay well inside the processing budget (#900; the former per-tier
 filters exceeded it).
@@ -905,7 +906,9 @@ item's name in the resource role, the state word with its icon as large
 as fits (at least the cell role) and a line "Rolled back · Changed 3 h
 ago" (change role), then the freshness footer. A rollback is never
 dropped (#900): on a tile too small for that line, the time of the change
-goes and "rolled back" joins the word ("Up · rolled back"). Screen readers
+goes and "rolled back" joins the word ("Up · rolled back"), no larger
+than its icon and text fit the width; where even that would not fit, the
+line stays and the optional name goes. Screen readers
 read "name: state". netrics TV's detail sheet warns with the same "Last
 known state" text whenever the status is stale, with or without
 freshness metadata (#900).
