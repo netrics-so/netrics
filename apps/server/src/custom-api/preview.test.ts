@@ -4,6 +4,8 @@ import {
   boundedPreview,
   CUSTOM_API_TEST_LIMITS,
   redactText,
+  fallbackForm,
+  replaceFallback,
   redactUrl,
   secretSetOf,
 } from "./preview.js";
@@ -87,6 +89,78 @@ describe("redaction of large values (ADR 0030 review)", () => {
     expect(redactText(`x%c3%BCy ${mixed(huge[0]!)}`, secrets)).toBe(
       "x%c3%BCy [redacted]",
     );
+  });
+
+  it("searches in time linear in the text, also for a mostly encoded secret (#930 review)", () => {
+    const huge = Array.from(
+      { length: 20 },
+      (_, i) => `${i}-${"ü€/ +".repeat(1_600)}`,
+    );
+    // 500 "ü" and a "z": an encoded form of 3,001 characters whose only
+    // literals are "%" and the final "z".
+    const secret = `${"ü".repeat(500)}z`;
+    const secrets = secretSetOf(
+      {},
+      {
+        ...Object.fromEntries(huge.map((value, i) => [`v${i}`, value])),
+        secret,
+      },
+    );
+    expect(secrets.pattern).toBeNull();
+    const form = secrets.fallback.find(
+      (f) => f.text === encodeURIComponent(secret),
+    )!;
+    // Escapes in either case, never followed by the "z".
+    const text = "%c3%BC%C3%bc".repeat(2_000);
+    const work = { comparisons: 0 };
+    expect(replaceFallback(text, [form], work)).toBe(text);
+    expect(work.comparisons).toBeLessThanOrEqual(
+      3 * (text.length + form.text.length),
+    );
+    // And it still finds the secret, in mixed case, after such a run.
+    const found = `${text}${encodeURIComponent(secret).toLowerCase()}!`;
+    expect(replaceFallback(found, [form])).toBe(`${text}[redacted]!`);
+  });
+
+  it("matches exactly what a character-by-character comparison matches (#930 review)", () => {
+    // Reference: leftmost, non-overlapping, each character equal or, at
+    // the hex digits of the form's own escapes, equal in either case.
+    const reference = (text: string, form: string): string => {
+      const fold = new Set<number>();
+      for (const e of form.matchAll(/%[0-9A-Fa-f]{2}/g))
+        fold.add(e.index + 1).add(e.index + 2);
+      const same = (at: number) =>
+        [...form].every(
+          (c, k) =>
+            c === text[at + k] ||
+            (fold.has(k) && c.toLowerCase() === text[at + k]!.toLowerCase()),
+        );
+      let out = "";
+      let at = 0;
+      while (at < text.length) {
+        if (at + form.length <= text.length && same(at)) {
+          out += "[redacted]";
+          at += form.length;
+        } else out += text[at++];
+      }
+      return out;
+    };
+    let seed = 885;
+    const random = (n: number) => {
+      seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648;
+      return seed % n;
+    };
+    const alphabet = "%%%aAbB3cx";
+    const pick = (length: number) =>
+      Array.from({ length }, () => alphabet[random(alphabet.length)]).join("");
+    for (let run = 0; run < 3_000; run++) {
+      const form = pick(4 + random(6));
+      const text = pick(random(40));
+      expect(
+        replaceFallback(text, [fallbackForm(form)]),
+        `${form} in ${text}`,
+      ).toBe(reference(text, form));
+    }
   });
 
   it("folds the hex case of escapes only, never of letters next to a secret (#930 review)", () => {
@@ -417,6 +491,20 @@ describe("structured echo of rendered bodies (#885)", () => {
     ]);
     expect(records[0]!.request).toEqual(echoed());
     expect(JSON.stringify(out)).not.toContain("ItemsQuery");
+  });
+
+  it("types a redacted echo by the value it hides: json, not string (#930 review)", () => {
+    const records = [{ id: 1, request: echoed() }];
+    const out = previewSuggestions(
+      { items: records },
+      "items",
+      records,
+      secrets,
+    );
+    expect(out.find((s) => s.path === "request")).toMatchObject({
+      type: "json",
+      samples: ["[redacted]"],
+    });
   });
 
   it("suggests nothing from records inside an echoed body (#930 review)", () => {

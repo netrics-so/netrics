@@ -107,29 +107,31 @@ export function findRecordArrays(
 }
 
 /**
- * Whether the value at a dotted path, or any value on the way to it (the
- * body included), is hidden. Reads only along the path.
+ * The replacement of the first hidden value on a dotted path: the body,
+ * a value on the way, or the value at the path; undefined when none is
+ * hidden. Reads only along the path.
  */
 export function hiddenOnPath(
   body: unknown,
   path: string,
   hidden: HiddenValue,
-): boolean {
+): string | undefined {
   let segments: DataPathSegment[];
   try {
     segments = parseDataPath(path);
   } catch (error) {
-    if (error instanceof DataPathError) return false;
+    if (error instanceof DataPathError) return undefined;
     throw error;
   }
   let value = body;
-  if (hidden(value) !== undefined) return true;
+  let shown = hidden(value);
   for (const segment of segments) {
+    if (shown !== undefined) return shown;
     value = readDataPath(value, [segment]);
-    if (value === undefined) return false;
-    if (hidden(value) !== undefined) return true;
+    if (value === undefined) return undefined;
+    shown = hidden(value);
   }
-  return false;
+  return shown;
 }
 
 /** The value at a dotted path; a path that does not parse is not found. */
@@ -189,10 +191,14 @@ function leaves(
   recordIndex: number,
   hidden: HiddenValue,
 ): void {
-  const visit = (input: unknown, path: DataPathSegment[]) => {
-    const shown = hidden(input);
-    const value = shown ?? input;
-    if (isPlainObject(value) && path.length < FIELD_DEPTH) {
+  // A hidden value is a leaf: never looked into, kept as it is so its
+  // type is suggested from what it is (sample() shows it hidden).
+  const visit = (value: unknown, path: DataPathSegment[]) => {
+    if (
+      isPlainObject(value) &&
+      path.length < FIELD_DEPTH &&
+      hidden(value) === undefined
+    ) {
       for (const key of ownKeys(value)) visit(value[key], [...path, { key }]);
       return;
     }
@@ -244,6 +250,8 @@ function sample(
   redact: (text: string) => string,
   hidden: HiddenValue,
 ): string {
+  const shown = hidden(value);
+  if (shown !== undefined) return shown;
   const text = redact(
     typeof value === "string"
       ? value

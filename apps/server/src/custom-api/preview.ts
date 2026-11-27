@@ -81,10 +81,13 @@ export type EchoTarget =
 export interface FallbackForm {
   text: string;
   /** 1 at the hex digits of the form's own `%XX` escapes. */
-  fold: Uint8Array | null;
-  /** The longest run without such digits, searched first, and its offset. */
-  anchor: string;
-  anchorAt: number;
+  fold: Uint8Array;
+  /**
+   * The form without its first and last BOUNDARY characters, its escape
+   * digits in lower case, and its KMP failure table.
+   */
+  core: string;
+  failure: Int32Array;
 }
 
 /**
@@ -107,65 +110,108 @@ function replacePlain(text: string, values: readonly string[]): string {
   return out;
 }
 
-function fallbackForm(text: string): FallbackForm {
-  let fold: Uint8Array | null = null;
+/** The text with the hex digits of its `%XX` escapes in lower case; same length. */
+const lowerEscapes = (text: string): string =>
+  text.replace(/%[0-9A-Fa-f]{2}/g, (escape) => escape.toLowerCase());
+
+/**
+ * Characters at each end of a form compared on their own. Only there can
+ * a match start or end inside an escape of the text (`%ab…` for a form
+ * starting with "ab", or a form ending in `%a` before `%a3`); everywhere
+ * between, the form's escapes line up with the text's, since "%" is never
+ * a hex digit.
+ */
+const BOUNDARY = 2;
+
+export function fallbackForm(text: string): FallbackForm {
+  const fold = new Uint8Array(text.length);
   for (const escape of text.matchAll(/%[0-9A-Fa-f]{2}/g)) {
-    fold ??= new Uint8Array(text.length);
     fold[escape.index + 1] = 1;
     fold[escape.index + 2] = 1;
   }
-  let anchor = text;
-  let anchorAt = 0;
-  if (fold) {
-    anchor = "";
-    let start = 0;
-    for (let i = 0; i <= text.length; i++)
-      if (i === text.length || fold[i]) {
-        if (i - start > anchor.length) {
-          anchor = text.slice(start, i);
-          anchorAt = start;
-        }
-        start = i + 1;
-      }
+  const core = lowerEscapes(text).slice(
+    BOUNDARY,
+    Math.max(BOUNDARY, text.length - BOUNDARY),
+  );
+  const failure = new Int32Array(core.length);
+  for (let i = 1, k = 0; i < core.length; i++) {
+    while (k > 0 && core[i] !== core[k]) k = failure[k - 1]!;
+    if (core[i] === core[k]) k += 1;
+    failure[i] = k;
   }
-  return { text, fold, anchor, anchorAt };
+  return { text, fold, core, failure };
 }
 
 /** A-F as a-f; every other code unit as it is. */
 const lowerHex = (code: number): number =>
   code >= 65 && code <= 70 ? code + 32 : code;
 
-function matchesAt(text: string, at: number, form: FallbackForm): boolean {
-  if (at < 0 || at + form.text.length > text.length) return false;
-  for (let k = 0; k < form.text.length; k++) {
+/** The form's boundary characters against the text at `at`: exact, or folded at its escape digits. */
+function boundaryMatches(
+  text: string,
+  at: number,
+  form: FallbackForm,
+  work: { comparisons: number },
+): boolean {
+  const m = form.text.length;
+  if (at < 0 || at + m > text.length) return false;
+  for (let k = 0; k < m; k++) {
+    if (k === BOUNDARY && m - BOUNDARY > k) k = m - BOUNDARY;
+    work.comparisons += 1;
     const a = form.text.charCodeAt(k);
     const b = text.charCodeAt(at + k);
-    if (a === b) continue;
-    if (!form.fold?.[k] || lowerHex(a) !== lowerHex(b)) return false;
+    if (a !== b && (!form.fold[k] || lowerHex(a) !== lowerHex(b))) return false;
   }
   return true;
 }
 
 /**
- * Replaces every occurrence of each form, in order: found through its
- * anchor by plain search, then compared in full, folding hex case only
- * where the form has an escape. Escapes outside a match keep their case.
+ * Replaces every occurrence of each form, leftmost first, without
+ * overlaps. A form matches where each character equals the text's, the
+ * hex digits of the form's own escapes in either case; escapes outside a
+ * match keep their case. Linear in the text for each form: the core of
+ * the form is found by KMP in the text with its escape digits in lower
+ * case (inside a match the escapes of both line up, so this compares
+ * exactly what the rule says), and the BOUNDARY characters at each end are
+ * then compared on their own. `work` counts the character comparisons.
  */
-function replaceFallback(text: string, forms: readonly FallbackForm[]): string {
+export function replaceFallback(
+  text: string,
+  forms: readonly FallbackForm[],
+  work = { comparisons: 0 },
+): string {
   let out = text;
   for (const form of forms) {
+    const lowered = lowerEscapes(out);
+    const { core, failure } = form;
     let next = "";
     let from = 0;
-    let search = 0;
-    for (;;) {
-      const found = out.indexOf(form.anchor, search);
-      if (found < 0) break;
-      const start = found - form.anchorAt;
-      if (start >= from && matchesAt(out, start, form)) {
-        next += out.slice(from, start) + REDACTED;
-        from = start + form.text.length;
-        search = from + form.anchorAt;
-      } else search = found + 1;
+    const accept = (at: number): boolean => {
+      if (at < from || !boundaryMatches(out, at, form, work)) return false;
+      next += out.slice(from, at) + REDACTED;
+      from = at + form.text.length;
+      return true;
+    };
+    if (core.length === 0) {
+      // A form of at most 2 × BOUNDARY characters: every start, O(1) each.
+      for (let at = 0; at + form.text.length <= out.length;)
+        at = accept(at) ? from : at + 1;
+    } else {
+      let k = 0;
+      for (let i = BOUNDARY; i < out.length; i++) {
+        work.comparisons += 1;
+        while (k > 0 && lowered[i] !== core[k]) {
+          k = failure[k - 1]!;
+          work.comparisons += 1;
+        }
+        if (lowered[i] === core[k]) k += 1;
+        if (k < core.length) continue;
+        if (accept(i - core.length + 1 - BOUNDARY)) {
+          // The next match starts after this one: its core no earlier.
+          i = from + BOUNDARY - 1;
+          k = 0;
+        } else k = failure[k - 1]!;
+      }
     }
     if (from > 0) out = next + out.slice(from);
   }
@@ -243,22 +289,7 @@ export function secretSetOf(
       return [body, json, json.replaceAll("/", "\\/")];
     }),
   );
-  const echoes: EchoTarget[] = [];
-  for (const body of rendered) {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(body);
-    } catch (caught) {
-      rethrowWorkspaceGone(caught);
-      continue;
-    }
-    if (
-      parsed !== null &&
-      typeof parsed === "object" &&
-      Object.keys(parsed).length > 0
-    )
-      echoes.push(echoTarget(parsed));
-  }
+  const echoes = rendered.flatMap((body) => echoTargetOf(body) ?? []);
   const source = values.map(formPattern).join("|");
   let pattern: RegExp | null = null;
   if (values.length > 0 && source.length <= MAX_PATTERN_CHARS) {
@@ -349,11 +380,38 @@ function sameJson(value: unknown, target: EchoTarget): boolean {
  * node by every bounded walk over a response, never by a pass of its own.
  */
 export function isEchoedBody(value: unknown, secrets: SecretSet): boolean {
+  return matchesEcho(value, secrets.echoes);
+}
+
+/** Whether a value equals one of `targets` (see isEchoedBody). */
+export function matchesEcho(
+  value: unknown,
+  targets: readonly EchoTarget[],
+): boolean {
   return (
     value !== null &&
     typeof value === "object" &&
-    secrets.echoes.some((target) => sameJson(value, target))
+    targets.some((target) => sameJson(value, target))
   );
+}
+
+/**
+ * A rendered body as an echo target; null unless it parses to a
+ * non-empty object or array (an empty one would match too much).
+ */
+export function echoTargetOf(rendered: string): EchoTarget | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rendered);
+  } catch (caught) {
+    rethrowWorkspaceGone(caught);
+    return null;
+  }
+  return parsed !== null &&
+    typeof parsed === "object" &&
+    Object.keys(parsed).length > 0
+    ? echoTarget(parsed)
+    : null;
 }
 
 /**

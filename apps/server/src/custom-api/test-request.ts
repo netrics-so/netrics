@@ -66,11 +66,14 @@ import { customOAuthFailureMessage } from "../oauth/tokens.js";
 import {
   boundedPreview,
   CUSTOM_API_TEST_LIMITS,
+  echoTargetOf,
   isEchoedBody,
+  matchesEcho,
   REDACTED,
   redactText,
   redactUrl,
   secretSetOf,
+  type EchoTarget,
   type JsonValue,
   type SecretSet,
 } from "./preview.js";
@@ -251,7 +254,7 @@ export function previewSuggestions(
 ) {
   if (
     secrets.echoes.length > 0 &&
-    hiddenOnPath(body, recordsPath, echoed(secrets))
+    hiddenOnPath(body, recordsPath, echoed(secrets)) !== undefined
   )
     return [];
   return suggestFields(
@@ -556,6 +559,9 @@ export function createCustomApiTestRequestService(
         // (ADR 0030 §4), matched by plain search apart from the secrets'
         // pattern; they never enter the public trace.
         const sentBodies = new Set<string>();
+        // The bodies sent so far as echo targets, for the mapped rows of
+        // each page (#885): a page answers a request already sent.
+        const sentEchoes: EchoTarget[] = [];
         const secretsWith = (rendered: Iterable<string>): SecretSet =>
           secretSetOf(
             envelope,
@@ -601,8 +607,14 @@ export function createCustomApiTestRequestService(
             },
             onPage: (trace) => traces.push(trace),
             onSend: (built) => {
-              if (built.body !== undefined) sentBodies.add(built.body);
+              if (built.body === undefined || sentBodies.has(built.body))
+                return;
+              sentBodies.add(built.body);
+              const target = echoTargetOf(built.body);
+              if (target) sentEchoes.push(target);
             },
+            hidden: (value) =>
+              matchesEcho(value, sentEchoes) ? REDACTED : undefined,
           });
         } catch (error) {
           failure = errorOf(
