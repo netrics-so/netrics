@@ -21,6 +21,7 @@ import {
   bodyProblems,
   definitionOf,
   draftDefinitionOf,
+  requestCheckIssues,
   requiredSecrets,
   type BuilderState,
   type BuilderStep,
@@ -48,6 +49,16 @@ export function draftReady(state: BuilderState): boolean {
   if (Object.keys(bodyProblems(state)).length > 0) return false;
   return customApiDraftDefinitionSchema.safeParse(draftDefinitionOf(state))
     .success;
+}
+
+/**
+ * A test request can be sent: the draft is ready and the request passes
+ * the request rules the server runs on it (ADR 0030 §2), including the
+ * ones a later step reports, such as a window placeholder without a
+ * window (#887).
+ */
+export function testReady(state: BuilderState): boolean {
+  return draftReady(state) && requestCheckIssues(state).length === 0;
 }
 
 /** Non-secret connection values, for the draft and the test request. */

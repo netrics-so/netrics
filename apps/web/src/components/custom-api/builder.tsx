@@ -36,7 +36,7 @@ import {
   afterSecretsSent,
   builderErrorMessage,
   defaultClient,
-  draftReady,
+  testReady,
   ensureDraft,
   moveToStep,
   readOnlyChallenge,
@@ -109,6 +109,81 @@ export function keptTestConfirmation<
   return confirmed && confirmed.fingerprint === draftTestFingerprint(state)
     ? confirmed
     : null;
+}
+
+/**
+ * A finished test applied to the state as it is now (#887). Without an
+ * edit since the test started, the test's state; otherwise the newer
+ * edits stay and only what the test learned is taken (the stored secret
+ * names and the result), so neither an edit nor an invalidated
+ * confirmation is overwritten by the snapshot the test was sent from.
+ */
+export function stateAfterTest(
+  current: BuilderState,
+  sent: BuilderState,
+  result: BuilderState,
+  original?: CustomApiDefinitionResponse["definition"]["document"],
+): BuilderState {
+  if (current === sent) return result;
+  return withReadOnlyChecked(
+    { ...current, secretsSet: result.secretsSet, lastTest: result.lastTest },
+    original,
+  );
+}
+
+/** Whether the request changed while a test ran (#887). */
+export interface TestWatch {
+  /** draftTestFingerprint of the request the test sent. */
+  fingerprint: string;
+  /** A request-shaping edit happened since; it stays true once set. */
+  shaped: boolean;
+}
+
+/** Starts watching the edits made while a test of `sent` runs. */
+export function watchTest(sent: BuilderState): TestWatch {
+  return { fingerprint: draftTestFingerprint(sent), shaped: false };
+}
+
+/**
+ * The watch after the state became `state`: an edit that shapes the
+ * request marks it for good, so an edit that is undone still counts.
+ */
+export function watchEdit(watch: TestWatch, state: BuilderState): TestWatch {
+  return watch.shaped || draftTestFingerprint(state) === watch.fingerprint
+    ? watch
+    : { ...watch, shaped: true };
+}
+
+/**
+ * The test confirmation to remember after a confirmed test was sent: only
+ * when no request-shaping edit happened during the test, so a confirmation
+ * dropped by an edit (even one undone since) never comes back, while
+ * renaming the definition keeps it (#887).
+ */
+export function confirmationAfterTest(
+  hash: string | undefined,
+  sent: BuilderState,
+  watch: TestWatch,
+): Pick<PendingChallenge, "hash" | "fingerprint"> | null {
+  return hash && !watch.shaped
+    ? { hash, fingerprint: draftTestFingerprint(sent) }
+    : null;
+}
+
+/**
+ * The typed secrets after a test stored `sent` on the draft (#887): those
+ * still holding the value sent are cleared; one typed or changed while the
+ * test ran stays, as it was never stored.
+ */
+export function secretInputsAfterTest(
+  current: Record<string, string>,
+  sent: Readonly<Record<string, string>> | null,
+): Record<string, string> {
+  if (!sent) return current;
+  const next: Record<string, string> = {};
+  for (const [name, value] of Object.entries(current))
+    if (sent[name] !== value) next[name] = value;
+  return next;
 }
 
 /** The first step that is not complete, or the last one. */
@@ -211,6 +286,12 @@ export function CustomApiBuilder({
   // Secrets typed but not saved yet: only here, never stored.
   const [secretInputs, setSecretInputs] = useState<Record<string, string>>({});
   const done = useRef(false);
+  /** While a test runs: whether an edit shaped the request (#887). */
+  const testWatch = useRef<TestWatch | null>(null);
+  useEffect(() => {
+    if (testWatch.current)
+      testWatch.current = watchEdit(testWatch.current, state);
+  }, [state]);
   /** The page is leaving on purpose (the OAuth redirect): no leave prompt. */
   const leaving = useRef(false);
   const editing = definition !== undefined;
@@ -411,11 +492,14 @@ export function CustomApiBuilder({
     setError(null);
     setChallenge(null);
     setState(from);
-    if (!draftReady(from)) {
+    if (!testReady(from)) {
       setTestError(t("issues.definitionInvalid"));
       return;
     }
     setPending("test");
+    testWatch.current = watchTest(from);
+    // The secrets this test stores on the draft, as typed now.
+    const sentSecrets = typedSecretsFor(from, secretInputs);
     try {
       const id = await ensureDraft(api, workspaceId, draftId, definition?.id);
       rememberDraft(id);
@@ -428,14 +512,21 @@ export function CustomApiBuilder({
         secretInputs,
         readOnlyConfirmation,
       );
-      setState(result.state);
-      if (readOnlyConfirmation)
-        setConfirmedTest({
-          hash: readOnlyConfirmation,
-          fingerprint: draftTestFingerprint(from),
-        });
+      // Edits made while the test ran stay (#887).
+      const remembered = confirmationAfterTest(
+        readOnlyConfirmation,
+        from,
+        testWatch.current ?? { ...watchTest(from), shaped: true },
+      );
+      setState((current) =>
+        stateAfterTest(current, from, result.state, definition?.document),
+      );
+      if (remembered) setConfirmedTest(remembered);
       const after = afterSecretsSent(result, secretsLost);
-      if (after.clearInputs) setSecretInputs({});
+      if (after.clearInputs)
+        setSecretInputs((current) =>
+          secretInputsAfterTest(current, sentSecrets),
+        );
       setSecretsLost(after.secretsLost);
       setTestedFields(JSON.stringify(result.state.stream.fields));
       setPagingTest(pages > 1 ? result.state.lastTest : null);
@@ -446,9 +537,10 @@ export function CustomApiBuilder({
         setChallenge({ hash, pages, fingerprint: draftTestFingerprint(from) });
         return;
       }
-      setState(refused(cause, from));
+      setState((current) => refused(cause, current));
       setTestError(message(cause));
     } finally {
+      testWatch.current = null;
       setPending(null);
     }
   }

@@ -261,11 +261,15 @@ both, and offers no next-link paging for POST. A JSON-body request is
 confirmed twice, each time for the exact request shown: before a test
 sends it (a pending question goes away as soon as the request or the test
 environment changes, and is asked again), and at **Save** for every
-JSON-body stream of the version. The saved confirmation covers every
+JSON-body stream of the version. Both show the page values the paging
+sets, in the URL and in the body, with what the first request sends and
+how later requests change them. The saved confirmation covers every
 environment's base URL, the login settings, the connection values the
-request uses, and the stream's method, path, query, headers, body,
+request uses (for a new definition, also the non-secret values its first
+connection takes), and the stream's method, path, query, headers, body,
 pagination and window; any change to one of these, in any stream, clears
-it, and changing the setting back does not restore it.
+it, and changing the setting back does not restore it. Edits made while a
+test runs are kept when its result arrives.
 
 ## Bounds
 

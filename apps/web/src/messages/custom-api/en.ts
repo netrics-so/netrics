@@ -156,6 +156,8 @@ export const customApiEn = {
         "Insert a value with '{'braces'}': connection values, window start and end, or the paging value.",
       placeholderBodyHelp:
         "Insert a value with '{'braces'}' into a text value of the body: connection values, window start and end. Paging values go into the body through the Paging step.",
+      placeholderPostPathHelp:
+        "Insert a value with '{'braces'}' into the path: connection values, window start and end. A POST request stays on its endpoint: page values go into the URL parameters or, through the Paging step, the body.",
       insert: "Insert value",
       insertInto: "Insert into",
       targets: {
@@ -358,9 +360,19 @@ export const customApiEn = {
           "The first request sends null at {path}: there is no cursor yet.",
         cursorOmitted:
           "The first request leaves out {path}: there is no cursor yet.",
-        laterOffset: "{path}: the next offset, counting up by {limit}",
+        laterOffset:
+          "{path}: the next offset, counting up by the number of records the previous page returned",
         laterLimit: "{path}: {limit} on every request",
         laterCursor: "Cursor at {path}: from the previous response",
+        firstUrl: "Page values in the URL of the first request:",
+        urlOmitted: "{param}: left out, there is no cursor yet",
+        laterUrlNumber:
+          "URL parameter {param}: the next page number, counting up by 1",
+        laterUrlFixed: "URL parameter {param}: {value} on every request",
+        laterUrlOffset:
+          "URL parameter {param}: the next offset, counting up by the number of records the previous page returned",
+        laterUrlCursor:
+          "URL parameter {param}: the cursor from the previous response",
       },
       title: "Test",
       ok: "The request worked.",
