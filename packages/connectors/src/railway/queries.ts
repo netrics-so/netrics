@@ -5,7 +5,7 @@
 
 import { z } from "zod";
 
-import { RailwayApiError } from "./api.js";
+import { PAGE_WITHOUT_CURSOR, RailwayApiError } from "./api.js";
 
 /** Every status of Railway's `DeploymentStatus` enum (checked 2026-11). */
 export const DEPLOYMENT_STATUSES = [
@@ -204,8 +204,6 @@ export function nextAfter(info: {
   }
   return info.endCursor;
 }
-export const PAGE_WITHOUT_CURSOR =
-  "a page says more follow but names no cursor";
 
 const connection = <T extends z.ZodType>(node: T) =>
   z.object({ pageInfo, edges: z.array(z.object({ node })) });

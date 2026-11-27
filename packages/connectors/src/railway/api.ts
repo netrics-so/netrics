@@ -28,6 +28,8 @@ const BASE_BACKOFF_MS = 500;
  * the window for the connection's own checks.
  */
 export const MIN_REMAINING_REQUESTS = 5;
+/** The longest one request to Railway may take (the host allows 60 s). */
+export const REQUEST_TIMEOUT_MS = 20_000;
 
 export type RailwayErrorKind =
   /** "Not Authorized": the token is wrong, revoked, or may not read this. */
@@ -42,17 +44,24 @@ export type RailwayErrorKind =
   /** Any other answer Railway refused. */
   | "other";
 
+/** netrics' own notes on a refused answer; never Railway's text. */
+export const PAGE_WITHOUT_CURSOR =
+  "a page says more follow but names no cursor";
+export type RailwayErrorNote =
+  "" | "the answer was not JSON" | "no data" | typeof PAGE_WITHOUT_CURSOR;
+
 /**
- * A refused Railway request. Only Railway's own error text is kept (never
- * the request, its variables or headers), so the token cannot leak through
- * it; the text is cut short.
+ * A refused Railway request, with fixed text per kind and status: neither
+ * Railway's error text nor the request, its variables or headers, so no
+ * provider text or token can leak through it (#901 review). Only one of
+ * netrics' own notes may be added.
  */
 export class RailwayApiError extends Error {
   readonly status: number;
   readonly kind: RailwayErrorKind;
 
-  constructor(status: number, kind: RailwayErrorKind, detail: string) {
-    super(describe(status, kind, detail));
+  constructor(status: number, kind: RailwayErrorKind, note: RailwayErrorNote) {
+    super(describe(status, kind, note));
     this.name = "RailwayApiError";
     this.status = status;
     this.kind = kind;
@@ -66,7 +75,7 @@ export class RailwayApiError extends Error {
 function describe(
   status: number,
   kind: RailwayErrorKind,
-  detail: string,
+  note: RailwayErrorNote,
 ): string {
   if (kind === "auth") {
     return "Railway did not accept the token for this request (Not Authorized).";
@@ -77,13 +86,27 @@ function describe(
   if (status >= 500) {
     return `Railway is not answering right now (${status}). netrics tries again later.`;
   }
-  const text = detail.replace(/\s+/g, " ").trim().slice(0, 200);
   if (kind === "not_found") {
-    return `Railway did not find a workspace or project the token may read: ${text}`;
+    return "Railway did not find a workspace or project the token may read.";
   }
-  return kind === "schema"
-    ? `Railway's API no longer accepts netrics' query: ${text}`
-    : `Railway API answered ${status}: ${text || "no message"}`;
+  if (kind === "schema") {
+    return "Railway's API no longer accepts netrics' query.";
+  }
+  return note
+    ? `Railway API answered ${status}: ${note}`
+    : `Railway API refused the request (${status}).`;
+}
+
+/**
+ * The time a sync page has for Railway ran out before a request or a wait
+ * could be made (#901 item 1): the page ends with what it read, or the
+ * host retries it. Fixed text.
+ */
+export class RailwayTimeoutError extends Error {
+  constructor() {
+    super("Railway did not answer in time. netrics tries again later.");
+    this.name = "RailwayTimeoutError";
+  }
 }
 
 const graphQlErrorSchema = (value: unknown) =>
@@ -91,7 +114,10 @@ const graphQlErrorSchema = (value: unknown) =>
     ? (value as { message?: unknown; extensions?: { code?: unknown } })
     : {};
 
-/** Classifies the `errors` of a GraphQL answer. */
+/**
+ * Classifies the `errors` of a GraphQL answer. Their text decides the kind
+ * and is then dropped.
+ */
 export function graphQlError(
   status: number,
   errors: readonly unknown[],
@@ -104,16 +130,16 @@ export function graphQlError(
     return new RailwayApiError(status, "auth", "");
   }
   if (messages.some((message) => /\bnot found\b/i.test(message))) {
-    return new RailwayApiError(status, "not_found", messages[0] ?? "");
+    return new RailwayApiError(status, "not_found", "");
   }
   if (
     parsed.some(
       (error) => error.extensions?.code === "GRAPHQL_VALIDATION_FAILED",
     )
   ) {
-    return new RailwayApiError(status, "schema", messages[0] ?? "");
+    return new RailwayApiError(status, "schema", "");
   }
-  return new RailwayApiError(status, "other", messages[0] ?? "");
+  return new RailwayApiError(status, "other", "");
 }
 
 /**
@@ -161,12 +187,24 @@ export interface ClientOptions {
   /** Waits between retries; replaced in tests. */
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
   now?: () => number;
+  /**
+   * When every request and wait of this client has to be over (ms since
+   * the epoch): each request is bounded to it, and a wait that would end
+   * after it is not made (#901 item 1). The host's own deadline for the
+   * call is later, so a sync page still returns its checkpoint.
+   */
+  deadline?: number;
 }
 
 export type RailwayQuery = <T = unknown>(
   document: string,
   variables?: Record<string, unknown>,
 ) => Promise<T>;
+
+/** A RailwayQuery that also tells the reset its next request waits for. */
+export type RailwayClient = RailwayQuery & {
+  pendingReset(): number | null;
+};
 
 /**
  * A GraphQL query against Railway through the runtime's allowlisted fetch,
@@ -179,16 +217,20 @@ export function createRailwayClient(
   runtime: ConnectorRuntime,
   token: string,
   options: ClientOptions = {},
-): RailwayQuery {
+): RailwayClient {
   const sleep = options.sleep ?? abortableSleep;
   const now = options.now ?? Date.now;
+  const deadline = options.deadline ?? Number.POSITIVE_INFINITY;
   let window: { remaining: number; resetAt: number } | null = null;
+  /** A wait of `ms` from now would end after the deadline. */
+  const pastDeadline = (ms: number) => now() + ms >= deadline;
 
   async function pace(): Promise<void> {
     if (!window || window.remaining >= MIN_REMAINING_REQUESTS) return;
     const { remaining, resetAt } = window;
     const wait = resetAt - now();
-    if (wait > MAX_RATE_LIMIT_WAIT_MS) {
+    // A reset past the deadline is the host's to wait for (#901 item 1).
+    if (wait > MAX_RATE_LIMIT_WAIT_MS || (wait > 0 && pastDeadline(wait))) {
       throw new RateLimitedError(
         `Railway's API rate limit is nearly used up (${remaining} requests left). netrics continues after the reset.`,
         new Date(resetAt),
@@ -198,7 +240,19 @@ export function createRailwayClient(
     if (wait > 0) await sleep(wait, runtime.signal);
   }
 
-  return async function query<T>(
+  /**
+   * The reset the next request would wait for (ms since the epoch): the
+   * window reported fewer than MIN_REMAINING_REQUESTS left. Null when it
+   * would not wait.
+   */
+  function pendingReset(): number | null {
+    if (!window || window.remaining >= MIN_REMAINING_REQUESTS) return null;
+    return window.resetAt > now() ? window.resetAt : null;
+  }
+
+  return Object.assign(query, { pendingReset });
+
+  async function query<T>(
     document: string,
     variables: Record<string, unknown> = {},
   ): Promise<T> {
@@ -206,6 +260,10 @@ export function createRailwayClient(
     const body = JSON.stringify({ query: document, variables });
     for (let attempt = 1; ; attempt += 1) {
       await pace();
+      // A stalled request ends in time for the page to return its
+      // checkpoint (#901 item 1).
+      const left = deadline - now();
+      if (left <= 0) throw new RailwayTimeoutError();
       const response = await runtime.fetch(RAILWAY_API, {
         method: "POST",
         headers: {
@@ -214,6 +272,7 @@ export function createRailwayClient(
           accept: "application/json",
         },
         body,
+        timeoutMs: Math.ceil(Math.min(REQUEST_TIMEOUT_MS, left)),
       });
       const remainingHeader = response.headers["x-ratelimit-remaining"];
       const remaining = Number(remainingHeader);
@@ -232,16 +291,20 @@ export function createRailwayClient(
       if (response.status === 429) {
         const reset = rateLimitReset(response.headers, now());
         const wait = reset === null ? BASE_BACKOFF_MS : reset - now();
+        // A reset past the deadline is the host's to wait for, and the
+        // page's checkpoint carries it (#901 item 1).
         if (
           reset !== null &&
-          (wait > MAX_RATE_LIMIT_WAIT_MS || attempt >= MAX_ATTEMPTS)
+          (wait > MAX_RATE_LIMIT_WAIT_MS ||
+            attempt >= MAX_ATTEMPTS ||
+            pastDeadline(wait))
         ) {
           throw new RateLimitedError(
             "Railway's API rate limit is used up (429). netrics continues after the reset.",
             new Date(reset),
           );
         }
-        if (attempt >= MAX_ATTEMPTS) {
+        if (attempt >= MAX_ATTEMPTS || pastDeadline(wait)) {
           throw new RailwayApiError(429, "other", "");
         }
         window = null;
@@ -249,10 +312,11 @@ export function createRailwayClient(
         continue;
       }
       if (response.status >= 500) {
-        if (attempt >= MAX_ATTEMPTS) {
+        const backoff = BASE_BACKOFF_MS * 2 ** (attempt - 1);
+        if (attempt >= MAX_ATTEMPTS || pastDeadline(backoff)) {
           throw new RailwayApiError(response.status, "other", "");
         }
-        await sleep(BASE_BACKOFF_MS * 2 ** (attempt - 1), runtime.signal);
+        await sleep(backoff, runtime.signal);
         continue;
       }
 
@@ -285,5 +349,5 @@ export function createRailwayClient(
       }
       return answer.data as T;
     }
-  };
+  }
 }
