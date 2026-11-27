@@ -90,6 +90,16 @@ export const INCREMENTAL_LOOKBACK_DAYS = 2;
  * rate limit or failure loses at most one step.
  */
 export const MAX_REQUESTS_PER_PAGE = 10;
+/** No step but a page's first starts after this much of it has passed. */
+export const PAGE_TIME_BUDGET_MS = 20_000;
+/**
+ * Every request and wait of a page is over by this much after it started
+ * (#901 item 1): a step begun just inside PAGE_TIME_BUDGET_MS whose
+ * request stalls still ends in time for the page to return its checkpoint
+ * before the host's 60-second deadline for the call. A step cut off by it
+ * is repeated by the next page.
+ */
+export const PAGE_DEADLINE_MS = 45_000;
 const ENVIRONMENTS_PER_REQUEST = 10;
 const INSTANCES_PER_REQUEST = 50;
 const DEPLOYMENTS_PER_REQUEST = 50;
@@ -175,8 +185,17 @@ interface RunState {
   projects: Array<[string, string, string]>;
   index: number;
   project?: ProjectProgress;
-  /** Usage: the workspace and day read next, and the day before's cents. */
-  cost?: { ws: number; day: number; prev?: Record<string, number> };
+  /**
+   * Usage: the workspace and day read next, and the day before's cents.
+   * `withDeleted` marks a `prev` that covers deleted projects, too (#899):
+   * one stored without it lacks them and is read again (#901 item 3).
+   */
+  cost?: {
+    ws: number;
+    day: number;
+    prev?: Record<string, number>;
+    withDeleted?: true;
+  };
   costDone?: boolean;
   /** Days of usage read, workspaces refused, today's usage per project. */
   costDays: number;
@@ -352,6 +371,7 @@ export async function syncPage(
   options: RailwaySyncOptions,
 ): Promise<SyncResult> {
   const { now } = options;
+  const pageStarted = now();
   const pageRows = options.pageRows ?? PAGE_ROWS;
   const scope = scopeOf(context);
   let budget = MAX_REQUESTS_PER_PAGE;
@@ -705,7 +725,11 @@ export async function syncPage(
     const listed = projectsOf(workspaceId);
     const monthStart = cost.day === startOfUtcMonth(cost.day);
     try {
-      if (!monthStart && cost.prev === undefined) {
+      // A base stored before deleted projects were counted (a checkpoint
+      // of the version before #899) lacks them: the first day after it
+      // would report a deleted project's whole month as that day's cost.
+      // It is read again instead (#901 item 3).
+      if (!monthStart && (cost.prev === undefined || !cost.withDeleted)) {
         // The day before the first day read, within its month: the base
         // of the first day's difference.
         const before = await monthToDate(workspaceId, cost.day);
@@ -715,6 +739,7 @@ export async function syncPage(
             cents(usageCostUsd(before.get(id) ?? {})),
           ]),
         );
+        cost.withDeleted = true;
         return;
       }
       const usage = await monthToDate(
@@ -740,6 +765,7 @@ export async function syncPage(
       }
       run.costDays += 1;
       cost.prev = current;
+      cost.withDeleted = true;
       cost.day += DAY_MS;
       if (cost.day > lastCostDay) nextCostWorkspace(cost);
     } catch (error) {
@@ -853,9 +879,15 @@ export async function syncPage(
   // ── The page ──
 
   // A step sends one request, a deployments step whose project may be gone
-  // two (see deploymentsStep): a step starts only while two are left.
+  // two (see deploymentsStep): a step starts only while two are left, and
+  // only early enough to end by the page's deadline (#901 item 1).
+  let steps = 0;
   let step = nextStep();
-  while (step && budget >= 2) {
+  while (
+    step &&
+    budget >= 2 &&
+    (steps === 0 || now() - pageStarted < PAGE_TIME_BUDGET_MS)
+  ) {
     const checkpoint = JSON.stringify(run);
     const marks = [
       out.states.length,
@@ -885,6 +917,7 @@ export async function syncPage(
       break;
     }
     progressed = true;
+    steps += 1;
     step = nextStep();
   }
 

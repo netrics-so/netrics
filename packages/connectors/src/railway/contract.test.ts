@@ -1629,3 +1629,204 @@ describe("review round 3", () => {
     expect(last.receivedDatasets).toContain("project_usage");
   });
 });
+
+describe("pages end before the host's deadline (#901 item 1)", () => {
+  /**
+   * A clock the fake advances: `stepMs` per answer, every wait, and a
+   * stalled request's whole time limit (the host's 60 s without one).
+   */
+  function timed(options: {
+    stepMs?: number;
+    stallAt?: number;
+    limitedAt?: number[];
+    failingAt?: number[];
+  }) {
+    const railway = fake();
+    let t = clock();
+    let count = 0;
+    const timeouts: Array<number | undefined> = [];
+    const runtime: ConnectorRuntime = {
+      ...railway.runtime,
+      fetch: async (url, init) => {
+        count += 1;
+        timeouts.push(init?.timeoutMs);
+        if (count === options.stallAt) {
+          // Railway never answers: the request ends at its time limit.
+          t += init?.timeoutMs ?? 60_000;
+          throw Object.assign(new Error("egress timeout"), {
+            name: "EgressTimeoutError",
+          });
+        }
+        const stepMs = options.stepMs ?? 500;
+        if (init?.timeoutMs !== undefined && stepMs > init.timeoutMs) {
+          // Slower than the request's own limit: it ends there.
+          t += init.timeoutMs;
+          throw Object.assign(new Error("egress timeout"), {
+            name: "EgressTimeoutError",
+          });
+        }
+        t += stepMs;
+        if (options.limitedAt?.includes(count)) {
+          return jsonAnswer(429, {}, { "retry-after": "25" });
+        }
+        if (options.failingAt?.includes(count)) {
+          return jsonAnswer(503, {});
+        }
+        return railway.runtime.fetch(url, init);
+      },
+    };
+    const started = t;
+    const railwayConnector = createRailwayConnector({
+      now: () => t,
+      sleep: async (ms) => {
+        t += ms;
+      },
+    });
+    return {
+      runtime,
+      railway: railwayConnector,
+      timeouts,
+      elapsed: () => t - started,
+    };
+  }
+
+  it("a request that stalls late in a page ends in time to return the checkpoint", async () => {
+    const { runtime, railway, elapsed } = timed({ stallAt: 6 });
+    const page = await railway.sync(context(), WINDOW, runtime);
+    expect(page.done).toBe(false);
+    expectHostAccepts(page);
+    expect(elapsed()).toBeLessThanOrEqual(45_000);
+    // The next page continues at the step that stalled.
+    const next = await railway.sync(
+      context(),
+      { ...WINDOW, cursor: page.nextCursor! },
+      runtime,
+    );
+    expectHostAccepts(next);
+  });
+
+  it("a stalled first request fails the page well before the host's deadline", async () => {
+    const { runtime, railway, elapsed } = timed({ stallAt: 1 });
+    const error = await railway
+      .sync(context(), WINDOW, runtime)
+      .catch((caught: unknown) => caught);
+    expect((error as Error).name).toBe("EgressTimeoutError");
+    expect(elapsed()).toBeLessThanOrEqual(20_000);
+  });
+
+  it("a slow page stops at its deadline and returns the checkpoint", async () => {
+    // Every answer takes 15 s: ten of them would pass the host's minute.
+    const { runtime, railway, elapsed } = timed({ stepMs: 15_000 });
+    const page = await railway.sync(context(), WINDOW, runtime);
+    expect(page.done).toBe(false);
+    expectHostAccepts(page);
+    expect(elapsed()).toBeLessThanOrEqual(45_000);
+  });
+
+  it("a rate-limit wait that would pass the deadline ends the page with its reset", async () => {
+    // Three answers take 18 s; the fourth asks for 25 s, which would end
+    // after the page's deadline.
+    const { runtime, railway, elapsed } = timed({
+      stepMs: 6_000,
+      limitedAt: [4, 5],
+    });
+    const page = await railway.sync(context(), WINDOW, runtime);
+    expect(page.done).toBe(false);
+    expectHostAccepts(page);
+    expect(elapsed()).toBeLessThanOrEqual(45_000);
+    const error = await railway
+      .sync(context(), { ...WINDOW, cursor: page.nextCursor! }, runtime)
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(RateLimitedError);
+  });
+
+  it("a server-error backoff that would pass the deadline ends the page", async () => {
+    // Answers take 9.5 s: the third request's retries would end after
+    // the deadline.
+    const { runtime, railway, elapsed } = timed({
+      stepMs: 9_500,
+      failingAt: [3, 4, 5],
+    });
+    const page = await railway.sync(context(), WINDOW, runtime);
+    expect(page.done).toBe(false);
+    expectHostAccepts(page);
+    expect(elapsed()).toBeLessThanOrEqual(45_000);
+  });
+
+  it("bounds every request below the host's limit", async () => {
+    const { runtime, railway, timeouts } = timed({});
+    await railway.sync(context(), WINDOW, runtime);
+    expect(timeouts.length).toBeGreaterThan(0);
+    for (const timeoutMs of timeouts) {
+      expect(timeoutMs).toBeLessThanOrEqual(20_000);
+    }
+  });
+});
+
+describe("a checkpoint written before deleted projects were counted (#901 item 3)", () => {
+  const PREFIX = "railway.v3:";
+  const decode = (cursor: string) =>
+    JSON.parse(
+      Buffer.from(cursor.slice(PREFIX.length), "base64url").toString("utf8"),
+    ) as { cost?: { prev?: Record<string, number> } & Record<string, unknown> };
+  const encode = (state: unknown) =>
+    PREFIX + Buffer.from(JSON.stringify(state)).toString("base64url");
+
+  it("never reports a deleted project's earlier usage as one day's cost", async () => {
+    const site = fakeProjects()[1]!;
+    const deleted: FakeProject = {
+      ...site,
+      id: "prj-deleted",
+      name: "deleted",
+      services: [],
+      environments: [],
+      instances: [],
+      deployments: [],
+    };
+    const railway = fake({ deleted: [deleted] });
+    const pages: SyncResult[] = [];
+    let cursor: string | undefined;
+    let legacy = false;
+    for (let guard = 0; guard < 200; guard += 1) {
+      const page = await connector().sync(
+        context(),
+        { ...WINDOW, ...(cursor ? { cursor } : {}) },
+        railway.runtime,
+      );
+      expectHostAccepts(page);
+      pages.push(page);
+      if (page.done) break;
+      cursor = page.nextCursor!;
+      const state = decode(cursor);
+      if (!legacy && state.cost?.prev?.["prj-deleted"] !== undefined) {
+        // The baseline as the version before #899 stored it: the listed
+        // projects only, nothing to mark what it covers.
+        legacy = true;
+        const prev = state.cost.prev;
+        delete prev["prj-deleted"];
+        state.cost = { ws: state.cost.ws, day: state.cost.day, prev };
+        cursor = encode(state);
+      }
+    }
+    expect(legacy).toBe(true);
+    expect(pages.at(-1)!.done).toBe(true);
+    const costOf = (projectId: string) =>
+      new Map(
+        pages
+          .flatMap((page) => page.observations)
+          .filter(
+            (item) =>
+              item.metricKey === METRICS.cost &&
+              item.dimensions.resource === projectId,
+          )
+          .map((item) => [item.sourceTimestamp, item.value]),
+      );
+    const deletedCost = costOf("prj-deleted");
+    const siteCost = costOf("prj-site");
+    expect(deletedCost.size).toBeGreaterThan(0);
+    // Same rates as prj-site: every day it reports matches prj-site's.
+    for (const [day, value] of deletedCost) {
+      expect(value, day).toBe(siteCost.get(day));
+    }
+  });
+});

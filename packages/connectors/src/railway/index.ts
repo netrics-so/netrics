@@ -36,6 +36,7 @@ import {
   DEPLOYS_STREAM,
   ESTIMATE_STREAM,
   METRICS,
+  PAGE_DEADLINE_MS,
   syncPage,
 } from "./sync.js";
 
@@ -134,7 +135,8 @@ const railwayDe: ManifestTranslation = {
 export const railwayManifest: ConnectorManifest = {
   id: "railway",
   version: "0.1.0",
-  sdkVersion: "^0.2.19",
+  // 0.2.21: per-request `timeoutMs` (#901 item 1).
+  sdkVersion: "^0.2.21",
   category: "other",
   brandColor: "#0b0d0e",
   name: "Railway",
@@ -274,7 +276,10 @@ export const railwayManifest: ConnectorManifest = {
 
 // ─── Connector ──────────────────────────────────────────────────────────────
 
-export interface RailwayConnectorOptions extends ClientOptions {
+export interface RailwayConnectorOptions extends Omit<
+  ClientOptions,
+  "deadline"
+> {
   /** The clock of the sync windows and snapshots; replaced in tests. */
   now?: () => number;
   /** Rows per dataset page; replaced in tests to reach the page limits. */
@@ -305,12 +310,13 @@ export function createRailwayConnector(
   function client(
     context: Parameters<Connector["check"]>[0],
     runtime: Parameters<Connector["check"]>[1],
+    call: Pick<ClientOptions, "deadline"> = {},
   ) {
     const token = tokenOf(context);
     if (!token) {
       throw new Error("Railway connection has no token");
     }
-    return createRailwayClient(runtime, token, options);
+    return createRailwayClient(runtime, token, { ...options, ...call });
   }
 
   return {
@@ -406,7 +412,12 @@ export function createRailwayConnector(
     },
 
     async sync(context, request: SyncRequest, runtime): Promise<SyncResult> {
-      const query = client(context, runtime);
+      // Every request and wait of the page ends by its deadline, well
+      // before the host's, so a stalled request still returns the
+      // checkpoint (#901 item 1).
+      const query = client(context, runtime, {
+        deadline: now() + PAGE_DEADLINE_MS,
+      });
       try {
         return await syncPage(query, context, request, {
           now,

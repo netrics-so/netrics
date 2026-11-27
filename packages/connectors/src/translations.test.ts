@@ -59,7 +59,7 @@ describe.each(FIRST_PARTY.map((manifest) => [manifest.id, manifest] as const))(
             ? "^0.2.22"
             : manifest.configuredHosts?.some((entry) => entry.includes("[]")) ||
                 // Per-request fetch timeouts (#888, #901 item 1, #914).
-                manifest.id === "posthog"
+                ["posthog", "railway"].includes(manifest.id)
               ? "^0.2.21"
               : manifest.configuredHosts?.length
                 ? "^0.2.20"

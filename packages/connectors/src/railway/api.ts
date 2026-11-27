@@ -28,6 +28,8 @@ const BASE_BACKOFF_MS = 500;
  * the window for the connection's own checks.
  */
 export const MIN_REMAINING_REQUESTS = 5;
+/** The longest one request to Railway may take (the host allows 60 s). */
+export const REQUEST_TIMEOUT_MS = 20_000;
 
 export type RailwayErrorKind =
   /** "Not Authorized": the token is wrong, revoked, or may not read this. */
@@ -84,6 +86,18 @@ function describe(
   return kind === "schema"
     ? `Railway's API no longer accepts netrics' query: ${text}`
     : `Railway API answered ${status}: ${text || "no message"}`;
+}
+
+/**
+ * The time a sync page has for Railway ran out before a request or a wait
+ * could be made (#901 item 1): the page ends with what it read, or the
+ * host retries it. Fixed text.
+ */
+export class RailwayTimeoutError extends Error {
+  constructor() {
+    super("Railway did not answer in time. netrics tries again later.");
+    this.name = "RailwayTimeoutError";
+  }
 }
 
 const graphQlErrorSchema = (value: unknown) =>
@@ -161,6 +175,13 @@ export interface ClientOptions {
   /** Waits between retries; replaced in tests. */
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
   now?: () => number;
+  /**
+   * When every request and wait of this client has to be over (ms since
+   * the epoch): each request is bounded to it, and a wait that would end
+   * after it is not made (#901 item 1). The host's own deadline for the
+   * call is later, so a sync page still returns its checkpoint.
+   */
+  deadline?: number;
 }
 
 export type RailwayQuery = <T = unknown>(
@@ -182,13 +203,17 @@ export function createRailwayClient(
 ): RailwayQuery {
   const sleep = options.sleep ?? abortableSleep;
   const now = options.now ?? Date.now;
+  const deadline = options.deadline ?? Number.POSITIVE_INFINITY;
   let window: { remaining: number; resetAt: number } | null = null;
+  /** A wait of `ms` from now would end after the deadline. */
+  const pastDeadline = (ms: number) => now() + ms >= deadline;
 
   async function pace(): Promise<void> {
     if (!window || window.remaining >= MIN_REMAINING_REQUESTS) return;
     const { remaining, resetAt } = window;
     const wait = resetAt - now();
-    if (wait > MAX_RATE_LIMIT_WAIT_MS) {
+    // A reset past the deadline is the host's to wait for (#901 item 1).
+    if (wait > MAX_RATE_LIMIT_WAIT_MS || (wait > 0 && pastDeadline(wait))) {
       throw new RateLimitedError(
         `Railway's API rate limit is nearly used up (${remaining} requests left). netrics continues after the reset.`,
         new Date(resetAt),
@@ -206,6 +231,10 @@ export function createRailwayClient(
     const body = JSON.stringify({ query: document, variables });
     for (let attempt = 1; ; attempt += 1) {
       await pace();
+      // A stalled request ends in time for the page to return its
+      // checkpoint (#901 item 1).
+      const left = deadline - now();
+      if (left <= 0) throw new RailwayTimeoutError();
       const response = await runtime.fetch(RAILWAY_API, {
         method: "POST",
         headers: {
@@ -214,6 +243,7 @@ export function createRailwayClient(
           accept: "application/json",
         },
         body,
+        timeoutMs: Math.ceil(Math.min(REQUEST_TIMEOUT_MS, left)),
       });
       const remainingHeader = response.headers["x-ratelimit-remaining"];
       const remaining = Number(remainingHeader);
@@ -232,16 +262,20 @@ export function createRailwayClient(
       if (response.status === 429) {
         const reset = rateLimitReset(response.headers, now());
         const wait = reset === null ? BASE_BACKOFF_MS : reset - now();
+        // A reset past the deadline is the host's to wait for, and the
+        // page's checkpoint carries it (#901 item 1).
         if (
           reset !== null &&
-          (wait > MAX_RATE_LIMIT_WAIT_MS || attempt >= MAX_ATTEMPTS)
+          (wait > MAX_RATE_LIMIT_WAIT_MS ||
+            attempt >= MAX_ATTEMPTS ||
+            pastDeadline(wait))
         ) {
           throw new RateLimitedError(
             "Railway's API rate limit is used up (429). netrics continues after the reset.",
             new Date(reset),
           );
         }
-        if (attempt >= MAX_ATTEMPTS) {
+        if (attempt >= MAX_ATTEMPTS || pastDeadline(wait)) {
           throw new RailwayApiError(429, "other", "");
         }
         window = null;
@@ -249,10 +283,11 @@ export function createRailwayClient(
         continue;
       }
       if (response.status >= 500) {
-        if (attempt >= MAX_ATTEMPTS) {
+        const backoff = BASE_BACKOFF_MS * 2 ** (attempt - 1);
+        if (attempt >= MAX_ATTEMPTS || pastDeadline(backoff)) {
           throw new RailwayApiError(response.status, "other", "");
         }
-        await sleep(BASE_BACKOFF_MS * 2 ** (attempt - 1), runtime.signal);
+        await sleep(backoff, runtime.signal);
         continue;
       }
 
