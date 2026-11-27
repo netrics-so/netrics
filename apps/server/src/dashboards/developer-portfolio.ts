@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import type {
   CreateDashboardRequest,
   DeveloperTemplateConnector,
@@ -753,58 +754,75 @@ function defaultsOf(
 }
 
 /**
+ * A source's `product_id` (projectNodes): the customer's link wins; an
+ * empty one unlinks the resource for good. Without one: the workspace's
+ * default (`links`, a JSON lookup by app key), else the resource.
+ */
+function linkedProduct(links: Record<string, string> | undefined) {
+  return call(
+    "if",
+    call("is_null", field("link.product_id")),
+    defaultsOf(links, field("app_key"), field("app_key")),
+    call(
+      "if",
+      call("eq", field("link.product_id"), text("")),
+      field("app_key"),
+      field("link.product_id"),
+    ),
+  );
+}
+
+/**
  * The default links a published preparation of this template carries
  * (`<connectionId>:<resourceId>` → `product:<projectId>`): the JSON lookup
- * its `product_id` step reads the app key in (projectNodes), any version.
- * What a project slide's freshness resolves its resources through, next
- * to the links table (#913). Another graph has none.
+ * of its `product_id` step, any version. What a project slide's freshness
+ * resolves its resources through, next to the links table (#913). Only a
+ * step exactly as the template builds it counts (#923): one the customer
+ * edited may no longer link by the lookup, and the links table alone then
+ * resolves its resources. Another graph has none.
  */
 export function graphDefaultLinks(graph: unknown): Record<string, string> {
   const links: Record<string, string> = {};
   const nodes = (graph as { nodes?: unknown } | null)?.nodes;
   if (!Array.isArray(nodes)) return links;
-  const visit = (expression: unknown) => {
-    if (!expression || typeof expression !== "object") return;
-    const node = expression as {
-      kind?: unknown;
-      fn?: unknown;
-      args?: unknown;
-    };
-    if (node.kind !== "call" || !Array.isArray(node.args)) return;
-    const [lookup, key] = node.args as {
-      kind?: unknown;
-      type?: unknown;
-      value?: unknown;
-      fieldId?: unknown;
-    }[];
-    if (
-      node.fn === "json_get" &&
-      lookup?.kind === "literal" &&
-      lookup.type === "json" &&
-      lookup.value &&
-      typeof lookup.value === "object" &&
-      !Array.isArray(lookup.value) &&
-      key?.kind === "field" &&
-      key.fieldId === "app_key"
-    ) {
-      for (const [appKey, product] of Object.entries(lookup.value))
-        if (typeof product === "string") links[appKey] = product;
-      return;
-    }
-    for (const arg of node.args) visit(arg);
+  type Expression = { args?: unknown[]; type?: unknown; value?: unknown };
+  const arg = (expression: unknown, index: number): unknown => {
+    const args = (expression as Expression | null)?.args;
+    return Array.isArray(args) ? args[index] : undefined;
   };
   for (const node of nodes as {
     id?: unknown;
     type?: unknown;
     fieldId?: unknown;
     expression?: unknown;
-  }[])
+  }[]) {
     if (
-      node?.type === "calculate" &&
-      node.id === "calculate_product_id" &&
-      node.fieldId === "product_id"
+      node?.type !== "calculate" ||
+      node.id !== "calculate_product_id" ||
+      node.fieldId !== "product_id"
     )
-      visit(node.expression);
+      continue;
+    // if(is_null(…), coalesce(to_string(json_get(<lookup>, …)), …), …)
+    const lookup = arg(arg(arg(arg(node.expression, 1), 0), 0), 0) as
+      Expression | undefined;
+    if (
+      lookup?.type !== "json" ||
+      !lookup.value ||
+      typeof lookup.value !== "object" ||
+      Array.isArray(lookup.value)
+    )
+      continue;
+    const value = lookup.value as Record<string, unknown>;
+    if (
+      !isDeepStrictEqual(
+        node.expression,
+        linkedProduct(value as Record<string, string>),
+      )
+    )
+      continue;
+    for (const [appKey, product] of Object.entries(value))
+      if (typeof product === "string") links[appKey] = product;
+  }
   return links;
 }
 
@@ -883,19 +901,7 @@ function projectNodes(
   calculate(
     "product_id",
     t.project + " ID",
-    // The customer's link wins; an empty one unlinks the resource for
-    // good. Without one: the workspace's default, else the resource.
-    call(
-      "if",
-      call("is_null", field("link.product_id")),
-      defaultsOf(ids.defaults?.links, field("app_key"), field("app_key")),
-      call(
-        "if",
-        call("eq", field("link.product_id"), text("")),
-        field("app_key"),
-        field("link.product_id"),
-      ),
-    ),
+    linkedProduct(ids.defaults?.links),
   );
   nodes.push({
     id: "join_projects",

@@ -24,43 +24,44 @@ export interface ModelSourceDatasets {
 
 /**
  * The default links a Developer Portfolio's preparations carry (#913), as
- * the versions a release pins them at have them: by the links table they
+ * the versions releases pin them at have them: by the links table they
  * read (their `links` source node), the pinned versions they come from
- * (`<preparationId>@<version>`, sorted: what a cache keys them by) and the
- * links. What a project's freshness resolves its resources through, so it
- * covers the resources the model's rows do.
+ * (`<preparationId>@<version>`, sorted: what a cache keys them by) and,
+ * per resource, every project a pinned version links it to. What a
+ * project's freshness resolves its resources through, so it covers the
+ * resources the model's rows do.
  */
 export type PinnedDefaultLinks = Map<
   string,
-  { pins: string; links: Map<string, string> }
+  { pins: string; links: Map<string, Set<string>> }
 >;
 
 /**
- * The default links of pinned preparation graphs, by links table. One
- * version per preparation: the highest a release pins (several releases
- * pin one preparation at different versions only during a rollout);
- * preparations of one install carry disjoint connections' links.
+ * The default links of pinned preparation graphs, by links table. Every
+ * pinned version counts (#923): during a partial rollout two releases may
+ * pin one preparation at different versions, or two preparations of one
+ * install may link a resource to different projects. A resource is then
+ * in each project a version links it to, as each release's rows have it;
+ * the links table resolves over each of them alike (readMapping).
  */
 function pinnedDefaultLinks(
   graphs: readonly { preparationId: string; version: number; graph: unknown }[],
 ): PinnedDefaultLinks {
-  const newest = new Map<string, (typeof graphs)[number]>();
-  for (const entry of graphs) {
-    const known = newest.get(entry.preparationId);
-    if (!known || known.version < entry.version)
-      newest.set(entry.preparationId, entry);
-  }
   const found = new Map<
     string,
-    { pins: string[]; links: Map<string, string> }
+    { pins: string[]; links: Map<string, Set<string>> }
   >();
-  for (const entry of [...newest.values()].sort((a, b) =>
+  const seen = new Set<string>();
+  for (const entry of [...graphs].sort((a, b) =>
     a.preparationId < b.preparationId
       ? -1
       : a.preparationId > b.preparationId
         ? 1
-        : 0,
+        : a.version - b.version,
   )) {
+    const pin = `${entry.preparationId}@${entry.version}`;
+    if (seen.has(pin)) continue;
+    seen.add(pin);
     const nodes = (entry.graph as { nodes?: unknown[] } | undefined)?.nodes;
     const links = (Array.isArray(nodes) ? nodes : []).find(
       (node): node is { datasetId: string } =>
@@ -76,8 +77,12 @@ function pinnedDefaultLinks(
     if (!keys.length) continue;
     let table = found.get(links);
     if (!table) found.set(links, (table = { pins: [], links: new Map() }));
-    table.pins.push(`${entry.preparationId}@${entry.version}`);
-    for (const key of keys) table.links.set(key, defaults[key]!);
+    table.pins.push(pin);
+    for (const key of keys) {
+      const projects = table.links.get(key);
+      if (projects) projects.add(defaults[key]!);
+      else table.links.set(key, new Set([defaults[key]!]));
+    }
   }
   return new Map(
     [...found].map(([links, table]) => [

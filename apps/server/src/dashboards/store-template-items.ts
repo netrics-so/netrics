@@ -79,10 +79,25 @@ export const itemKindOf = (ref: string) => {
 };
 
 /**
+ * An expression literal (`{ kind: "literal", type, value }`): a value the
+ * template or the customer wrote, such as a project name in a lookup
+ * (#923). Never a record reference, so symbolize and desymbolize leave it
+ * as it is, whatever its text looks like (`ref:backend`).
+ */
+function isExpressionLiteral(value: object): boolean {
+  const entry = value as { kind?: unknown; type?: unknown };
+  return (
+    entry.kind === "literal" &&
+    typeof entry.type === "string" &&
+    Object.hasOwn(value, "value")
+  );
+}
+
+/**
  * `prepared:<id>:<out>`, dataset ids and model ids become
  * `ref:<key>[:<out>]` using the install's id → key map. Output names have
  * no colon, so an id is everything between `prepared:` and the last colon
- * (placeholder ids `new:<key>` included).
+ * (placeholder ids `new:<key>` included). Expression literals are opaque.
  */
 export function symbolize(
   value: unknown,
@@ -102,13 +117,15 @@ export function symbolize(
   }
   if (Array.isArray(value))
     return value.map((entry) => symbolize(entry, idsToKeys));
-  if (value !== null && typeof value === "object")
+  if (value !== null && typeof value === "object") {
+    if (isExpressionLiteral(value)) return value;
     return Object.fromEntries(
       Object.entries(value).map(([key, entry]) => [
         key,
         symbolize(entry, idsToKeys),
       ]),
     );
+  }
   return value;
 }
 
@@ -206,7 +223,7 @@ export class UnmergeableRecord extends Error {
  * every key (new records created before their dependants). A whole key
  * wins over key plus output, like an exact id wins in symbolize. Throws
  * UnresolvableReference for a `ref:` no key resolves: writing it would
- * store a reference to nothing.
+ * store a reference to nothing. Expression literals are opaque (#923).
  */
 export function desymbolize(
   value: unknown,
@@ -224,13 +241,15 @@ export function desymbolize(
   }
   if (Array.isArray(value))
     return value.map((entry) => desymbolize(entry, ids));
-  if (value !== null && typeof value === "object")
+  if (value !== null && typeof value === "object") {
+    if (isExpressionLiteral(value)) return value;
     return Object.fromEntries(
       Object.entries(value).map(([name, entry]) => [
         name,
         desymbolize(entry, ids),
       ]),
     );
+  }
   return value;
 }
 
@@ -1018,8 +1037,10 @@ export function dashboardFromItems(
     result.settings[name] = real("settings", name, value);
   for (const [id, value] of ordered("filter"))
     result.filters[id] = real("filter", id, value);
+  // Slides hold no references (normalizeDashboard never symbolizes them):
+  // their names, such as a project's (`ref:backend`, #923), stay as they are.
   for (const [id, value] of ordered("slide"))
-    result.slides[slideKeyOf(id)] = real("slide", id, value);
+    result.slides[slideKeyOf(id)] = value;
   // Widgets in the customer's order too (slide by slide, reading order).
   for (const [id, value] of ordered("widget")) {
     const { slide, ...rest } = value as { slide: string } & object;

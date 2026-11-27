@@ -17,6 +17,7 @@ import { createDefaultRegistry } from "../connectors.js";
 import {
   DEVELOPER_DEFAULT_LINKS_MAX,
   DEVELOPER_PROJECT_WIDGETS,
+  graphDefaultLinks,
   type DeveloperProjectIdentity,
   type DeveloperSource,
 } from "./developer-portfolio.js";
@@ -317,6 +318,40 @@ describe("Developer Portfolio template", () => {
         input.seededNames,
       ).map((entry) => entry.name),
     ).toEqual(["Alpha renamed", "Beta by the customer"]);
+  });
+
+  it("reads default links only from the product step as the template builds it (#923)", () => {
+    const railway = ALL[0]!,
+      alpha = project("Alpha").productId;
+    const record = developerTemplate.build(
+      `preparation:ops:state:${railway.id}`,
+      asStoreInputs(inputs([railway])),
+      {
+        "dataset:mapping": "links",
+        "dataset:products": "projects",
+      } as StoreTemplateIds,
+    );
+    if (record.kind !== "preparation") throw new Error("no preparation");
+    // Stored and read back, as a release pins it.
+    const graph = preparationGraphSchema.parse(
+      JSON.parse(JSON.stringify(record.graph)),
+    );
+    expect(graphDefaultLinks(graph)).toEqual({ [`${railway.id}:rw-1`]: alpha });
+    // The customer edits the condition: the lookup no longer decides when
+    // the links table has no row, so it carries no default links.
+    const edited = structuredClone(graph);
+    const step = edited.nodes.find(
+      (node) => node.id === "calculate_product_id",
+    ) as { expression: { args: unknown[] } };
+    step.expression.args[0] = {
+      kind: "call",
+      fn: "eq",
+      args: [
+        { kind: "field", fieldId: "app_key" },
+        { kind: "literal", type: "string", value: "" },
+      ],
+    };
+    expect(graphDefaultLinks(edited)).toEqual({});
   });
 
   it("builds default lookups up to the expression engine's JSON limit (#913)", () => {
