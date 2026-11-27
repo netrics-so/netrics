@@ -28,7 +28,11 @@
 //
 // The final result's cursor carries the deployments the run read in the
 // days the next run reads again: a deployment the next run no longer
-// finds there was deleted at Vercel, and gets a tombstone.
+// finds there was deleted at Vercel, and gets a tombstone. It also carries
+// this month's `vercel.cost` series, so the next run zeroes one that is
+// gone. A fresh backfill (a history reload) starts without a cursor; it
+// takes that cost baseline, and nothing else, from the stored cursor the
+// host hands it as `previousCursor` (#905).
 
 import { createHash } from "node:crypto";
 
@@ -76,6 +80,14 @@ import {
   targetOf,
   type LatestDeployment,
 } from "./datasets.js";
+import {
+  addExact,
+  exactOf,
+  formatExact,
+  minorOfExact,
+  storedExact,
+  type ExactAmount,
+} from "./exact-cost.js";
 import { ownerQuery, projectsPage, teamIdOf, tokenOf } from "./reading.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -273,29 +285,13 @@ type CostKey = [string, string, string];
 
 /**
  * A cost series of this month being read: its key, and the effective cost
- * of each day read so far, in millionths of the billing currency's unit
- * (integers, summed exactly), by day of the month (0: the 1st).
+ * of each day read so far, by day of the month (0: the 1st), summed
+ * exactly with every decimal of the export (#905): a plain decimal string
+ * of the billing currency's unit, or, in a checkpoint from before #905, an
+ * integer number of millionths of it (#894). Only the month-to-date totals
+ * are rounded, when they are published.
  */
-type CostSeries = [string, string, string, number[]];
-
-/** Cost is summed in millionths of a currency unit, as integers (#894). */
-const MICROS = 1_000_000;
-
-/**
- * An amount in millionths of its unit. Vercel's FOCUS export sends plain
- * decimals; up to six fraction digits this is exact (the product is
- * within half a unit of the integer it stands for).
- */
-function micros(amount: number): number {
-  return Math.round(amount * MICROS);
-}
-
-/** Millionths of a unit to minor units, half away from zero. */
-function minorOf(total: number, currency: string): number {
-  const units = (total * minorUnits(currency)) / MICROS;
-  const rounded = Math.sign(units) * Math.round(Math.abs(units));
-  return rounded === 0 ? 0 : rounded;
-}
+type CostSeries = [string, string, string, Array<number | string>];
 
 /** One charge row being summed: its values, and the running sums. */
 interface ChargeSum {
@@ -454,6 +450,48 @@ function decodeState(
   } catch {
     return null;
   }
+}
+
+/** A cost series key as stored, or null when it is not one. */
+function costKeyOf(value: unknown): CostKey | null {
+  return Array.isArray(value) &&
+    value.length >= 3 &&
+    value.slice(0, 3).every((part) => typeof part === "string")
+    ? [value[0] as string, value[1] as string, value[2] as string]
+    : null;
+}
+
+/**
+ * The `vercel.cost` series of `month` a run carries from the one before
+ * it (#894, #905): a finished run's published series, or, from an
+ * unfinished run's checkpoint of the same month, the series its previous
+ * run published and the ones it published itself. Only this baseline is
+ * taken, never a position. The state is of this connection and scope
+ * (decodeState), so of the same token, team and selection.
+ */
+function costPriorOf(
+  state: RunState | DoneState | null,
+  month: number,
+): { costPrior?: CostKey[] } {
+  let keys: unknown[] = [];
+  if (state?.kind === "done") {
+    if (state.cost?.month === month && Array.isArray(state.cost.series)) {
+      keys = state.cost.series;
+    }
+  } else if (state?.kind === "run") {
+    if (Number.isFinite(state.at) && startOfUtcMonth(state.at) === month) {
+      keys = [
+        ...(Array.isArray(state.costPrior) ? state.costPrior : []),
+        ...(Array.isArray(state.costSeries) ? state.costSeries : []),
+      ];
+    }
+  }
+  const series = new Map<string, CostKey>();
+  for (const value of keys) {
+    const key = costKeyOf(value);
+    if (key) series.set(costKey(key), key);
+  }
+  return series.size > 0 ? { costPrior: [...series.values()] } : {};
 }
 
 // ─── Pages ──────────────────────────────────────────────────────────────────
@@ -679,12 +717,15 @@ export async function syncPage(
       remember: [],
       charges: {},
       costs: [],
-      // The previous run's series of this month, to zero the ones gone.
-      ...(decoded?.kind === "done" &&
-      decoded.cost?.month === startOfUtcMonth(at) &&
-      Array.isArray(decoded.cost.series)
-        ? { costPrior: decoded.cost.series }
-        : {}),
+      // The previous run's series of this month, to zero the ones gone:
+      // from the cursor (a finished run's), or from the stored cursor a
+      // fresh backfill does not resume (#905).
+      ...costPriorOf(
+        request.cursor
+          ? decoded
+          : decodeState(request.previousCursor, context.connectionId, scope),
+        startOfUtcMonth(at),
+      ),
       queue: [],
       last: {},
       pages: 0,
@@ -1259,7 +1300,7 @@ export async function syncPage(
     /** The day's effective cost per resource and currency, in millionths. */
     const daily = new Map<
       string,
-      { resource: string; currency: string; cost: number }
+      { resource: string; currency: string; cost: ExactAmount }
     >();
     for (const charge of charges) {
       // A charge belongs to the day it starts on: one that spans several
@@ -1310,9 +1351,9 @@ export async function syncPage(
       const day = daily.get(dailyKey) ?? {
         resource,
         currency: charge.BillingCurrency,
-        cost: 0,
+        cost: exactOf(0),
       };
-      day.cost += micros(charge.EffectiveCost);
+      day.cost = addExact(day.cost, exactOf(charge.EffectiveCost));
       daily.set(dailyKey, day);
       sums[key] = {
         values: sum.values,
@@ -1350,7 +1391,9 @@ export async function syncPage(
         [],
       ];
       while (entry[3].length <= offset) entry[3].push(0);
-      entry[3][offset]! += cost;
+      entry[3][offset] = formatExact(
+        addExact(storedExact(entry[3][offset]), cost),
+      );
       series.set(key, entry);
     }
     run.costs = [...series.values()];
@@ -1384,11 +1427,11 @@ export async function syncPage(
     }
     const days = Math.round((today - billingFirstDay) / DAY_MS) + 1;
     for (const [resource, team, currency, daily] of series.values()) {
-      let total = 0;
+      let total = exactOf(0);
       let published = 0;
       for (let offset = 0; offset < days; offset += 1) {
-        total += daily[offset] ?? 0;
-        const rounded = minorOf(total, currency);
+        total = addExact(total, storedExact(daily[offset]));
+        const rounded = minorOfExact(total, minorUnits(currency));
         const value = rounded - published;
         published = rounded;
         out.observations.push({
@@ -1581,6 +1624,11 @@ export async function syncPage(
   // #889). The host then retires the per-project rows stored before: a
   // continuous stream's connection entry supersedes the ones a result does
   // not report (ADR 0025 §4).
+  //
+  // A run without the connection entry (a project gone after the listing,
+  // a selected one not listed) reports the projects it read completely
+  // whenever their entries fit with the others: nothing else can claim
+  // them, and the next run's connection entry retires them again (#905).
   const deploysComplete = everySelected(run.deploysDone);
   if (deploysComplete) freshness.push({ stream: DEPLOYS_STREAM });
   const withAnalytics = run.projects.filter(([, , , on]) => on === 1).length;
@@ -1589,7 +1637,12 @@ export async function syncPage(
       withAnalytics +
       2 <=
     FRESHNESS_LIMITS.entries;
-  if (perProject) {
+  const completedFit =
+    run.deploysDone.length +
+      run.analyticsDone.length +
+      (billingComplete ? 1 : 0) <=
+    FRESHNESS_LIMITS.entries;
+  if (perProject || (!deploysComplete && completedFit)) {
     freshness.push(
       ...run.deploysDone.map((id) => ({
         stream: DEPLOYS_STREAM,
