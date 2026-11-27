@@ -1377,6 +1377,43 @@ describe("review round 3", () => {
     );
   });
 
+  it("asks Railway again under a hold stored before the cap (#914 review)", async () => {
+    const railway = fake();
+    let calls = 0;
+    const limited: ConnectorRuntime = {
+      ...railway.runtime,
+      fetch: async (url, init) => {
+        calls += 1;
+        if (calls === 5) {
+          return jsonAnswer(429, {}, { "retry-after": "1800" });
+        }
+        return railway.runtime.fetch(url, init);
+      },
+    };
+    const first = await connector().sync(context(), WINDOW, limited);
+    expect(first.done).toBe(false);
+    // The checkpoint as the uncapped version stored a reset 30 days away.
+    const PREFIX = "railway.v3:";
+    const state = JSON.parse(
+      Buffer.from(first.nextCursor!.slice(PREFIX.length), "base64url").toString(
+        "utf8",
+      ),
+    ) as Record<string, unknown>;
+    state.retryAt = clock() + 30 * DAY_MS;
+    const before = calls;
+    const next = await connector().sync(
+      context(),
+      {
+        ...WINDOW,
+        cursor:
+          PREFIX + Buffer.from(JSON.stringify(state)).toString("base64url"),
+      },
+      limited,
+    );
+    expectHostAccepts(next);
+    expect(calls).toBeGreaterThan(before);
+  });
+
   it("hands on a rate limit of the probe after a refused deployments read", async () => {
     const railway = fake();
     let refused = false;

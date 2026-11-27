@@ -35,7 +35,7 @@ import {
 } from "@netrics/connector-sdk";
 
 import { boundFreshness } from "../freshness.js";
-import { rateLimitHold } from "../rate-limit-hold.js";
+import { pendingHold, rateLimitHold } from "../rate-limit-hold.js";
 
 import { RailwayApiError, type RailwayQuery } from "./api.js";
 import {
@@ -362,12 +362,11 @@ export async function syncPage(
 
   let state = decodeState(request.cursor, context.connectionId, scope);
   // A page that ended on a rate limit: nothing is sent before the reset.
+  // A hold stored before the cap no longer holds (#914 review).
   if (state?.retryAt !== undefined) {
-    if (now() < state.retryAt) {
-      throw new RateLimitedError(
-        RATE_LIMIT_DEFERRED_MESSAGE,
-        new Date(state.retryAt),
-      );
+    const until = pendingHold(state.retryAt, now());
+    if (until !== undefined) {
+      throw new RateLimitedError(RATE_LIMIT_DEFERRED_MESSAGE, new Date(until));
     }
     delete state.retryAt;
   }

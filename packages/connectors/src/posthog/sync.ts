@@ -34,7 +34,7 @@ import {
 } from "@netrics/connector-sdk";
 
 import { boundFreshness } from "../freshness.js";
-import { rateLimitHold } from "../rate-limit-hold.js";
+import { pendingHold, rateLimitHold } from "../rate-limit-hold.js";
 
 import { PostHogApiError, type PostHogClient } from "./api.js";
 import {
@@ -605,9 +605,11 @@ export async function syncPage(
     };
   }
   const run = state;
-  // A pending rate limit holds the checkpoint until its reset.
+  // A pending rate limit holds the checkpoint until its reset; a hold
+  // stored before the cap no longer does (#914 review).
   if (run.limitedUntil !== undefined) {
-    if (pageStarted < run.limitedUntil) throw rateLimited(run.limitedUntil);
+    const until = pendingHold(run.limitedUntil, pageStarted);
+    if (until !== undefined) throw rateLimited(until);
     delete run.limitedUntil;
   }
   const today = startOfUtcDay(run.at);

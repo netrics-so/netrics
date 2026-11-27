@@ -1801,6 +1801,36 @@ describe("pages end before the host's deadline (#888, #901 item 1)", () => {
     );
   });
 
+  it("asks PostHog again under a hold stored before the cap (#914 review)", async () => {
+    const {
+      runtime,
+      connector: posthog,
+      requests,
+    } = timed({ limitedAt: { request: 3, retryAfter: "3600" } });
+    const page = await posthog.sync(context(), WINDOW, runtime);
+    expect(page.done).toBe(false);
+    // The checkpoint as the uncapped version stored a reset 30 days away.
+    const PREFIX = "posthog.v1:";
+    const state = JSON.parse(
+      Buffer.from(page.nextCursor!.slice(PREFIX.length), "base64url").toString(
+        "utf8",
+      ),
+    ) as Record<string, unknown>;
+    state.limitedUntil = clock() + 30 * 24 * 60 * 60 * 1000;
+    const sent = requests();
+    const next = await posthog.sync(
+      context(),
+      {
+        ...WINDOW,
+        cursor:
+          PREFIX + Buffer.from(JSON.stringify(state)).toString("base64url"),
+      },
+      runtime,
+    );
+    expectHostAccepts(next);
+    expect(requests()).toBeGreaterThan(sent);
+  });
+
   it("bounds every request below the host's limit", async () => {
     const { runtime, connector: posthog, timeouts } = timed({});
     await posthog.sync(context(), WINDOW, runtime);

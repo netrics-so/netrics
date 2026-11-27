@@ -1768,6 +1768,30 @@ describe("vercel follow-ups (#894)", () => {
     );
   });
 
+  it("asks Vercel again under a hold stored before the cap (#914 review)", async () => {
+    const api = fake({
+      failAfter: {
+        after: 2,
+        status: 429,
+        path: "/v7/deployments",
+        headers: { "retry-after": "3600" },
+      },
+    });
+    const first = await connector().sync(context(), RECENT, api.runtime);
+    expect(first.done).toBe(false);
+    // The checkpoint as the uncapped version stored a reset 30 days away.
+    const state = decode(first.nextCursor!);
+    state.retryAt = clock() + 30 * DAY_MS;
+    const asked = api.requests.length;
+    const next = await connector().sync(
+      context(),
+      { ...RECENT, cursor: encode(state) },
+      api.runtime,
+    );
+    expectHostAccepts(next);
+    expect(api.requests.length).toBeGreaterThan(asked);
+  });
+
   it("4: a rolling release is not the promoted build production is compared with", async () => {
     const project = { ...FAKE_PROJECTS[0]!, deployments: 20 };
     for (const substate of ["ROLLING", "STAGED"]) {

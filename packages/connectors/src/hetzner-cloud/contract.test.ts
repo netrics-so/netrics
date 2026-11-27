@@ -1349,6 +1349,22 @@ describe("review of #904", () => {
   const encode = (state: State) =>
     RUN + Buffer.from(JSON.stringify(state)).toString("base64url");
 
+  it("asks Hetzner again under a hold stored before the cap (#914 review)", async () => {
+    const { runtime, requests } = fake();
+    const page = await connector().sync(context(), WINDOW, runtime);
+    // The checkpoint as the uncapped version stored a reset 30 days away.
+    const state = decode(page.nextCursor!);
+    state.limitedUntil = clock() + 30 * DAY_MS;
+    const sent = requests.length;
+    const next = await connector().sync(
+      context(),
+      { ...WINDOW, cursor: encode(state) },
+      runtime,
+    );
+    expectHostAccepts(next);
+    expect(requests.length).toBeGreaterThan(sent);
+  });
+
   it("restarts a checkpoint of the previous version taken inside a listing", async () => {
     const data = {
       ...fixtureData(),

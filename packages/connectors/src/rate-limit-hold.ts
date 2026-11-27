@@ -21,3 +21,20 @@ export function rateLimitHold(
   if (!Number.isFinite(until)) return undefined;
   return Math.min(until, now + MAX_RATE_LIMIT_HOLD_MS);
 }
+
+/**
+ * The hold a resumed checkpoint still carries: its time when that is after
+ * `now` and at most MAX_RATE_LIMIT_HOLD_MS ahead; otherwise undefined. A
+ * hold further ahead was stored before the cap and would refuse every
+ * retry the host makes; the host has already waited its longest, so the
+ * page asks the provider again (#914 review). Capping it relative to `now`
+ * instead would hold it for ever: the cursor is not rewritten while the
+ * hold refuses the page.
+ */
+export function pendingHold(
+  until: number | undefined,
+  now: number,
+): number | undefined {
+  if (until === undefined || !(until > now)) return undefined;
+  return until <= now + MAX_RATE_LIMIT_HOLD_MS ? until : undefined;
+}

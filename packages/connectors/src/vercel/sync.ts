@@ -48,7 +48,7 @@ import {
 import { z } from "zod";
 
 import { boundFreshness } from "../freshness.js";
-import { rateLimitHold } from "../rate-limit-hold.js";
+import { pendingHold, rateLimitHold } from "../rate-limit-hold.js";
 import { readPageCursor } from "../page-cursor.js";
 
 import {
@@ -712,9 +712,11 @@ export async function syncPage(
 
   // A rate limit that ended the page before: nothing is asked before its
   // reset (#894). The host waits for it and repeats this page.
+  // A hold stored before the cap no longer holds (#914 review).
   if (run.retryAt !== undefined) {
-    if (run.retryAt > now()) {
-      throw new RateLimitedError(RATE_LIMIT_CARRIED, new Date(run.retryAt));
+    const until = pendingHold(run.retryAt, now());
+    if (until !== undefined) {
+      throw new RateLimitedError(RATE_LIMIT_CARRIED, new Date(until));
     }
     delete run.retryAt;
   }
