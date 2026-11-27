@@ -40,8 +40,10 @@ import {
   apiKeyOf,
   hostOf,
   insightsOf,
+  isRefused,
   listProjects,
   organizationsPage,
+  projectId,
   projectIdsOf,
   projectsPage,
   rethrow,
@@ -50,6 +52,7 @@ import {
   ANALYTICS_STREAM,
   INSIGHTS_STREAM,
   METRICS,
+  PAGE_DEADLINE_MS,
   syncPage,
 } from "./sync.js";
 
@@ -325,6 +328,23 @@ function isProjectRefusal(error: unknown): boolean {
   );
 }
 
+/**
+ * The saved resource selection the host passes in the configuration
+ * (`resourceSelection`), numeric IDs without leading zeros; undefined when
+ * every project is selected.
+ */
+function selectionOf(
+  context: Parameters<Connector["check"]>[0],
+): string[] | undefined {
+  const selection = context.config.resourceSelection;
+  return Array.isArray(selection) &&
+    selection.every((id) => typeof id === "string")
+    ? (selection as string[]).map((id) =>
+        /^\d+$/.test(id) ? projectId(id) : id,
+      )
+    : undefined;
+}
+
 export interface PostHogConnectorOptions extends ClientOptions {
   /** The clock of the sync windows; replaced in tests. */
   now?: () => number;
@@ -347,12 +367,13 @@ export function createPostHogConnector(
   function client(
     context: Parameters<Connector["check"]>[0],
     runtime: Parameters<Connector["check"]>[1],
+    call: Pick<ClientOptions, "deadline"> = {},
   ) {
     const apiKey = apiKeyOf(context);
     if (!apiKey) throw new Error("PostHog connection has no API key");
     const host = hostOf(context);
     if (!host) throw new Error(HOST_INVALID_MESSAGE);
-    return createPostHogClient(runtime, host, apiKey, options);
+    return createPostHogClient(runtime, host, apiKey, { ...options, ...call });
   }
 
   return {
@@ -391,18 +412,25 @@ export function createPostHogConnector(
       try {
         const api = client(context, runtime);
         if (projectIds.ids) {
-          // A key limited to projects: the first named projects answer a
-          // constant query (project endpoints only, posthog/permissions.py).
-          // The check stays within its deadline; a sync reports any other
-          // named project it cannot read (logged, and stale).
-          for (const id of projectIds.ids.slice(0, CHECK_PROBES)) {
+          // A key limited to projects: the first named projects the
+          // connection reads answer a constant query (project endpoints
+          // only, posthog/permissions.py). A named project left out of the
+          // saved selection is not probed (#888 item 3). The check stays
+          // within its deadline; a sync reports any other named project it
+          // cannot read (logged, and stale).
+          const selection = selectionOf(context);
+          const read = selection
+            ? projectIds.ids.filter((id) => selection.includes(id))
+            : projectIds.ids;
+          // With none of them selected, the first named project still
+          // checks the key; only a wrong key or a missing scope fails it.
+          const probes = read.length > 0 ? read : projectIds.ids.slice(0, 1);
+          for (const id of probes.slice(0, CHECK_PROBES)) {
             try {
               await api.query(id, PROBE_BODY);
             } catch (error) {
-              if (
-                error instanceof PostHogApiError &&
-                (error.kind === "forbidden" || error.kind === "not_found")
-              ) {
+              if (read.length === 0 && isRefused(error)) break;
+              if (isRefused(error)) {
                 return {
                   ok: false,
                   message: PROJECTS_INVALID_MESSAGE,
@@ -506,7 +534,13 @@ export function createPostHogConnector(
 
     async sync(context, request: SyncRequest, runtime): Promise<SyncResult> {
       try {
-        return await syncPage(client(context, runtime), context, request, {
+        // Every request and wait of the page ends by its deadline, well
+        // before the host's, so a stalled request still returns the
+        // checkpoint (#901 item 1).
+        const api = client(context, runtime, {
+          deadline: now() + PAGE_DEADLINE_MS,
+        });
+        return await syncPage(api, context, request, {
           now,
           ...(runtime.log ? { log: runtime.log } : {}),
         });

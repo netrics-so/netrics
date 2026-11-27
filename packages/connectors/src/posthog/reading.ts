@@ -74,6 +74,14 @@ export function hostOf(context: ConnectionContext): string | null {
 }
 
 /**
+ * A numeric project ID as PostHog names it: without leading zeros, so
+ * `01000` and `1000` are the same project (#888 item 5).
+ */
+export function projectId(digits: string): string {
+  return digits.replace(/^0+(?=\d)/, "");
+}
+
+/**
  * The project IDs a connection names for a key limited to projects
  * (PostHog's `scoped_teams`): then netrics reads those projects through
  * project endpoints and lists no organization. `undefined` when none are
@@ -91,7 +99,7 @@ export function projectIdsOf(context: ConnectionContext): {
   let invalid = 0;
   for (const token of raw.split(/[\s,]+/).filter((entry) => entry !== "")) {
     if (!/^\d{1,20}$/.test(token)) invalid += 1;
-    else if (!ids.includes(token)) ids.push(token);
+    else if (!ids.includes(projectId(token))) ids.push(projectId(token));
   }
   if (ids.length > MAX_PROJECT_IDS) {
     invalid += ids.length - MAX_PROJECT_IDS;
@@ -132,7 +140,7 @@ export function insightsOf(context: ConnectionContext): {
       invalid += 1;
       continue;
     }
-    const ref = { project: match[1]!, shortId: match[2]! };
+    const ref = { project: projectId(match[1]!), shortId: match[2]! };
     if (
       !insights.some(
         (entry) =>
@@ -147,6 +155,17 @@ export function insightsOf(context: ConnectionContext): {
     insights.length = MAX_INSIGHTS;
   }
   return { insights, invalid };
+}
+
+/**
+ * An organization or project the key may not read (any more): 403 or 404,
+ * not a wrong key, a missing scope or a key limited to projects.
+ */
+export function isRefused(error: unknown): boolean {
+  return (
+    error instanceof PostHogApiError &&
+    (error.kind === "forbidden" || error.kind === "not_found")
+  );
 }
 
 /** Auth and scope failures in discover and sync carry the check's code. */
@@ -248,7 +267,16 @@ export async function listProjects(
       offset !== null && request < MAX_LIST_REQUESTS;
       request += 1
     ) {
-      const page = await projectsPage(client, organization.id, offset);
+      let page;
+      try {
+        page = await projectsPage(client, organization.id, offset);
+      } catch (error) {
+        // An organization whose projects the key may not read (403, 404)
+        // is skipped, as the sync skips it, so the readable ones can be
+        // connected (#888 item 2). A wrong key or a missing scope fails.
+        if (!isRefused(error)) throw error;
+        break;
+      }
       projects.push(...page.projects);
       offset = page.next;
     }

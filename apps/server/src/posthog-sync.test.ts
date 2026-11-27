@@ -19,6 +19,8 @@ import { describe, expect, it } from "vitest";
 const NOW = "2024-01-10T12:00:00.000Z";
 const KEY = "phx_posthog_server_test_key";
 const ORG = "0190b4c2-7d1e-7000-8000-000000000001";
+/** An organization whose projects the key may not read (#888). */
+const REFUSED_ORG = "0190b4c2-7d1e-7000-8000-000000000002";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function answer(status: number, body: unknown): ConnectorResponse {
@@ -44,8 +46,15 @@ function days(from: string, to: string): string[] {
   return list;
 }
 
-/** PostHog with `projects` projects and one saved insight of `rows` rows. */
-function fakePostHog(projects: number, insightRows: number): ConnectorRuntime {
+/**
+ * PostHog with `projects` projects and one saved insight of `rows` rows;
+ * with `refusedOrg`, a second organization whose projects it refuses.
+ */
+function fakePostHog(
+  projects: number,
+  insightRows: number,
+  refusedOrg = false,
+): ConnectorRuntime {
   const page = (results: unknown[]) => ({
     count: results.length,
     next: null,
@@ -57,7 +66,16 @@ function fakePostHog(projects: number, insightRows: number): ConnectorRuntime {
     fetch: async (url, init) => {
       const { pathname, searchParams } = new URL(url);
       if (pathname === "/api/organizations/") {
-        return answer(200, page([{ id: ORG, name: "Acme" }]));
+        return answer(
+          200,
+          page([
+            ...(refusedOrg ? [{ id: REFUSED_ORG, name: "Other" }] : []),
+            { id: ORG, name: "Acme" },
+          ]),
+        );
+      }
+      if (pathname === `/api/organizations/${REFUSED_ORG}/projects/`) {
+        return answer(403, { detail: "You do not have access." });
       }
       if (pathname === `/api/organizations/${ORG}/projects/`) {
         const offset = Number(searchParams.get("offset") ?? 0);
@@ -138,12 +156,16 @@ function fakePostHog(projects: number, insightRows: number): ConnectorRuntime {
 }
 
 /** The connector, reading PostHog through the offline stand-in. */
-function posthogWith(projects: number, insightRows = 7): Connector {
+function posthogWith(
+  projects: number,
+  insightRows = 7,
+  refusedOrg = false,
+): Connector {
   const connector = createPostHogConnector({
     now: () => Date.parse(NOW),
     sleep: async () => {},
   });
-  const runtime = fakePostHog(projects, insightRows);
+  const runtime = fakePostHog(projects, insightRows, refusedOrg);
   return {
     ...connector,
     sync: (ctx, request) => connector.sync(ctx, request, runtime),
@@ -153,10 +175,11 @@ function posthogWith(projects: number, insightRows = 7): Connector {
 async function syncThroughHost(
   connector: Connector,
   request: SyncRequest,
+  insights = "1000/Signup1",
 ): Promise<SyncResult[]> {
   const context: ConnectionContext = {
     connectionId: "posthog-host-test",
-    config: { host: "us.posthog.com", insights: "1000/Signup1" },
+    config: { host: "us.posthog.com", insights },
     // Bound to the host as the server stores them (#884 review).
     credentials: bindCredentialHosts(
       posthogManifest,
@@ -220,5 +243,28 @@ describe("PostHog syncs through the host's validation (#873)", () => {
     expect(rows(results, "insight_results")).toHaveLength(3_650);
     expect(rows(results, "top_events")).toHaveLength(120 * 91 * 10);
     expect(results.at(-1)!.freshness).toHaveLength(121);
+  });
+
+  it("keeps the stored insight results when an organization's projects are refused (#888)", async () => {
+    // 2000 may be a project of the refused organization: its insight is
+    // unread, not left out, so the snapshot stays incomplete.
+    const results = await syncThroughHost(
+      posthogWith(1, 7, true),
+      { mode: "incremental", from: "2024-01-08T00:00:00.000Z", to: NOW },
+      "1000/Signup1 02000/Other1",
+    );
+    const last = results.at(-1)!;
+    expect(last.receivedDatasets).toEqual(["top_events", "insights"]);
+    expect(rows(results, "insights").map((row) => row.values)).toEqual([
+      expect.objectContaining({ insight_id: "Signup1", status: "ok" }),
+      expect.objectContaining({
+        project_id: "2000",
+        insight_id: "Other1",
+        status: "denied",
+      }),
+    ]);
+    expect(last.freshness).toEqual([
+      expect.objectContaining({ stream: "analytics", resource: "1000" }),
+    ]);
   });
 });

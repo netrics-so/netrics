@@ -41,12 +41,15 @@ PostHog refuses organization endpoints to a key limited to projects
 (`scoped_teams`: "API keys with scoped projects are only supported on
 project-based endpoints", `posthog/permissions.py`). With **Project IDs**
 set, netrics lists no organization: the check runs `SELECT 1` in the first
-three named projects (its deadline is 15 seconds), discovery offers exactly
+three named projects of the saved selection (its deadline is 15 seconds; a
+named project left out of the selection is not probed), discovery offers exactly
 those projects (named by their ID, since
 no project endpoint names a project for such a key), and a sync reads them
 through project endpoints only. A named project the key cannot read is
 logged by the sync and shows as stale. Without Project IDs, such a key
-fails the check with `posthog.projects_required`.
+fails the check with `posthog.projects_required`. Project IDs are numbers:
+`01000` and `1000` name the same project, in Project IDs and in insight
+links alike.
 
 After connecting, choose the projects to sync (all of them, or some). Each
 project is a resource that can be linked to a workspace project, like a
@@ -60,7 +63,11 @@ The connection check reads one page of organizations and up to three of the
 first one's projects, and runs the query `SELECT 1` (which needs
 `query:read`) in the first project that answers; a project the key may not
 query (403, 404) is skipped there and shows as stale after the sync. With
-Project IDs it runs `SELECT 1` in the first three of them. When insights are
+Project IDs it runs `SELECT 1` in the first three of them the connection
+syncs (with none selected, in the first one, where only a wrong key or a
+missing scope fails). Discovery skips an organization whose projects
+PostHog refuses (403, 404), as a sync does, so the readable projects can be
+connected; a wrong key or a missing scope still fails it. When insights are
 configured, it lists one insight. It fails with a reason:
 
 | Code                        | When                                                                                                    |
@@ -127,9 +134,11 @@ Datasets:
   sync: `ok`, `not_found` (deleted or unknown), `unsupported` (not a trends
   insight, or an interval other than day, week or month), `too_large` (more
   than 5,000 rows, more than ten dataset pages, which long labels or
-  breakdown values reach first, or a row above the 64 KiB record limit), `not_selected` (its project is not synced), `denied`
-  (PostHog refused it) or `not_ready` (PostHog has not computed it). The
-  last two keep the stored `insight_results`.
+  breakdown values reach first, or a row above the 64 KiB record limit), `not_selected` (the selection leaves its project out, or the key
+  lists no such project), `denied` (PostHog refused it, or its project may
+  belong to an organization whose project list PostHog refused during the
+  run) or `not_ready` (PostHog has not computed it). The last two keep the
+  stored `insight_results`.
 
 ### Saved insights
 
@@ -167,13 +176,18 @@ organizations, a page of an organization's projects (only the selected ones
 are kept), per project and window of up to 31 days the trends query and
 then the top-events query, and one request per configured insight. A sync
 page runs at most five steps, and none starts after 20 seconds, since one
-PostHog query may run for ten. The page checkpoints the next step in its
-cursor:
+PostHog query may run for ten. Every request is bounded to 20 seconds and
+to the page's deadline 45 seconds after it started, and no retry wait
+reaches past that deadline, so a stalled request still lets the page return
+its checkpoint before the host's 60-second limit (#901). The page
+checkpoints the next step in its cursor:
 
 - a step that fails first on its page fails the page, and the host retries
   that step (or waits for a rate limit's reset);
 - a step that fails after others succeeded ends the page with what they
-  read, so the next page repeats that step only;
+  read, so the next page repeats that step only; a rate limit it met stays
+  in the checkpoint, and the next page hands its reset to the host before
+  sending anything;
 - a missing key or scope fails at once.
 
 The cursor belongs to the connection, the host, the project selection, the
@@ -241,7 +255,8 @@ organization and per further hundred projects; a 90-day backfill sends
   says the kind (`TrendsQuery`) and `interval`. A trends `result` is a list
   of series with `data`, `days`, `label`, `breakdown_value`,
   `compare_label` and `action.order`, or `aggregated_value` for a
-  single-number display.
+  single-number display (a formula answers `data: null` with
+  `aggregated_value`).
 
 ## What PostHog's API does not give, or the connector leaves out
 

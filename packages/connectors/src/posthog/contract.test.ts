@@ -782,8 +782,8 @@ describe("PostHog sync", () => {
     const first = await connector().sync(context(), WINDOW, posthog.runtime);
     expectHostAccepts(first);
     expect(first.done).toBe(false);
-    // The listing is kept; the next page starts with the query, and its
-    // rate limit reaches the host as one.
+    // The listing is kept, and so is the reset: the next page hands it to
+    // the host before it sends anything (#901 item 1).
     const before = posthog.requests.length;
     const second = await connector()
       .sync(
@@ -793,15 +793,18 @@ describe("PostHog sync", () => {
       )
       .catch((caught: unknown) => caught);
     expect(second).toBeInstanceOf(RateLimitedError);
-    expect(
-      posthog.requests.slice(before).map((request) => request.path),
-    ).toEqual(["/api/projects/1000/query/"]);
+    expect((second as RateLimitedError).retryAt).toBe(
+      "2024-01-10T12:10:00.000Z",
+    );
+    expect(posthog.requests.slice(before)).toEqual([]);
+    // After the reset the next page starts with the query.
     limited = false;
-    const rest = await connector().sync(
+    const rest = await connector(() => Date.parse(NOW) + 600_000).sync(
       context(),
       { ...WINDOW, cursor: first.nextCursor! },
       posthog.runtime,
     );
+    expect(posthog.requests[before]!.path).toBe("/api/projects/1000/query/");
     expect(rest.observations.length).toBeGreaterThan(0);
   });
 
@@ -1428,5 +1431,274 @@ describe("review round 2 (#884)", () => {
       .sync(context(), WINDOW, posthog.runtime)
       .catch((caught: unknown) => caught);
     expect(String((error as Error).message)).not.toContain("secret-detail");
+  });
+});
+
+describe("review follow-ups (#888)", () => {
+  const OTHER = { id: "0190b4c2-7d1e-7000-8000-000000000002", name: "Two" };
+  /** Organization OTHER's projects are refused (403). */
+  function refusedOrg(options: FakePostHogOptions = {}) {
+    return fake({
+      orgs: [OTHER, ORG],
+      projects: [{ id: 1000 }, { id: 2000, org: OTHER.id }],
+      insights: [
+        { project: 1000, shortId: "Ok1" },
+        { project: 2000, shortId: "Two1" },
+      ],
+      intercept: (request) =>
+        request.path === `/api/organizations/${OTHER.id}/projects/`
+          ? answer(403, { detail: "You do not have access." })
+          : undefined,
+      ...options,
+    });
+  }
+
+  it("1. leaves the insight snapshot incomplete when an organization was skipped", async () => {
+    const posthog = refusedOrg();
+    const run = await syncAll(
+      posthog.runtime,
+      WINDOW,
+      context({ insights: "1000/Ok1 2000/Two1" }),
+    );
+    expect(rowsOf(run.datasetPages, "insights")).toEqual([
+      expect.objectContaining({ insight_id: "Ok1", status: "ok" }),
+      expect.objectContaining({ insight_id: "Two1", status: "denied" }),
+    ]);
+    // The stored results stay: no complete page, no insights freshness.
+    expect(run.last.receivedDatasets).not.toContain("insight_results");
+    expect(freshnessEntry(run.last, INSIGHTS_STREAM)).toBeUndefined();
+
+    // An insight the selection leaves out is excluded, not unread.
+    const selected = await syncAll(
+      refusedOrg().runtime,
+      { ...WINDOW, resources: ["1000"] },
+      context({ insights: "1000/Ok1 2000/Two1" }),
+    );
+    expect(rowsOf(selected.datasetPages, "insights")).toEqual([
+      expect.objectContaining({ insight_id: "Ok1", status: "ok" }),
+      expect.objectContaining({ insight_id: "Two1", status: "not_selected" }),
+    ]);
+    expect(selected.last.receivedDatasets).toContain("insight_results");
+  });
+
+  it("2. discovers the readable projects past a refused organization", async () => {
+    const resources = await connector().discover(
+      context(),
+      refusedOrg().runtime,
+    );
+    expect(resources.map((resource) => resource.id)).toEqual(["1000"]);
+    // A wrong key or a missing scope still fails discovery.
+    const scoped = refusedOrg({
+      intercept: (request) =>
+        request.path.startsWith("/api/organizations/") &&
+        request.path.endsWith("/projects/")
+          ? scopeMissing()
+          : undefined,
+    });
+    const error = await connector()
+      .discover(context(), scoped.runtime)
+      .catch((caught: unknown) => caught);
+    expect((error as ConnectorError).code).toBe(SCOPE_MISSING_CODE);
+  });
+
+  it("3. probes the saved selection of named projects, not the others", async () => {
+    const posthog = fake({
+      scopedProjects: [1001],
+      projects: [{ id: 1000 }, { id: 1001 }],
+    });
+    const ctx = context({
+      projects: "1000, 1001",
+      resourceSelection: ["1001"],
+    });
+    expect(await connector().check(ctx, posthog.runtime)).toEqual({
+      ok: true,
+    });
+    expect(posthog.requests.map((request) => request.path)).toEqual([
+      "/api/projects/1001/query/",
+    ]);
+    // A selected project the key lost still fails the check.
+    const lost = fake({
+      scopedProjects: [1000],
+      projects: [{ id: 1000 }, { id: 1001 }],
+    });
+    expect(await connector().check(ctx, lost.runtime)).toMatchObject({
+      ok: false,
+      code: "posthog.projects_invalid",
+    });
+  });
+
+  it("4. reads a single-number formula insight whose data is null", async () => {
+    const posthog = fake({
+      insights: [
+        {
+          project: 1000,
+          shortId: "Formula1",
+          result: [
+            {
+              action: null,
+              label: "Formula (A / B)",
+              data: null,
+              aggregated_value: 0.42,
+            },
+          ],
+        },
+      ],
+    });
+    const run = await syncAll(
+      posthog.runtime,
+      WINDOW,
+      context({ insights: "1000/Formula1" }),
+    );
+    expect(rowsOf(run.datasetPages, "insights")[0]).toMatchObject({
+      status: "ok",
+      rows: 1,
+    });
+    expect(rowsOf(run.datasetPages, "insight_results")).toEqual([
+      expect.objectContaining({ bucket: "total", day: null, value: 0.42 }),
+    ]);
+  });
+
+  it("5. reads 01000 and 1000 as the same project", async () => {
+    expect(
+      insightsOf(
+        context({
+          insights:
+            "https://us.posthog.com/project/01000/insights/Ab1 1000/Ab1 0/Cd2",
+        }),
+      ),
+    ).toEqual({
+      insights: [
+        { project: "1000", shortId: "Ab1" },
+        { project: "0", shortId: "Cd2" },
+      ],
+      invalid: 0,
+    });
+    const posthog = fake({
+      scopedProjects: [1000],
+      insights: [{ project: 1000, shortId: "Ab1" }],
+    });
+    const ctx = context({ projects: "01000, 1000", insights: "01000/Ab1" });
+    expect(await connector().check(ctx, posthog.runtime)).toEqual({ ok: true });
+    expect(
+      (await connector().discover(ctx, posthog.runtime)).map(
+        (resource) => resource.id,
+      ),
+    ).toEqual(["1000"]);
+    const run = await syncAll(posthog.runtime, WINDOW, ctx);
+    expect(freshnessEntry(run.last, ANALYTICS_STREAM, "1000")).toBeDefined();
+    expect(rowsOf(run.datasetPages, "insights")).toEqual([
+      expect.objectContaining({ project_id: "1000", status: "ok" }),
+    ]);
+    expect(
+      posthog.requests.every((request) => !request.path.includes("/01000/")),
+    ).toBe(true);
+  });
+});
+
+describe("pages end before the host's deadline (#888, #901 item 1)", () => {
+  /**
+   * A clock the fake advances: `durations[n]` (default 1 s) per answer,
+   * every wait, and a stalled request's whole time limit.
+   */
+  function timed(options: {
+    durations?: number[];
+    stallAt?: number;
+    limitedAt?: { request: number; retryAfter: string };
+  }) {
+    const posthog = fake({ projects: fakeProjects(2) });
+    let t = clock();
+    let count = 0;
+    const timeouts: Array<number | undefined> = [];
+    const runtime: ConnectorRuntime = {
+      ...posthog.runtime,
+      fetch: async (url, init) => {
+        count += 1;
+        timeouts.push(init?.timeoutMs);
+        if (count === options.stallAt) {
+          // PostHog never answers: the request ends at its time limit.
+          t += init?.timeoutMs ?? 60_000;
+          throw Object.assign(new Error("egress timeout"), {
+            name: "EgressTimeoutError",
+          });
+        }
+        t += options.durations?.[count - 1] ?? 1_000;
+        if (options.limitedAt?.request === count) {
+          return rateLimited(options.limitedAt.retryAfter);
+        }
+        return posthog.runtime.fetch(url, init);
+      },
+    };
+    const started = t;
+    const posthogConnector = createPostHogConnector({
+      now: () => t,
+      sleep: async (ms) => {
+        t += ms;
+      },
+    });
+    return {
+      runtime,
+      connector: posthogConnector,
+      timeouts,
+      requests: () => count,
+      elapsed: () => t - started,
+    };
+  }
+
+  it("a request that stalls late in a page ends in time to return the checkpoint", async () => {
+    // Four answers take 18 s; the fifth step starts inside the budget and
+    // its query never answers.
+    const {
+      runtime,
+      connector: posthog,
+      elapsed,
+      timeouts,
+    } = timed({
+      durations: [4_500, 4_500, 4_500, 4_500],
+      stallAt: 5,
+    });
+    const page = await posthog.sync(context(), WINDOW, runtime);
+    expect(page.done).toBe(false);
+    expectHostAccepts(page);
+    expect(elapsed()).toBeLessThanOrEqual(45_000);
+    for (const timeout of timeouts) {
+      expect(timeout).toBeLessThanOrEqual(20_000);
+    }
+  });
+
+  it("a rate-limit wait that would pass the deadline ends the page with its reset", async () => {
+    // The fourth request starts at 18 s, answers at 36 s with a 429 that
+    // asks for 9 s: the wait would end at the page's deadline.
+    const {
+      runtime,
+      connector: posthog,
+      elapsed,
+      requests,
+    } = timed({
+      durations: [6_000, 6_000, 6_000, 18_000],
+      limitedAt: { request: 4, retryAfter: "9" },
+    });
+    const page = await posthog.sync(context(), WINDOW, runtime);
+    expect(page.done).toBe(false);
+    expectHostAccepts(page);
+    expect(elapsed()).toBeLessThanOrEqual(45_000);
+    const sent = requests();
+    const error = await posthog
+      .sync(context(), { ...WINDOW, cursor: page.nextCursor! }, runtime)
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(RateLimitedError);
+    expect(Date.parse((error as RateLimitedError).retryAt)).toBe(
+      clock() + 36_000 + 9_000,
+    );
+    expect(requests()).toBe(sent);
+  });
+
+  it("bounds every request below the host's limit", async () => {
+    const { runtime, connector: posthog, timeouts } = timed({});
+    await posthog.sync(context(), WINDOW, runtime);
+    expect(timeouts.length).toBeGreaterThan(0);
+    for (const timeout of timeouts) {
+      expect(timeout).toBeGreaterThan(0);
+      expect(timeout).toBeLessThanOrEqual(20_000);
+    }
   });
 });
