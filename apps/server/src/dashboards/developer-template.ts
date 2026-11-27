@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { SUPPORTED_LOCALES } from "@netrics/domain";
+import { SUPPORTED_LOCALES, type PreparationNode } from "@netrics/domain";
 import { DEVELOPER_TEMPLATE_CONNECTORS } from "@netrics/contracts";
 
 import {
@@ -189,6 +189,57 @@ export function developerPortfolio(
   };
 }
 
+/**
+ * A store source preparation as this template needs it: a links-table row
+ * with a blank project (the customer's unlink, #876) is the app's own
+ * entry, as no row is, not one blank identity shared by every unlinked
+ * app. The App Portfolio's own records stay as frozen (store-template.ts).
+ */
+function withBlankUnlinked(record: StoreTemplateRecord): StoreTemplateRecord {
+  if (record.kind !== "preparation") return record;
+  const nodes: PreparationNode[] = record.graph.nodes.map((node) =>
+    node.type === "calculate" &&
+    node.id === "calculate_product_id" &&
+    node.fieldId === "product_id"
+      ? {
+          ...node,
+          expression: {
+            kind: "call" as const,
+            fn: "if" as const,
+            args: [
+              {
+                kind: "call" as const,
+                fn: "eq" as const,
+                args: [
+                  {
+                    kind: "call" as const,
+                    fn: "coalesce" as const,
+                    args: [
+                      { kind: "field" as const, fieldId: "mapping.product_id" },
+                      {
+                        kind: "literal" as const,
+                        type: "string" as const,
+                        value: "",
+                      },
+                    ],
+                  },
+                  {
+                    kind: "literal" as const,
+                    type: "string" as const,
+                    value: "",
+                  },
+                ],
+              },
+              { kind: "field" as const, fieldId: "app_key" },
+              { kind: "field" as const, fieldId: "mapping.product_id" },
+            ],
+          },
+        }
+      : node,
+  );
+  return { ...record, graph: { ...record.graph, nodes } };
+}
+
 const defineDeveloperTemplate = (version: 1): StoreTemplateDefinition => ({
   version,
   keys(raw) {
@@ -288,7 +339,9 @@ const defineDeveloperTemplate = (version: 1): StoreTemplateDefinition => ({
     }
     // The App Portfolio's records, named after this install.
     if (storeKeys(inputs).includes(key))
-      return storeTemplateV7.build(key, storeInputs(inputs), ids);
+      return withBlankUnlinked(
+        storeTemplateV7.build(key, storeInputs(inputs), ids),
+      );
     throw new Error(`unknown developer template key ${key}`);
   },
 });

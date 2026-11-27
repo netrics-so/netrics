@@ -171,6 +171,7 @@ export const developerTemplateCopy = (locale: Locale) =>
         usage: "Nutzung gestern",
         searchClicks: "Suchklicks, neuester Tag",
         newestDay: "Neuester Tag",
+        source: "Verbindung",
         ownNewestDay:
           "Zeigt den neuesten abgeschlossenen Tag der Search Console.",
         stateSummary: "Alle Dienste",
@@ -236,6 +237,7 @@ export const developerTemplateCopy = (locale: Locale) =>
         usage: "Usage yesterday",
         searchClicks: "Search clicks, newest day",
         newestDay: "Newest day",
+        source: "Connection",
         ownNewestDay: "Shows Search Console's newest finalized day.",
         stateSummary: "All services",
         latestDeploys: "Latest deploys",
@@ -797,7 +799,15 @@ export function familyColumns(family: DeveloperFamily): string[] {
         ...PROJECT_COLUMNS,
       ];
     case "audience":
-      return ["day", "metric", "quantity", "newest", ...PROJECT_COLUMNS];
+      return [
+        "day",
+        "metric",
+        "quantity",
+        "newest",
+        "source_id",
+        "source_name",
+        ...PROJECT_COLUMNS,
+      ];
   }
 }
 
@@ -994,6 +1004,20 @@ function audiencePreparation(
     },
   );
   current = "column_newest";
+  for (const [fieldId, name, value] of [
+    ["source_id", t.source + " ID", source.id],
+    ["source_name", t.source, source.name],
+  ] as const) {
+    nodes.push({
+      id: "column_" + fieldId,
+      type: "calculate",
+      input: current,
+      fieldId,
+      name,
+      expression: text(value),
+    });
+    current = "column_" + fieldId;
+  }
   const related = projectNodes(source, current, null, ids, t);
   nodes.push(...related.nodes, {
     id: "output",
@@ -1097,6 +1121,11 @@ export function buildDeveloperModel(
     dimensions.push(
       dimension("day", t.day, "day", { timeAlignment: "reporting_date" }),
       dimension("metric", t.metric, "metric"),
+      // The connection a row comes from: each Search Console connection's
+      // clicks are of its own newest day, never summed across days.
+      dimension("source", t.source, "source_id", {
+        labelFieldId: "source_name",
+      }),
     );
     // Per metric, the sum over the query's days: the widgets read one
     // complete UTC day (yesterday, owner decision #876), so active users
@@ -1371,6 +1400,11 @@ export function buildDeveloperDashboard(
       defaultValue: null,
     },
   ];
+  // A filter no model maps (the day of an install of HTTP checks only)
+  // is left out: a dashboard refuses an unmapped filter, and no widget
+  // excludes a filter that is not there.
+  const mapped = filters.filter((filter) => filter.mappings.length > 0);
+  const hasDay = mapped.some((filter) => filter.id === "day");
   const ownPeriod = { filterId: "day", reason: t.ownPeriod };
   const measure = (
     modelId: string,
@@ -1398,7 +1432,13 @@ export function buildDeveloperDashboard(
       groupBy,
       measureIds,
       ...(filter ? { filter } : {}),
-      exclusions: options.period ? [ownPeriod] : own ? [own] : [],
+      exclusions: !hasDay
+        ? []
+        : options.period
+          ? [ownPeriod]
+          : own
+            ? [own]
+            : [],
     },
     options,
   });
@@ -1464,7 +1504,7 @@ export function buildDeveloperDashboard(
       stateDimensionId: "state",
       changedAtDimensionId: "changed_at",
       rolledBackDimensionId: "rolled_back",
-      exclusions: [{ filterId: "day", reason: t.noDate }],
+      exclusions: hasDay ? [{ filterId: "day", reason: t.noDate }] : [],
     },
     options: {
       layout,
@@ -1513,7 +1553,7 @@ export function buildDeveloperDashboard(
   if (numbers.includes("clicks"))
     overview.push({
       key: "widget:clicks",
-      widget: clicksWidget(["project"], 6),
+      widget: clicksWidget(["project", "source"], 6),
     });
   if (numbers.includes("downloads") && models.downloads)
     // The stores' numbers per project, where the install reads a store.
@@ -1629,7 +1669,7 @@ export function buildDeveloperDashboard(
         case "audience":
           return { key: key(kind), widget: usageWidget([], 1) };
         case "clicks":
-          return { key: key(kind), widget: clicksWidget([], 1) };
+          return { key: key(kind), widget: clicksWidget(["source"], 2) };
         case "deploys":
           return {
             key: key(kind),
@@ -1710,7 +1750,7 @@ export function buildDeveloperDashboard(
       settings: {
         showHeader: true,
         autoAdvance: shown.length > 0,
-        dataFilters: filters,
+        dataFilters: mapped,
       },
       slides: slides.map((entry) => entry.slide),
     },

@@ -2,9 +2,14 @@ import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   createDashboardRequestSchema,
+  preparationGraphSchema,
   semanticModelDefinitionSchema,
 } from "@netrics/contracts";
-import { slideLayoutProblem, STUDIO_LIMITS } from "@netrics/domain";
+import {
+  executePreparation,
+  slideLayoutProblem,
+  STUDIO_LIMITS,
+} from "@netrics/domain";
 
 import {
   DEVELOPER_PROJECT_WIDGETS,
@@ -20,6 +25,7 @@ import type {
   StoreTemplateIds,
   StoreTemplateRecord,
 } from "./store-template.js";
+import { apple, inputs as testInputs } from "./test-helpers.js";
 
 const sha256 = (value: string) =>
   createHash("sha256").update(value).digest("hex");
@@ -95,7 +101,7 @@ const dashboardOf = (records: StoreTemplateRecord[]) => {
  * remember the version they were made from, and updates compare with it.
  */
 const VERSION_HASHES: Record<number, string> = {
-  1: "20c220f4266efc7eaabbf0678a7916e42757411d71fb384150a77a1c9df25a9f",
+  1: "edde3dedbeb7bdffa45c778c3fdcb2abb875b8aeb13662bdde7e2d624af78c1a",
 };
 
 describe("Developer Portfolio template", () => {
@@ -287,5 +293,41 @@ describe("Developer Portfolio template", () => {
       "wau",
       "mau",
     ]);
+  });
+
+  it("keeps an unlinked store app its own entry, not a shared blank one", () => {
+    // The customer unlinked the App Store app "a" (a blank project).
+    const tables = testInputs();
+    const mapping = tables.get("mapping")!;
+    tables.set("mapping", {
+      ...mapping,
+      rows: [
+        ...mapping.rows.filter((row) => row.app_key !== `${apple.id}:a`),
+        { app_key: `${apple.id}:a`, product_id: "" },
+      ],
+    });
+    const source: DeveloperSource = {
+      id: apple.id,
+      name: apple.name,
+      connectorId: "app-store-connect",
+      datasets: apple.datasets,
+    };
+    const ids = {
+      "dataset:mapping": "mapping",
+      "dataset:products": "products",
+    } as StoreTemplateIds;
+    const record = developerTemplate.build(
+      `preparation:source:${apple.id}:downloads`,
+      asStoreInputs(inputs([source])),
+      ids,
+    );
+    if (record.kind !== "preparation") throw new Error("no preparation");
+    const rows = executePreparation(
+      preparationGraphSchema.parse(record.graph),
+      tables,
+    ).outputs.output!.rows;
+    const products = new Set(rows.map((row) => row.product_id));
+    expect(products.has("")).toBe(false);
+    expect(products).toContain(`${apple.id}:a`);
   });
 });

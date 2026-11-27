@@ -372,6 +372,113 @@ describe("Developer Portfolio installs", { timeout: TIMEOUT_MS }, () => {
     );
   });
 
+  it("installs with only HTTP checks, whose model has no day", async () => {
+    const target = await workspace(["http-check"]);
+    const result = await service().install(actor(target.id), {
+      requestId: randomUUID(),
+      name: "Checks",
+      connections: [target.connections["http-check"]],
+      links: [],
+    });
+    expect(Object.keys(result.models)).toEqual(["state"]);
+    const dashboard = await withWorkspace(
+      db,
+      { workspaceId: target.id },
+      (tx) => findDashboard(tx, target.id, result.dashboardId),
+    );
+    // No day filter without a dated model, and no exclusion of one.
+    expect(
+      (dashboard!.dataFilters as { id: string }[]).map((filter) => filter.id),
+    ).toEqual(["project", "provider"]);
+    for (const widget of dashboard!.slides.flatMap((slide) => slide.widgets))
+      expect(
+        (
+          widget as { binding?: { exclusions?: { filterId: string }[] } }
+        ).binding?.exclusions?.map((exclusion) => exclusion.filterId) ?? [],
+      ).not.toContain("day");
+  });
+
+  it("dates each Search Console connection's clicks by its own newest day", async () => {
+    const target = await workspace(["google-search-console"]);
+    const [second] = await owner<{ id: string }[]>`
+      insert into connections (workspace_id, connector_id, name, setup_pending)
+      values (${target.id}, 'google-search-console', 'Second site', false)
+      returning id`;
+    const first = target.connections["google-search-console"];
+    await observe(
+      target.id,
+      first,
+      "google-search-console",
+      "google-search-console.clicks",
+      [
+        { resource: "site-a", day: "2026-11-20", value: 25 },
+        { resource: "site-a", day: "2026-11-21", value: 30 },
+      ],
+    );
+    await observe(
+      target.id,
+      second!.id,
+      "google-search-console",
+      "google-search-console.clicks",
+      [{ resource: "site-b", day: "2026-11-20", value: 7 }],
+    );
+    const web = target.projects.web;
+    const result = await service().install(actor(target.id), {
+      requestId: randomUUID(),
+      name: "Search",
+      connections: [first, second!.id],
+      links: [
+        { connectionId: first, resourceId: "site-a", projectId: web },
+        { connectionId: second!.id, resourceId: "site-b", projectId: web },
+      ],
+    });
+    const dashboard = (await withWorkspace(
+      db,
+      { workspaceId: target.id },
+      (tx) => findDashboard(tx, target.id, result.dashboardId),
+    ))!;
+    const data = await withWorkspace(
+      db,
+      { workspaceId: target.id },
+      async (tx) => {
+        const slides = await tx.select().from(schema.dashboardSlides);
+        const widgets = await tx.select().from(schema.dashboardWidgets);
+        const overview = slides.find(
+          (row) => row.dashboardId === result.dashboardId && row.position === 0,
+        )!;
+        return queryDashboardData(
+          tx,
+          target.id,
+          [
+            {
+              scope: overview.scope,
+              widgets: widgets.filter(
+                (widget) => widget.slideId === overview.id,
+              ),
+            },
+          ],
+          dashboard.dataFilters,
+          {},
+          new Date(NOW),
+        );
+      },
+    );
+    // One row per connection, its clicks of its own newest day: never 37
+    // labelled with the later day.
+    const rows = data.widgets.flatMap((widget) =>
+      widget
+        .result!.rows.filter((row) => row.measures.clicks_newest)
+        .map((row) => [
+          Number(row.measures.clicks_newest!.value),
+          row.measures.clicks_day!.value,
+        ]),
+    );
+    expect(rows.sort()).toEqual([
+      [30, "2026-11-21"],
+      [7, "2026-11-20"],
+    ]);
+  });
+
   it("refuses connections of other connectors and links to unknown projects", async () => {
     const target = await workspace(["railway", "apple-ads" as Connector]);
     await expect(
