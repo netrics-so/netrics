@@ -2063,6 +2063,62 @@ describe("vercel follow-ups (#905)", () => {
     expect(await oneDay(5e-7)).toEqual([expect.objectContaining({ value: 0 })]);
   });
 
+  /** One day whose export is exactly these JSONL lines' effective costs. */
+  const literalDay = async (costs: string[]) => {
+    const day = "2024-12-01";
+    const api = createFakeVercel({ today: day });
+    const runtime: ConnectorRuntime = {
+      ...api.runtime,
+      fetch: async (raw, init) => {
+        if (new URL(raw).pathname !== "/v1/billing/charges") {
+          return api.runtime.fetch(raw, init);
+        }
+        // Written as text, never through a JavaScript number.
+        const lines = costs.map(
+          (cost, index) =>
+            `{"BilledCost":${cost},"EffectiveCost":${cost},` +
+            `"BillingCurrency":"USD","ChargeCategory":"Usage",` +
+            `"ChargePeriodStart":"${day}T00:00:00.000Z",` +
+            `"ServiceName":"Bandwidth","SkuId":"sku-${index}",` +
+            `"SubAccountId":"team_fixture",` +
+            `"Tags":{"ProjectId":"prj_alpha","ProjectName":"alpha-site"}}`,
+        );
+        return reply(200, lines.join("\n"));
+      },
+    };
+    const { observations } = await syncAll(
+      runtime,
+      {
+        mode: "incremental",
+        from: `${day}T00:00:00.000Z`,
+        to: `${day}T13:00:00.000Z`,
+      },
+      context(),
+      () => Date.parse(`${day}T13:00:00.000Z`),
+    );
+    return costOf(observations, "prj_alpha");
+  };
+
+  it("3 (#925): a charge's cost is read from the export's text, not a double", async () => {
+    // As a double 1.00499999999999999 is 1.005, which rounds to 101 cents.
+    expect(await literalDay(["1.00499999999999999"])).toEqual([
+      expect.objectContaining({ value: 100 }),
+    ]);
+  });
+
+  it("3 (#925): no charge is rounded before it is added", async () => {
+    // Rounded to 18 decimals first, 6e-19 became 1e-18 and the sum $0.005.
+    expect(await literalDay(["0.004999999999999999", "6e-19"])).toEqual([
+      expect.objectContaining({ value: 0 }),
+    ]);
+  });
+
+  it("3 (#925): a cost beyond any precision is an invalid answer", async () => {
+    await expect(literalDay(["1e-400"])).rejects.toBeInstanceOf(
+      VercelInvalidResponseError,
+    );
+  });
+
   it("3: a checkpoint with costs in millionths (before #905) still resumes", async () => {
     const api = fake();
     let cursor: string | undefined;

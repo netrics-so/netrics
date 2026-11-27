@@ -82,10 +82,11 @@ import {
 } from "./datasets.js";
 import {
   addExact,
-  exactOf,
+  exactOfToken,
   formatExact,
   minorOfExact,
   storedExact,
+  ZERO,
   type ExactAmount,
 } from "./exact-cost.js";
 import { ownerQuery, projectsPage, teamIdOf, tokenOf } from "./reading.js";
@@ -585,7 +586,12 @@ const ANALYTICS_PARTS = [
  */
 const NO_DAYS: unique symbol = Symbol("no retained days");
 
-/** The charges of a FOCUS JSONL export. Any invalid line is an invalid answer. */
+/**
+ * The charges of a FOCUS JSONL export. Any invalid line is an invalid
+ * answer. A charge's effective cost is also read exactly, from the number's
+ * own text in the line (#925): a double would turn 1.00499999999999999
+ * into 1.005.
+ */
 function parseCharges(text: unknown) {
   if (typeof text !== "string") {
     throw new VercelInvalidResponseError("the billing charges");
@@ -594,12 +600,40 @@ function parseCharges(text: unknown) {
   for (const line of text.split("\n")) {
     if (line.trim() === "") continue;
     let json: unknown;
+    /** The source text of each object's `EffectiveCost`, by object. */
+    const sources = new WeakMap<object, string>();
     try {
-      json = JSON.parse(line);
+      json = JSON.parse(
+        line,
+        function (
+          this: unknown,
+          key: string,
+          value: unknown,
+          context?: { source?: string },
+        ) {
+          if (
+            key === "EffectiveCost" &&
+            typeof value === "number" &&
+            typeof this === "object" &&
+            this !== null &&
+            typeof context?.source === "string"
+          ) {
+            sources.set(this, context.source);
+          }
+          return value;
+        },
+      );
     } catch {
       throw new VercelInvalidResponseError("the billing charges");
     }
-    charges.push(parseAnswer(chargeSchema, json, "the billing charges"));
+    const charge = parseAnswer(chargeSchema, json, "the billing charges");
+    const source = sources.get(json as object);
+    const exactEffectiveCost =
+      source === undefined ? null : exactOfToken(source);
+    if (exactEffectiveCost === null) {
+      throw new VercelInvalidResponseError("the billing charges");
+    }
+    charges.push({ ...charge, exactEffectiveCost });
   }
   return charges;
 }
@@ -1351,9 +1385,9 @@ export async function syncPage(
       const day = daily.get(dailyKey) ?? {
         resource,
         currency: charge.BillingCurrency,
-        cost: exactOf(0),
+        cost: ZERO,
       };
-      day.cost = addExact(day.cost, exactOf(charge.EffectiveCost));
+      day.cost = addExact(day.cost, charge.exactEffectiveCost);
       daily.set(dailyKey, day);
       sums[key] = {
         values: sum.values,
@@ -1427,7 +1461,7 @@ export async function syncPage(
     }
     const days = Math.round((today - billingFirstDay) / DAY_MS) + 1;
     for (const [resource, team, currency, daily] of series.values()) {
-      let total = exactOf(0);
+      let total = ZERO;
       let published = 0;
       for (let offset = 0; offset < days; offset += 1) {
         total = addExact(total, storedExact(daily[offset]));

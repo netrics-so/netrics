@@ -147,8 +147,9 @@ const vercelDe: ManifestTranslation = {
 export const vercelManifest: ConnectorManifest = {
   id: "vercel",
   version: "0.2.0",
-  // 0.2.21: per-request `timeoutMs` (#901 item 1, #914).
-  sdkVersion: "^0.2.21",
+  // 0.2.21: per-request `timeoutMs` (#901 item 1, #914). 0.2.22:
+  // SyncRequest.previousCursor, the history-reload cost baseline (#905, #925).
+  sdkVersion: "^0.2.22",
   category: "web",
   brandColor: "#000000",
   name: "Vercel",
