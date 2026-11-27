@@ -601,6 +601,8 @@ export {
   listObservationCatalog,
   readObservationDataset,
   previewDataset,
+  setIngestTimeout,
+  MAX_STATEMENT_TIMEOUT_MS,
   DatasetStoreError,
 } from "./datasets.js";
 export {

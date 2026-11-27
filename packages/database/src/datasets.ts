@@ -302,10 +302,7 @@ async function ingestPage(
   }
   const { workspaceId, connectionId } = input;
   // Scoped to this page: ingestDatasetPage restores the caller's value.
-  const [timeout] = await tx.execute<{ previous: string }>(
-    sql`select current_setting('statement_timeout') as previous, set_config('statement_timeout', ${String(policy.queryTimeoutMs ?? DATASET_INGEST_TIMEOUT_MS)}, true)`,
-  );
-  scope.previousTimeout = timeout?.previous ?? "0";
+  scope.previousTimeout = await setIngestTimeout(tx, policy);
   await tx.execute(
     sql`select pg_advisory_xact_lock(hashtextextended(${workspaceId}::uuid::text, 440))`,
   );
@@ -697,6 +694,41 @@ export async function previewDataset(
  * workspace ingest lock indefinitely.
  */
 export const DATASET_INGEST_TIMEOUT_MS = 300_000;
+
+/** PostgreSQL's upper limit for `statement_timeout`, in milliseconds. */
+export const MAX_STATEMENT_TIMEOUT_MS = 2_147_483_647;
+
+/**
+ * Sets the ingest bound (the policy's queryTimeoutMs, else
+ * DATASET_INGEST_TIMEOUT_MS, clamped to PostgreSQL's range) as this
+ * transaction's statement timeout, and returns the previous value for the
+ * caller to restore. Taken before the workspace ingestion lock, so waiting
+ * for that lock is bounded too.
+ *
+ * With `keepStricter`, a nonzero statement timeout that is already tighter
+ * (for example a role-level setting) stays in place, so bounding a lock
+ * wait never makes it longer than before.
+ */
+export async function setIngestTimeout(
+  tx: Transaction,
+  policy: Pick<DataPolicy, "queryTimeoutMs">,
+  options: { keepStricter?: boolean } = {},
+): Promise<string> {
+  const bound = Math.min(
+    policy.queryTimeoutMs ?? DATASET_INGEST_TIMEOUT_MS,
+    MAX_STATEMENT_TIMEOUT_MS,
+  );
+  const [timeout] = options.keepStricter
+    ? await tx.execute<{ previous: string }>(
+        sql`select current.previous, set_config('statement_timeout', (case when current.ms > 0 and current.ms < ${bound} then current.ms else ${bound} end)::bigint::text, true)
+            from (select current_setting('statement_timeout') as previous,
+                         floor(extract(epoch from current_setting('statement_timeout')::interval) * 1000) as ms) as current`,
+      )
+    : await tx.execute<{ previous: string }>(
+        sql`select current_setting('statement_timeout') as previous, set_config('statement_timeout', ${String(bound)}, true)`,
+      );
+  return timeout?.previous ?? "0";
+}
 
 /** Hide driver SQL/parameters from worker logs and API error paths. */
 export async function ingestDatasetPage(
