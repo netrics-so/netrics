@@ -488,6 +488,13 @@ export function createStoreTemplateUpdateService(deps: {
     requestId: string,
     install: InstallRow,
     rows: RecordRow[],
+    /**
+     * "fresh": a plan or an apply the customer asked for fails when the
+     * items cannot be read (over the row limit: 413 `data_source_row_limit`,
+     * #913), never "up to date"; "lenient": the list of installs keeps the
+     * stored items then.
+     */
+    identity: "fresh" | "lenient",
   ): Promise<boolean> {
     if (isUpdateAvailable(install, rows, template.version)) return true;
     if (template.version < itemsSince) return false;
@@ -498,7 +505,7 @@ export function createStoreTemplateUpdateService(deps: {
       rethrowWorkspaceGone(error);
       return false;
     }
-    const fresh = await withApps(tx, workspaceId, requestId, inputs, "lenient");
+    const fresh = await withApps(tx, workspaceId, requestId, inputs, identity);
     if (!same(builtApps(rows) ?? inputs.apps ?? [], fresh.apps ?? []))
       return true;
     // Another template's other fresh inputs (the Developer Portfolio's
@@ -1559,6 +1566,7 @@ export function createStoreTemplateUpdateService(deps: {
           requestId,
           install,
           rows,
+          "fresh",
         ))
       )
         reject("store_template_up_to_date", 409);
@@ -2833,6 +2841,7 @@ export function createStoreTemplateUpdateService(deps: {
               install.requestId,
               install,
               rows,
+              "lenient",
             ))
               ? await planOrUnavailable(
                   tx,
@@ -2908,6 +2917,7 @@ export function createStoreTemplateUpdateService(deps: {
               requestId,
               install,
               rows,
+              "fresh",
             ))
           )
             reject("store_template_up_to_date", 409);

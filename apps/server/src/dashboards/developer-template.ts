@@ -14,11 +14,15 @@ import {
   DEVELOPER_STORE_METRICS,
   feedsFamily,
   isStoreSource,
+  projectNameOf,
+  sourceDefaults,
+  type DeveloperBuild,
   type DeveloperFamily,
   type DeveloperPortfolio,
   type DeveloperDefaults,
   type DeveloperProjectIdentity,
   type DeveloperSource,
+  type DeveloperTemplateVersion,
 } from "./developer-portfolio.js";
 import {
   storeTemplateV7,
@@ -45,8 +49,14 @@ import {
  * `dataset:products` (the projects).
  */
 export const DEVELOPER_TEMPLATE_ID = "developer_portfolio";
-/** 1: the overview and one slide per project (#876). */
-export const DEVELOPER_TEMPLATE_VERSION = 1;
+/**
+ * 1: the overview and one slide per project (#876).
+ * 2: a Vercel state's time is the reported state's (a build in progress
+ *    since it was created); a project's name is its current workspace
+ *    name unless the projects table overrides it, a seeded row no longer
+ *    counting as an override (#913).
+ */
+export const DEVELOPER_TEMPLATE_VERSION = 2;
 
 export const developerTemplateInputsSchema = z.object({
   name: z.string().min(1).max(100),
@@ -79,8 +89,15 @@ export const developerTemplateInputsSchema = z.object({
     .object({
       links: z.record(z.string(), z.string()),
       names: z.record(z.string(), z.string()),
+      linked: z.record(z.string(), z.array(z.string())).optional(),
     })
     .optional(),
+  /**
+   * The project names the install wrote into its projects table (version
+   * 2, #913; derived for an earlier install when it is updated): a row
+   * still saying its seeded name is no override.
+   */
+  seededNames: z.record(z.string(), z.string()).optional(),
   apps: z
     .array(
       z.object({
@@ -101,6 +118,8 @@ export interface DeveloperTemplateInputs {
   apps?: DeveloperProjectIdentity[];
   /** The workspace's default links (developerDefaults); none before them. */
   defaults?: DeveloperDefaults;
+  /** The names the projects table was seeded with (version 2, #913). */
+  seededNames?: Record<string, string>;
 }
 
 export const opsSourceKey = (family: DeveloperFamily, connectionId: string) =>
@@ -240,7 +259,50 @@ function withBlankUnlinked(record: StoreTemplateRecord): StoreTemplateRecord {
   return { ...record, graph: { ...record.graph, nodes } };
 }
 
-const defineDeveloperTemplate = (version: 1): StoreTemplateDefinition => ({
+/**
+ * A store source preparation's project name from version 2 (#913): the
+ * projects table's row where it overrides, else the linked project's
+ * current workspace name (projectNameOf), as the other sources name it.
+ */
+function withCurrentNames(
+  record: StoreTemplateRecord,
+  connectionId: string,
+  inputs: DeveloperTemplateInputs,
+  build: DeveloperBuild,
+): StoreTemplateRecord {
+  if (record.kind !== "preparation" || build.version < 2) return record;
+  const naming = sourceDefaults({ id: connectionId }, inputs.defaults, build);
+  if (
+    !naming ||
+    (!Object.keys(naming.names).length &&
+      !Object.keys(naming.seeded ?? {}).length)
+  )
+    return record;
+  const nodes: PreparationNode[] = record.graph.nodes.map((node) => {
+    if (
+      node.type !== "calculate" ||
+      node.id !== "calculate_product_name" ||
+      node.expression.kind !== "call" ||
+      node.expression.fn !== "coalesce"
+    )
+      return node;
+    const [row, ...rest] = node.expression.args;
+    return {
+      ...node,
+      expression: projectNameOf(
+        row!,
+        { kind: "field", fieldId: "product_id" },
+        naming,
+        rest,
+      ),
+    };
+  });
+  return { ...record, graph: { ...record.graph, nodes } };
+}
+
+const defineDeveloperTemplate = (
+  version: DeveloperTemplateVersion,
+): StoreTemplateDefinition => ({
   version,
   keys(raw) {
     const inputs = asDeveloperInputs(raw);
@@ -259,7 +321,11 @@ const defineDeveloperTemplate = (version: 1): StoreTemplateDefinition => ({
   build(key, raw, ids): StoreTemplateRecord {
     const inputs = asDeveloperInputs(raw);
     const t = developerTemplateCopy(inputs.locale),
-      parts = key.split(":");
+      parts = key.split(":"),
+      build: DeveloperBuild = {
+        version,
+        ...(inputs.seededNames ? { seeded: inputs.seededNames } : {}),
+      };
     const datasets = {
       links: ids["dataset:mapping"],
       projects: ids["dataset:products"],
@@ -285,6 +351,7 @@ const defineDeveloperTemplate = (version: 1): StoreTemplateDefinition => ({
               datasets,
               inputs.locale,
               inputs.defaults,
+              build,
             ),
           };
       }
@@ -339,12 +406,19 @@ const defineDeveloperTemplate = (version: 1): StoreTemplateDefinition => ({
     }
     // The App Portfolio's records, named after this install.
     if (storeKeys(inputs).includes(key))
-      return withBlankUnlinked(
-        storeTemplateV7.build(key, storeInputs(inputs), ids),
+      return withCurrentNames(
+        withBlankUnlinked(storeTemplateV7.build(key, storeInputs(inputs), ids)),
+        // `preparation:source:<connectionId>:<metric>`; others name none.
+        parts[0] === "preparation" && parts[1] === "source" ? parts[2]! : "",
+        inputs,
+        build,
       );
     throw new Error(`unknown developer template key ${key}`);
   },
 });
 
+/** Version 1 as released (#876): what earlier installs were built from. */
+export const developerTemplateV1: StoreTemplateDefinition =
+  defineDeveloperTemplate(1);
 export const developerTemplate: StoreTemplateDefinition =
   defineDeveloperTemplate(DEVELOPER_TEMPLATE_VERSION);

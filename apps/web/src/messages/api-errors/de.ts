@@ -43,6 +43,10 @@ export const apiErrorsDe: Catalog<typeof apiErrorsEn> = {
       "Das sind die Apps, die das Dashboard schon nutzt; nichts ändert sich.",
     store_template_up_to_date:
       "Dieses Dashboard ist schon auf dem neuesten Stand.",
+    developer_project_names_limit:
+      "Die Projektzuordnung verknüpft die Ressourcen einer Verbindung mit mehr als 9.999 Projekten, mehr als das Portfolio benennen kann. Entferne Zuordnungen aus der Tabelle „Projektzuordnung der Ressourcen“ unter Daten & Kennzahlen.",
+    developer_default_links_limit:
+      "Eine Verbindung hat mehr als 9.999 ausgewählte Ressourcen in ihrem Projekt, mehr als das Portfolio standardmäßig zuordnen kann. Wähle in den Einstellungen der Verbindung weniger Ressourcen aus oder nimm die Verbindung aus dem Projekt.",
     store_template_not_found:
       "Diese Vorlagen-Einrichtung gibt es nicht mehr. Geh zurück zu deinen Dashboards.",
     store_template_update_not_found:

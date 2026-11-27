@@ -36,7 +36,11 @@ import {
   relevantFreshnessRows,
   selectedResourcesOf,
 } from "../sync/freshness.js";
-import { modelSourceDatasets, type ModelRelease } from "./model-sources.js";
+import {
+  modelSourceDatasets,
+  type ModelRelease,
+  type PinnedDefaultLinks,
+} from "./model-sources.js";
 
 // A widget's freshness (ADR 0025 sections 6 and 7): the freshness streams
 // its data depends on, resolved per (connection, stream, resources), and
@@ -631,14 +635,15 @@ export async function modelFreshnessDependencies(
   read?: ScopeRead,
   choices?: FilterChoices,
 ): Promise<FreshnessDependency[]> {
+  const sources = await modelSourceDatasets(tx, workspaceId, release);
   return sourceFreshnessDependencies(
     tx,
     workspaceId,
-    (await modelSourceDatasets(tx, workspaceId, release)).all,
+    sources.all,
     slideScope,
     exclusions,
     deviceScope,
-    read,
+    read && { ...read, defaultLinks: sources.defaultLinks },
     undefined,
     choices,
   );
@@ -914,6 +919,12 @@ export interface ScopeRead {
    * screen's payload resolves the same products for every widget.
    */
   cache?: ScopeMappingCache;
+  /**
+   * The default links the model's pinned preparations carry, by links
+   * table (modelSourceDatasets, #913): a Developer Portfolio's links table
+   * is the customer's over them.
+   */
+  defaultLinks?: PinnedDefaultLinks;
 }
 
 /**
@@ -1026,18 +1037,32 @@ export async function mappedProductApps(
   }
   const mappings = datasets.filter((id) => cache.isMapping.get(id));
   for (const mapping of mappings) {
-    if (!cache.products.has(mapping)) {
+    // Over the default links of the pinned preparation versions (#913):
+    // cached by those pins, as two releases may pin different versions.
+    const defaults = read.defaultLinks?.get(mapping);
+    const key = defaults ? `${mapping}@${defaults.pins}` : mapping;
+    if (!cache.products.has(key)) {
       // The policy's query timeout, as dashboard data reads set it.
       await tx.execute(
         sql`select set_config('statement_timeout', ${String(policy.queryTimeoutMs ?? 0)}, true)`,
       );
       cache.products.set(
-        mapping,
-        await readMapping(tx, workspaceId, mapping, read.now, policy),
+        key,
+        await readMapping(
+          tx,
+          workspaceId,
+          mapping,
+          read.now,
+          policy,
+          defaults?.links,
+        ),
       );
     }
-    for (const [product, keys] of cache.products.get(mapping) ?? [])
-      apps.set(product, [...(apps.get(product) ?? []), ...keys]);
+    for (const [product, keys] of cache.products.get(key) ?? []) {
+      const known = apps.get(product);
+      if (known) known.push(...keys);
+      else apps.set(product, [...keys]);
+    }
   }
   return apps;
 }
@@ -1048,6 +1073,11 @@ export async function mappedProductApps(
  * yet, and any other read error (a row limit, a timeout) map
  * nothing, so a product scope then leaves every selected resource. Read in
  * a savepoint, so a failed statement does not abort the widget's own.
+ *
+ * A Developer Portfolio's links table is the customer's over `defaults`,
+ * the default links the model's pinned preparations carry (#913): a table
+ * row overrides one (an empty project unlinks), so a project's freshness
+ * covers the resources its rows read.
  */
 async function readMapping(
   tx: Transaction,
@@ -1055,6 +1085,7 @@ async function readMapping(
   mapping: string,
   now: Date,
   policy: DataPolicy,
+  defaults?: ReadonlyMap<string, string>,
 ): Promise<Map<string, string[]> | null> {
   let rows: Record<string, unknown>[];
   try {
@@ -1071,8 +1102,9 @@ async function readMapping(
     rethrowWorkspaceGone(caught);
     return null;
   }
-  // As resolveStoreProducts: an app's first mapping row decides.
-  const products = new Map<string, string[]>(),
+  // As resolveStoreProducts: an app's first mapping row decides, over the
+  // defaults.
+  const effective = new Map(defaults ?? []),
     seen = new Set<string>();
   for (const row of rows) {
     const key = row.app_key,
@@ -1080,8 +1112,15 @@ async function readMapping(
     if (typeof key !== "string" || typeof product !== "string") continue;
     if (seen.has(key)) continue;
     seen.add(key);
-    if (product.startsWith(PRODUCT_PREFIX) && APP_KEY.test(key))
-      products.set(product, [...(products.get(product) ?? []), key]);
+    effective.set(key, product);
+  }
+  // One array per product, appended in place.
+  const products = new Map<string, string[]>();
+  for (const [key, product] of effective) {
+    if (!product.startsWith(PRODUCT_PREFIX) || !APP_KEY.test(key)) continue;
+    const keys = products.get(product);
+    if (keys) keys.push(key);
+    else products.set(product, [key]);
   }
   return products;
 }

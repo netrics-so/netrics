@@ -1,6 +1,8 @@
 import { and, eq, inArray, or } from "drizzle-orm";
 import { schema, type Transaction } from "@netrics/database";
 
+import { graphDefaultLinks } from "./developer-portfolio.js";
+
 // The sources a published model reads (#721): one resolution for the
 // measure widget's source warnings, its freshness and the compare widget's
 // health, so the three always name the same connections.
@@ -16,6 +18,73 @@ export interface ModelSourceDatasets {
   all: Set<string>;
   /** The datasets of each preparation source node, by the node's id. */
   bySourceNode: Map<string, Set<string>>;
+  /** The default links its pinned preparations carry (#913). */
+  defaultLinks: PinnedDefaultLinks;
+}
+
+/**
+ * The default links a Developer Portfolio's preparations carry (#913), as
+ * the versions a release pins them at have them: by the links table they
+ * read (their `links` source node), the pinned versions they come from
+ * (`<preparationId>@<version>`, sorted: what a cache keys them by) and the
+ * links. What a project's freshness resolves its resources through, so it
+ * covers the resources the model's rows do.
+ */
+export type PinnedDefaultLinks = Map<
+  string,
+  { pins: string; links: Map<string, string> }
+>;
+
+/**
+ * The default links of pinned preparation graphs, by links table. One
+ * version per preparation: the highest a release pins (several releases
+ * pin one preparation at different versions only during a rollout);
+ * preparations of one install carry disjoint connections' links.
+ */
+function pinnedDefaultLinks(
+  graphs: readonly { preparationId: string; version: number; graph: unknown }[],
+): PinnedDefaultLinks {
+  const newest = new Map<string, (typeof graphs)[number]>();
+  for (const entry of graphs) {
+    const known = newest.get(entry.preparationId);
+    if (!known || known.version < entry.version)
+      newest.set(entry.preparationId, entry);
+  }
+  const found = new Map<
+    string,
+    { pins: string[]; links: Map<string, string> }
+  >();
+  for (const entry of [...newest.values()].sort((a, b) =>
+    a.preparationId < b.preparationId
+      ? -1
+      : a.preparationId > b.preparationId
+        ? 1
+        : 0,
+  )) {
+    const nodes = (entry.graph as { nodes?: unknown[] } | undefined)?.nodes;
+    const links = (Array.isArray(nodes) ? nodes : []).find(
+      (node): node is { datasetId: string } =>
+        !!node &&
+        typeof node === "object" &&
+        (node as { type?: unknown }).type === "source" &&
+        (node as { id?: unknown }).id === "links" &&
+        typeof (node as { datasetId?: unknown }).datasetId === "string",
+    )?.datasetId;
+    if (!links) continue;
+    const defaults = graphDefaultLinks(entry.graph);
+    const keys = Object.keys(defaults);
+    if (!keys.length) continue;
+    let table = found.get(links);
+    if (!table) found.set(links, (table = { pins: [], links: new Map() }));
+    table.pins.push(`${entry.preparationId}@${entry.version}`);
+    for (const key of keys) table.links.set(key, defaults[key]!);
+  }
+  return new Map(
+    [...found].map(([links, table]) => [
+      links,
+      { pins: table.pins.join(","), links: table.links },
+    ]),
+  );
 }
 
 /**
@@ -30,6 +99,8 @@ export async function modelSourceDatasets(
 ): Promise<ModelSourceDatasets> {
   const all = new Set(Object.keys(release.bindings));
   const bySourceNode = new Map<string, Set<string>>();
+  const graphs: { preparationId: string; version: number; graph: unknown }[] =
+    [];
   for (const [preparationId, version] of Object.entries(
     release.dependencies.prepared ?? {},
   )) {
@@ -43,6 +114,7 @@ export async function modelSourceDatasets(
           eq(schema.dataPreparationVersions.version, version),
         ),
       );
+    if (row) graphs.push({ preparationId, version, graph: row.graph });
     const nodes = (row?.graph as { nodes?: unknown[] } | undefined)?.nodes;
     for (const node of Array.isArray(nodes) ? nodes : [])
       if (
@@ -61,7 +133,7 @@ export async function modelSourceDatasets(
           );
       }
   }
-  return { all, bySourceNode };
+  return { all, bySourceNode, defaultLinks: pinnedDefaultLinks(graphs) };
 }
 
 /** A published release as one batched read returns it. */
@@ -126,7 +198,7 @@ export async function releasesSourceDatasets(
   tx: Transaction,
   workspaceId: string,
   releases: Iterable<ModelRelease>,
-): Promise<Set<string>> {
+): Promise<Pick<ModelSourceDatasets, "all" | "defaultLinks">> {
   const all = new Set<string>();
   const pinned = new Map<string, [string, number]>();
   for (const release of releases) {
@@ -136,9 +208,13 @@ export async function releasesSourceDatasets(
     ))
       pinned.set(`${preparationId}@${version}`, [preparationId, version]);
   }
-  if (!pinned.size) return all;
+  if (!pinned.size) return { all, defaultLinks: new Map() };
   const rows = await tx
-    .select({ graph: schema.dataPreparationVersions.graph })
+    .select({
+      preparationId: schema.dataPreparationVersions.preparationId,
+      version: schema.dataPreparationVersions.version,
+      graph: schema.dataPreparationVersions.graph,
+    })
     .from(schema.dataPreparationVersions)
     .where(
       and(
@@ -166,7 +242,7 @@ export async function releasesSourceDatasets(
       )
         all.add(node.datasetId);
   }
-  return all;
+  return { all, defaultLinks: pinnedDefaultLinks(rows) };
 }
 
 const ID = /^[0-9a-f-]{36}$/i;

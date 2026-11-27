@@ -14,7 +14,7 @@ import {
 } from "@netrics/database";
 import type { DatasetRecord } from "@netrics/connector-sdk";
 import type { DeveloperTemplateResult } from "@netrics/contracts";
-import type { DataExpression } from "@netrics/domain";
+import { DEFAULT_DATA_POLICY, type DataExpression } from "@netrics/domain";
 
 import { createDefaultRegistry } from "../connectors.js";
 import { createDataService } from "../data/service.js";
@@ -29,9 +29,12 @@ import { queryDashboardData } from "./data.js";
 import { mappedProductApps } from "./freshness.js";
 import {
   createDeveloperTemplateService,
+  developerDefaults,
   projectProduct,
 } from "./developer-template-service.js";
+import { modelSourceDatasets, publishedReleases } from "./model-sources.js";
 import { presentDashboard } from "./service.js";
+import { createStoreProductService } from "./store-template-products.js";
 
 /**
  * The Developer Portfolio (#876): installs with any subset of its sources,
@@ -187,6 +190,23 @@ const counts = async (workspaceId: string) => {
 
 const TIMEOUT_MS = 60_000;
 
+/**
+ * The products and their resources a model's freshness resolves a project
+ * scope through: its published release's pinned preparations' default
+ * links, with its links table over them.
+ */
+const modelApps = (workspaceId: string, modelId: string) =>
+  withWorkspace(db, { workspaceId }, async (tx) => {
+    const release = (await publishedReleases(tx, workspaceId, [modelId])).get(
+      modelId,
+    )!;
+    const sources = await modelSourceDatasets(tx, workspaceId, release);
+    return mappedProductApps(tx, workspaceId, sources.all, {
+      now: new Date(NOW),
+      defaultLinks: sources.defaultLinks,
+    });
+  });
+
 describe("Developer Portfolio installs", { timeout: TIMEOUT_MS }, () => {
   it("installs with every source", async () => {
     const target = await workspace(ALL);
@@ -212,7 +232,7 @@ describe("Developer Portfolio installs", { timeout: TIMEOUT_MS }, () => {
       where workspace_id = ${target.id}`;
     expect(install).toEqual({
       template_id: "developer_portfolio",
-      template_version: 1,
+      template_version: 2,
     });
     const dashboard = await withWorkspace(
       db,
@@ -477,6 +497,258 @@ describe("Developer Portfolio installs", { timeout: TIMEOUT_MS }, () => {
       [30, "2026-11-21"],
       [7, "2026-11-20"],
     ]);
+  });
+
+  it("lists each connection's own resources as install options", async () => {
+    const target = await workspace(["vercel", "railway"]);
+    await withWorkspace(db, { workspaceId: target.id }, async (tx) => {
+      await upsertConnectionResources(tx, {
+        workspaceId: target.id,
+        connectionId: target.connections.vercel,
+        resources: [
+          { id: "prj_b", name: "b-web", kind: "project" },
+          { id: "prj_a", name: "a-web", kind: "project" },
+        ],
+        now: new Date(NOW),
+      });
+      await upsertConnectionResources(tx, {
+        workspaceId: target.id,
+        connectionId: target.connections.railway,
+        resources: [{ id: "rw-1", name: "api", kind: "project" }],
+        now: new Date(NOW),
+      });
+    });
+    const options = await service().options(actor(target.id));
+    expect(
+      Object.fromEntries(
+        options.connections.map((connection) => [
+          connection.connectorId,
+          connection.resources,
+        ]),
+      ),
+    ).toEqual({
+      // By name, each connection's own.
+      vercel: [
+        { id: "prj_a", name: "a-web" },
+        { id: "prj_b", name: "b-web" },
+      ],
+      railway: [{ id: "rw-1", name: "api" }],
+    });
+  });
+
+  it("refuses a connection with more default links than one lookup holds (#913)", async () => {
+    const target = await workspace(["railway"], { assign: { railway: "api" } });
+    const resources = (count: number) =>
+      owner`insert into connection_resources
+          (connection_id, workspace_id, resource_id, name, kind)
+        select ${target.connections.railway}, ${target.id},
+          'rw-' || n, 'rw-' || n, 'project'
+        from generate_series(1, ${count}) n
+        on conflict do nothing`;
+    // The expression engine's JSON limit: 9,999 entries fit, one more not.
+    await resources(10_000);
+    const install = () =>
+      service().install(actor(target.id), {
+        requestId: randomUUID(),
+        name: "Ops",
+        connections: [target.connections.railway],
+        links: [],
+      });
+    await expect(install()).rejects.toMatchObject({
+      code: "developer_default_links_limit",
+      status: 413,
+    });
+    expect(await counts(target.id)).toMatchObject({
+      preparations: 0,
+      dashboards: 0,
+    });
+    await owner`delete from connection_resources
+      where connection_id = ${target.connections.railway}
+        and resource_id = 'rw-10000'`;
+    await expect(install()).resolves.toMatchObject({
+      dashboardId: expect.any(String),
+    });
+  });
+
+  it("refuses a Developer Portfolio install on the App Portfolio's product routes (#913)", async () => {
+    const target = await workspace(["app-store-connect"]);
+    const { linksDatasetId } = await service().install(actor(target.id), {
+      requestId: randomUUID(),
+      name: "Apps",
+      connections: [target.connections["app-store-connect"]],
+      links: [],
+    });
+    const [install] = await owner<{ request_id: string }[]>`
+      select request_id from data_template_installs
+      where workspace_id = ${target.id} and result->>'linksDatasetId' = ${linksDatasetId}`;
+    const products = createStoreProductService({
+      db,
+      now: () => new Date(NOW),
+    });
+    const notFound = { code: "store_template_not_found", status: 404 };
+    await expect(
+      products.read(actor(target.id), install!.request_id),
+    ).rejects.toMatchObject(notFound);
+    await expect(
+      products.retryIcons(actor(target.id), install!.request_id),
+    ).rejects.toMatchObject(notFound);
+    await expect(
+      products.update(actor(target.id), install!.request_id, { products: [] }),
+    ).rejects.toMatchObject(notFound);
+    expect(
+      await owner`select 1 from data_template_products
+        where workspace_id = ${target.id}`,
+    ).toHaveLength(0);
+  });
+
+  it("resolves a project's freshness through its default links and the links table over them (#913)", async () => {
+    const target = await workspace(["railway", "vercel"], {
+      assign: { railway: "api", vercel: "web" },
+    });
+    await owner`insert into connection_resources
+        (connection_id, workspace_id, resource_id, name, kind)
+      values (${target.connections.railway}, ${target.id}, 'rw-1', 'api', 'project'),
+        (${target.connections.vercel}, ${target.id}, 'prj_a', 'a', 'project'),
+        (${target.connections.vercel}, ${target.id}, 'prj_b', 'b', 'project')`;
+    const result = await service().install(actor(target.id), {
+      requestId: randomUUID(),
+      name: "Ops",
+      connections: [target.connections.railway, target.connections.vercel],
+      links: [],
+    });
+    const resolve = () => modelApps(target.id, result.models.state!);
+    // The defaults the model's preparations read: each connection's
+    // resources are its project's.
+    const before = await resolve();
+    expect(before.get(projectProduct(target.projects.web))?.sort()).toEqual([
+      `${target.connections.vercel}:prj_a`,
+      `${target.connections.vercel}:prj_b`,
+    ]);
+    expect(before.get(projectProduct(target.projects.api))).toEqual([
+      `${target.connections.railway}:rw-1`,
+    ]);
+    // The customer moves Railway's project to the web shop and unlinks a
+    // Vercel project: the table's rows win over the defaults.
+    const data = createDataService(db, () => new Date(NOW));
+    const links = await data.readManual(
+      actor(target.id),
+      result.linksDatasetId,
+      {
+        offset: 0,
+        limit: 1000,
+      },
+    );
+    await data.saveManual(
+      actor(target.id),
+      {
+        definition: links.definition,
+        records: [
+          {
+            values: {
+              app_key: `${target.connections.railway}:rw-1`,
+              product_id: projectProduct(target.projects.web),
+            },
+          },
+          {
+            values: {
+              app_key: `${target.connections.vercel}:prj_b`,
+              product_id: "",
+            },
+          },
+        ],
+        generationId: links.generationId,
+      },
+      result.linksDatasetId,
+    );
+    const after = await resolve();
+    expect(after.get(projectProduct(target.projects.web))?.sort()).toEqual(
+      [
+        `${target.connections.vercel}:prj_a`,
+        `${target.connections.railway}:rw-1`,
+      ].sort(),
+    );
+    expect(after.has(projectProduct(target.projects.api))).toBe(false);
+  });
+
+  it("resolves freshness through the preparation versions the model pins, not newer ones (#913)", async () => {
+    const target = await workspace(["railway", "vercel"], {
+      assign: { railway: "api", vercel: "web" },
+    });
+    await owner`insert into connection_resources
+        (connection_id, workspace_id, resource_id, name, kind)
+      values (${target.connections.railway}, ${target.id}, 'rw-1', 'api', 'project'),
+        (${target.connections.vercel}, ${target.id}, 'prj_a', 'a', 'project')`;
+    const result = await service().install(actor(target.id), {
+      requestId: randomUUID(),
+      name: "Ops",
+      connections: [target.connections.railway, target.connections.vercel],
+      links: [],
+    });
+    // A rollout under way: Vercel's state preparation is published again
+    // with prj_a in the API project, the state model still reads the
+    // version it pinned (prj_a in the web shop).
+    const [record] = await owner<{ record_id: string }[]>`
+      select record_id from data_template_records
+      where workspace_id = ${target.id}
+        and key = ${`preparation:ops:state:${target.connections.vercel}`}`;
+    const [current] = await owner<
+      { name: string; graph: unknown; version: number }[]
+    >`select name, graph, version from data_preparations
+      where id = ${record!.record_id}`;
+    const moved = JSON.parse(
+      JSON.stringify(current!.graph).replaceAll(
+        projectProduct(target.projects.web),
+        projectProduct(target.projects.api),
+      ),
+    );
+    const data = createDataService(db, () => new Date(NOW));
+    const saved = await data.savePreparation(
+      actor(target.id),
+      { name: current!.name, graph: moved, version: current!.version },
+      record!.record_id,
+    );
+    await data.publishPreparation(
+      actor(target.id),
+      record!.record_id,
+      saved.preparation.version,
+    );
+    const apps = await modelApps(target.id, result.models.state!);
+    expect(apps.get(projectProduct(target.projects.web))).toEqual([
+      `${target.connections.vercel}:prj_a`,
+    ]);
+    expect(apps.get(projectProduct(target.projects.api))).toEqual([
+      `${target.connections.railway}:rw-1`,
+    ]);
+  });
+
+  it("refuses an install or update whose project name lookup is past the JSON limit (#913)", async () => {
+    const target = await workspace(["railway"]);
+    await owner`insert into projects (workspace_id, name)
+      select ${target.id}, 'P' || n from generate_series(1, 10000) n`;
+    const products = (
+      await owner<{ id: string }[]>`select id from projects
+        where workspace_id = ${target.id} and name like 'P%' order by name`
+    ).map((row) => projectProduct(row.id));
+    const read = (count: number) =>
+      withWorkspace(db, { workspaceId: target.id }, (tx) =>
+        developerDefaults(
+          tx,
+          target.id,
+          [{ id: target.connections.railway, connectorId: "railway" }],
+          { ...DEFAULT_DATA_POLICY },
+          // The customer's links table: one resource per project.
+          products.slice(0, count).map((product, index) => ({
+            app_key: `${target.connections.railway}:rw-${index}`,
+            product_id: product,
+          })),
+        ),
+      );
+    // 9,999 names fit one lookup; one more is refused, actionably.
+    expect(Object.keys((await read(9_999)).names).length).toBe(9_999);
+    await expect(read(10_000)).rejects.toMatchObject({
+      code: "developer_project_names_limit",
+      status: 413,
+    });
   });
 
   it("refuses connections of other connectors and links to unknown projects", async () => {
