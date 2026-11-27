@@ -203,6 +203,16 @@ export const syncResultSchema = z.object({
    * continues the same window).
    */
   nextFrom: z.iso.datetime({ offset: false }).optional(),
+  /**
+   * Optional (SDK 0.2.23, #898), on a done result only: the run requested
+   * nothing on purpose (a floor between two rounds, for example) and read
+   * nothing. Such a result carries no observations, dataset pages,
+   * reviews, received datasets, freshness or nextFrom, and returns the
+   * request's cursor unchanged. The host records the run as succeeded but
+   * keeps the connection's next due time when it is still ahead, so a
+   * manual sync that did nothing does not push the next scheduled run back.
+   */
+  skipped: z.literal(true).optional(),
   done: z.boolean(),
 });
 export type SyncResult = z.infer<typeof syncResultSchema>;

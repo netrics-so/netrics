@@ -60,6 +60,15 @@ test("a member creates HTTP checks against the fixture server", async ({
     providerMessageForCode("http_check.url_secret", locale)!,
   );
 
+  // So is a fragment, which may carry a token (#898).
+  await page
+    .locator("#config-checks-1-url")
+    .fill(`${CUSTOM_API_ORIGIN}/login#access_token=not-here`);
+  await page.getByRole("button", { name: wizard.wizard.test }).click();
+  await expect(page.locator("div.error[role=alert]")).toContainText(
+    providerMessageForCode("http_check.url_fragment", locale)!,
+  );
+
   await page.locator("#config-checks-1-url").fill(`${CUSTOM_API_ORIGIN}/login`);
   await page.getByRole("button", { name: wizard.wizard.test }).click();
   // The checks are listed, not offered for selection: every one is synced.

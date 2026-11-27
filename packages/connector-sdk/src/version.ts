@@ -39,7 +39,10 @@ import { satisfiesRange } from "./semver.js";
 // may change their configured hosts (#874).
 // 0.2.22: optional SyncRequest.previousCursor: a fresh backfill's first
 // page carries the stored cursor it does not resume from (#893).
-export const SDK_VERSION = "0.2.22";
+// 0.2.23: optional done-SyncResult skipped, a run that requested nothing
+// on purpose: the host keeps the connection's next due time; egress errors
+// raised while reading a body carry the response's status (#898).
+export const SDK_VERSION = "0.2.23";
 
 /**
  * Validates a manifest against the contract schema and verifies that its

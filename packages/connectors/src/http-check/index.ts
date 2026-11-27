@@ -40,6 +40,8 @@ export {
   TEXT_INVALID_MESSAGE,
   URL_INVALID_CODE,
   URL_INVALID_MESSAGE,
+  URL_FRAGMENT_CODE,
+  URL_FRAGMENT_MESSAGE,
   URL_SECRET_CODE,
   URL_SECRET_MESSAGE,
   checkId,
@@ -197,7 +199,7 @@ const instantGauge = {
 export const httpCheckManifest: ConnectorManifest = {
   id: HTTP_CHECK_CONNECTOR_ID,
   version: "0.1.0",
-  sdkVersion: "^0.2.21",
+  sdkVersion: "^0.2.23",
   category: "web",
   brandColor: "#0f766e",
   name: "HTTP checks",

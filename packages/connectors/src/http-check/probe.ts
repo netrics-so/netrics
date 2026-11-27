@@ -79,6 +79,7 @@ function chain(error: unknown): Array<{
   code?: unknown;
   reason?: unknown;
   message?: unknown;
+  status?: unknown;
 }> {
   const links = [];
   let current: unknown = error;
@@ -93,6 +94,7 @@ function chain(error: unknown): Array<{
         code?: unknown;
         reason?: unknown;
         message?: unknown;
+        status?: unknown;
       },
     );
     current = (current as { cause?: unknown }).cause;
@@ -175,11 +177,42 @@ export async function probe(
     return { up: true, reason: null, status, responseMs };
   } catch (error) {
     if (runtime.signal.aborted) throw error;
+    // The answer came, but its body could not be read (too large, or too
+    // slow; #898): its status is known, and an unexpected one says more.
+    const status = receivedStatus(error);
+    if (status !== null && !statusExpected(check, status)) {
+      return {
+        up: false,
+        reason: "unexpected_status",
+        status,
+        responseMs: null,
+      };
+    }
     return {
       up: false,
       reason: failureReason(error),
-      status: null,
+      status,
       responseMs: null,
     };
   }
+}
+
+/**
+ * The status of an answer whose body failed (SDK 0.2.23): the `status` of
+ * the runtime's egress error, else null.
+ */
+export function receivedStatus(error: unknown): number | null {
+  for (const link of chain(error)) {
+    if (
+      (link.name === "EgressDeniedError" ||
+        link.name === "EgressTimeoutError") &&
+      typeof link.status === "number" &&
+      Number.isInteger(link.status) &&
+      link.status >= 100 &&
+      link.status <= 599
+    ) {
+      return link.status;
+    }
+  }
+  return null;
 }

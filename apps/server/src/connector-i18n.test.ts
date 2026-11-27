@@ -35,6 +35,8 @@ import {
   HTTP_CHECK_TEXT_INVALID_MESSAGE,
   HTTP_CHECK_URL_INVALID_CODE,
   HTTP_CHECK_URL_INVALID_MESSAGE,
+  HTTP_CHECK_URL_FRAGMENT_CODE,
+  HTTP_CHECK_URL_FRAGMENT_MESSAGE,
   HTTP_CHECK_URL_SECRET_CODE,
   HTTP_CHECK_URL_SECRET_MESSAGE,
   KEY_MISMATCH_CODE,
@@ -429,6 +431,7 @@ describe("provider reason codes (#795)", () => {
     [HTTP_CHECK_NO_CHECKS_CODE, HTTP_CHECK_NO_CHECKS_MESSAGE],
     [HTTP_CHECK_URL_INVALID_CODE, HTTP_CHECK_URL_INVALID_MESSAGE],
     [HTTP_CHECK_URL_SECRET_CODE, HTTP_CHECK_URL_SECRET_MESSAGE],
+    [HTTP_CHECK_URL_FRAGMENT_CODE, HTTP_CHECK_URL_FRAGMENT_MESSAGE],
     [HTTP_CHECK_NAME_DUPLICATE_CODE, HTTP_CHECK_NAME_DUPLICATE_MESSAGE],
     [HTTP_CHECK_STATUS_INVALID_CODE, HTTP_CHECK_STATUS_INVALID_MESSAGE],
     [HTTP_CHECK_TEXT_INVALID_CODE, HTTP_CHECK_TEXT_INVALID_MESSAGE],
@@ -437,7 +440,7 @@ describe("provider reason codes (#795)", () => {
   ];
 
   it("are worded by the catalog in English and German", () => {
-    expect(recorded).toHaveLength(26);
+    expect(recorded).toHaveLength(27);
     for (const [code, english] of recorded) {
       expect(code, english).toEqual(expect.any(String));
       expect(providerMessageForCode(code, "en"), code).toBe(english);
@@ -445,7 +448,7 @@ describe("provider reason codes (#795)", () => {
       expect(german, code).toEqual(expect.any(String));
       expect(german, code).not.toBe(english);
     }
-    expect(new Set(recorded.map(([code]) => code)).size).toBe(26);
+    expect(new Set(recorded.map(([code]) => code)).size).toBe(27);
     expect([...recorded.map(([code]) => code), ...generic].sort()).toEqual(
       Object.keys(PROVIDER_MESSAGE_CODES).sort(),
     );

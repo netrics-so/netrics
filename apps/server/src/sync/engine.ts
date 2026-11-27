@@ -48,6 +48,7 @@ import {
   type Transaction,
   notDraftConnection,
   rethrowWorkspaceGone,
+  lockWorkspaceIngestion,
 } from "@netrics/database";
 import {
   CUSTOM_API_IMAGE_QUOTA_DEFAULT_BYTES,
@@ -473,10 +474,11 @@ async function runSync(
     customApi: connectionCustomApi(customApiEnvironmentId, pin),
   });
   // A connector without backfills (HTTP checks, #874) only reads what is
-  // there now: the backfill job a new connection (or a finished setup)
-  // queues for every connector runs as its first incremental sync instead
-  // of failing the contract. Operator backfills refuse such connectors
-  // before they queue anything.
+  // there now: a new connection of one queues a sync as its first job
+  // (#898), and a backfill job queued before that (or by a path that
+  // queues one for every connector) runs as its first incremental sync
+  // instead of failing the contract. Operator backfills refuse such
+  // connectors before they queue anything.
   if (mode === "backfill" && resolved && !resolved.manifest.supportsBackfill) {
     mode = "incremental";
   }
@@ -1375,6 +1377,12 @@ async function runSync(
     let finalFreshness: NonNullable<SyncResult["freshness"]> = [];
     let finalCursor = startCursor;
     /**
+     * The run requested nothing on purpose (SDK 0.2.23, #898): a skipped
+     * result on the run's first page. The connection keeps its next due
+     * time when that is still ahead, and its next window start.
+     */
+    let skipped = false;
+    /**
      * Where the next incremental window starts (#758): the connector's
      * nextFrom, else this window's end. A run with an empty window keeps
      * its start.
@@ -1447,9 +1455,12 @@ async function runSync(
           finalReviews = result;
           finalFreshness = result.freshness ?? [];
           finalCursor = result.nextCursor ?? null;
-          finalNextFrom = result.nextFrom
-            ? new Date(result.nextFrom)
-            : window.to;
+          skipped = result.skipped === true && progress.pagesCommitted === 0;
+          finalNextFrom = skipped
+            ? window.from
+            : result.nextFrom
+              ? new Date(result.nextFrom)
+              : window.to;
           break;
         }
         const nextCursor = result.nextCursor;
@@ -1506,21 +1517,54 @@ async function runSync(
       const observationsWritten =
         progress.observationsWritten +
         (await ingestPage(tx, finalObservations));
+      // The configuration the run read is still the saved one (#898): a
+      // change saved meanwhile (a check removed, its freshness retired)
+      // is not undone by a run of the old one. Read under the connection
+      // row lock a change writes under, after the workspace ingestion
+      // lock, which comes first (lockWorkspaceIngestion).
+      await lockWorkspaceIngestion(tx, workspaceId);
+      const [saved] = await tx
+        .select({
+          same: sql<boolean>`${schema.connections.config} = ${JSON.stringify(connection.config)}::jsonb`,
+        })
+        .from(schema.connections)
+        .where(
+          and(
+            eq(schema.connections.id, connectionId),
+            eq(schema.connections.workspaceId, workspaceId),
+          ),
+        )
+        .for("share");
+      const configKept = saved?.same === true;
+      if (!configKept) {
+        log.info(
+          "snapshot and freshness not published: the configuration changed during the run",
+        );
+      }
       // Datasets before reviews: lock order as in the page transaction.
-      await ingestDatasets(tx, finalDatasetPages);
-      await receiveDatasets(tx, finalDatasetPages);
+      if (configKept) {
+        await ingestDatasets(tx, finalDatasetPages);
+        await receiveDatasets(tx, finalDatasetPages);
+      }
       await ingestReviews(tx, finalReviews);
       // Freshness (ADR 0025 §4) commits with lastSuccessAt and the cursor,
       // and the next sync follows from the stored rows (§5).
-      const nextDueAt = await recordFreshness(tx, {
+      const computedNextDueAt = await recordFreshness(tx, {
         workspaceId,
         connectionId,
         manifest,
-        entries: finalFreshness,
+        entries: configKept ? finalFreshness : [],
         selectedResources,
         pollIntervalSeconds,
         now,
       });
+      // A skipped run keeps a next due time that is still ahead (#898):
+      // "Sync now" inside a connector's floor moves no scheduled run. One
+      // already due gets the computed time, so the scheduler does not
+      // queue the connection again at once.
+      const nextDueAt = skipped
+        ? sql`case when ${schema.connectionState.nextDueAt} > ${iso(now)}::timestamptz then ${schema.connectionState.nextDueAt} else ${iso(computedNextDueAt)}::timestamptz end`
+        : computedNextDueAt;
 
       // Cursor advancement commits in this same transaction as the
       // observation inserts — never without them.
@@ -1531,7 +1575,7 @@ async function runSync(
           workspaceId,
           pollIntervalSeconds,
           lastSuccessAt: now,
-          nextDueAt,
+          nextDueAt: computedNextDueAt,
           cursor: finalCursor,
           nextFrom: finalNextFrom,
           ...backfillMarker,

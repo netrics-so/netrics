@@ -348,6 +348,29 @@ const SELECTION_NEEDS_A_RESOURCE: ReadonlySet<string> = new Set([
  * those it no longer has; a resource selection, which the sync could not
  * honor, is refused (a check is removed from the list instead).
  */
+/**
+ * A new connection's first job: the backfill of the connector's window,
+ * or, for a connector without backfills (HTTP checks), its first sync
+ * (#898), so no backfill waits in the workspace for it and another
+ * connection's "Reload history" is not refused meanwhile. The worker still
+ * runs a backfill job of such a connector, queued before this, as a sync.
+ */
+async function enqueueFirstJob(
+  tx: Transaction,
+  manifest: Pick<ConnectorManifest, "supportsBackfill">,
+  input: { workspaceId: string; connectionId: string },
+): Promise<void> {
+  if (!manifest.supportsBackfill) {
+    await requestConnectionSync(tx, input);
+    return;
+  }
+  await enqueueJob(tx, {
+    kind: "connection.backfill",
+    ...input,
+    idempotencyKey: `backfill:${input.connectionId}`,
+  });
+}
+
 const RESOURCES_FROM_CONFIG: ReadonlySet<string> = new Set([
   HTTP_CHECK_CONNECTOR_ID,
 ]);
@@ -2005,12 +2028,10 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
             : {}),
         });
         // Transactional enqueue invariant: the connection, its state, and
-        // the initial backfill job commit atomically.
-        await enqueueJob(tx, {
-          kind: "connection.backfill",
+        // the initial job commit atomically.
+        await enqueueFirstJob(tx, registered.manifest, {
           workspaceId: actor.workspaceId,
           connectionId,
-          idempotencyKey: `backfill:${connectionId}`,
         });
         await insertAuditEvent(tx, {
           workspaceId: actor.workspaceId,
@@ -3378,11 +3399,9 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           if (finished) {
             state = finished;
             setupPending = false;
-            await enqueueJob(tx, {
-              kind: "connection.backfill",
+            await enqueueFirstJob(tx, registered.manifest, {
               workspaceId: actor.workspaceId,
               connectionId,
-              idempotencyKey: `backfill:${connectionId}`,
             });
             await insertAuditEvent(tx, {
               workspaceId: actor.workspaceId,

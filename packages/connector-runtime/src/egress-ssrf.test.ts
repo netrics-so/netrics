@@ -907,6 +907,27 @@ describe("per-request limits, HEAD and refusal reasons (SDK 0.2.21, #874)", () =
     expect(Date.now() - started).toBeLessThan(1500);
   });
 
+  it("keeps the answer's status on a body refused or timed out after it came (SDK 0.2.23, #898)", async () => {
+    const guard = fixtureGuard({ ...privateFixture, requestTimeoutMs: 5_000 });
+    const big = await failure(
+      guard(url("/unknown-coding"), { maxResponseBytes: 1024 }),
+    );
+    expect(big).toBeInstanceOf(EgressDeniedError);
+    expect((big as EgressDeniedError).status).toBe(200);
+    const dripping = await failure(guard(url("/drip"), { timeoutMs: 250 }));
+    expect(dripping).toBeInstanceOf(EgressTimeoutError);
+    expect((dripping as EgressTimeoutError).status).toBe(200);
+    // No answer yet: no status.
+    const silent = await failure(
+      guard(url("/slow-headers"), { timeoutMs: 100 }),
+    );
+    expect((silent as EgressTimeoutError).status).toBeUndefined();
+    const refused = await failure(
+      fixtureGuard(privateFixture)(url("/ok", "other.fixture.test")),
+    );
+    expect((refused as EgressDeniedError).status).toBeUndefined();
+  });
+
   it("discards a body it is told not to read, and every HEAD body", async () => {
     const guard = fixtureGuard({ ...privateFixture, maxResponseBytes: 1024 });
     const discarded = await guard(url("/unknown-coding"), {

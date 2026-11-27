@@ -473,6 +473,7 @@ keeps loading on every 0.2.x runtime.
 | 0.2.20 | Optional `configuredHosts`: a host the configuration names (#873)    |
 | 0.2.21 | `configuredHosts` item URLs, `HEAD`, per-request limits (#874)       |
 | 0.2.22 | Optional `previousCursor`: a fresh backfill's stored cursor (#893)   |
+| 0.2.23 | Optional final `skipped`; a body failure's egress error has `status` |
 
 Since SDK 0.2.13 a manifest may group its metrics and datasets into
 `freshnessStreams` (periodic, with the provider's time zone, or continuous),

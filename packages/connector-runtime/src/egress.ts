@@ -17,6 +17,11 @@ import { Agent, fetch } from "undici";
 export class EgressDeniedError extends Error {
   /** Why (SDK 0.2.21): connector code may read it, never a host value. */
   readonly reason: EgressRefusalReason;
+  /**
+   * The answer's status when the body was refused after it came (SDK
+   * 0.2.23, #898): a body larger than the limit.
+   */
+  status?: number;
   constructor(message: string, reason: EgressRefusalReason) {
     super(message);
     this.name = "EgressDeniedError";
@@ -29,9 +34,15 @@ export class EgressDeniedError extends Error {
  * denial: a slow provider is a retryable failure, never a broken connector.
  */
 export class EgressTimeoutError extends Error {
-  constructor(host: string, timeoutMs: number) {
+  /**
+   * The answer's status when the time ran out while its body was read
+   * (SDK 0.2.23, #898).
+   */
+  readonly status?: number;
+  constructor(host: string, timeoutMs: number, status?: number) {
     super(`egress timeout: ${host} did not answer within ${timeoutMs} ms`);
     this.name = "EgressTimeoutError";
+    if (status !== undefined) this.status = status;
   }
 }
 
@@ -636,6 +647,8 @@ export function createEgressFetch(options: EgressOptions) {
     const timeout = AbortSignal.timeout(timeoutMs);
     // One signal per request: every hop and the whole body read.
     const signal = AbortSignal.any([options.signal, timeout]);
+    /** The final answer's status once it came, while its body is read. */
+    let received: number | undefined;
     try {
       for (let redirects = 0; ; redirects += 1) {
         let response: Awaited<ReturnType<typeof fetch>>;
@@ -709,6 +722,7 @@ export function createEgressFetch(options: EgressOptions) {
           url = next;
           continue;
         }
+        received = response.status;
         const body = await readBody(response, request);
         const responseHeaders: Record<string, string> = {};
         response.headers.forEach((value, key) => {
@@ -725,7 +739,12 @@ export function createEgressFetch(options: EgressOptions) {
         throw new EgressTimeoutError(
           url.hostname.replace(/^\[|\]$/g, ""),
           timeoutMs,
+          received,
         );
+      }
+      // A body refused after its answer came keeps the answer's status.
+      if (error instanceof EgressDeniedError && received !== undefined) {
+        error.status = received;
       }
       throw error;
     }

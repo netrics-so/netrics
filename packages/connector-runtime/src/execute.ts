@@ -368,6 +368,23 @@ function validateSyncResult(
   for (const key of result.receivedDatasets ?? [])
     if (!manifest.datasets?.some((dataset) => dataset.key === key))
       throw new ContractViolationError("Undeclared source dataset");
+  // A skipped run (SDK 0.2.23, #898) read nothing: it is final, carries
+  // nothing, and leaves the cursor as the request had it.
+  if (
+    result.skipped &&
+    (!result.done ||
+      result.observations.length > 0 ||
+      (result.datasetPages?.length ?? 0) > 0 ||
+      (result.reviews?.length ?? 0) > 0 ||
+      (result.reviewWindows?.length ?? 0) > 0 ||
+      (result.receivedDatasets?.length ?? 0) > 0 ||
+      (result.freshness?.length ?? 0) > 0 ||
+      result.nextFrom !== undefined ||
+      result.nextCursor !== request.cursor)
+  )
+    throw new ContractViolationError(
+      `connector "${manifest.id}" returned a skipped result that is not final, carries data or moves the cursor`,
+    );
   // Freshness counts only on the done result (ADR 0025 section 2); on
   // other pages it is ignored once it is well-formed.
   if (result.done) {
