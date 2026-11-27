@@ -33,7 +33,7 @@ export const CUSTOM_API_TEST_LIMITS = {
 export type JsonValue =
   string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
-const REDACTED = "[redacted]";
+export const REDACTED = "[redacted]";
 /** Shorter values would over-redact; real secrets are never this short. */
 const MIN_SECRET_LENGTH = 4;
 
@@ -56,14 +56,35 @@ export interface SecretSet {
    * a provider that echoes the body as JSON rather than as text (`{"json":
    * {…}}`) has each matching subtree replaced, keys in any order (#885).
    */
-  echoes: readonly object[];
+  echoes: readonly EchoTarget[];
   /**
-   * The secret forms by plain search when `pattern` is null, each as it is
-   * and with its percent-escapes in upper hex case: the text is searched
-   * with its own escapes in upper case too, so an escape matches in any
-   * hex case, mixed ones (`%c3%BC`, `%cB`) included (#885).
+   * The secret forms by plain search when `pattern` is null, longest
+   * first. The hex digits of a form's own percent-escapes match in any
+   * case, mixed ones (`%c3%BC`, `%cB`) included; every other character
+   * matches exactly, so a letter next to a secret never changes what
+   * matches (#885).
    */
-  fallback: readonly string[];
+  fallback: readonly FallbackForm[];
+}
+
+/** A rendered body, parsed, with its key lists taken once (#885). */
+export type EchoTarget =
+  | { kind: "scalar"; value: unknown }
+  | { kind: "array"; items: readonly EchoTarget[] }
+  | {
+      kind: "object";
+      keys: readonly string[];
+      entries: ReadonlyMap<string, EchoTarget>;
+    };
+
+/** A secret form for the plain search, with the positions that fold hex case. */
+export interface FallbackForm {
+  text: string;
+  /** 1 at the hex digits of the form's own `%XX` escapes. */
+  fold: Uint8Array | null;
+  /** The longest run without such digits, searched first, and its offset. */
+  anchor: string;
+  anchorAt: number;
 }
 
 /**
@@ -72,10 +93,6 @@ export interface SecretSet {
  * secrets: past this, plain search is used and nothing is compiled.
  */
 const MAX_PATTERN_CHARS = 262_144;
-
-/** The text with its percent-escapes in upper hex case; same length. */
-const upperHex = (text: string): string =>
-  text.replace(/%[0-9A-Fa-f]{2}/g, (e) => e.toUpperCase());
 
 const longestFirst = (values: Iterable<string>): string[] =>
   [...new Set(values)]
@@ -90,29 +107,67 @@ function replacePlain(text: string, values: readonly string[]): string {
   return out;
 }
 
+function fallbackForm(text: string): FallbackForm {
+  let fold: Uint8Array | null = null;
+  for (const escape of text.matchAll(/%[0-9A-Fa-f]{2}/g)) {
+    fold ??= new Uint8Array(text.length);
+    fold[escape.index + 1] = 1;
+    fold[escape.index + 2] = 1;
+  }
+  let anchor = text;
+  let anchorAt = 0;
+  if (fold) {
+    anchor = "";
+    let start = 0;
+    for (let i = 0; i <= text.length; i++)
+      if (i === text.length || fold[i]) {
+        if (i - start > anchor.length) {
+          anchor = text.slice(start, i);
+          anchorAt = start;
+        }
+        start = i + 1;
+      }
+  }
+  return { text, fold, anchor, anchorAt };
+}
+
+/** A-F as a-f; every other code unit as it is. */
+const lowerHex = (code: number): number =>
+  code >= 65 && code <= 70 ? code + 32 : code;
+
+function matchesAt(text: string, at: number, form: FallbackForm): boolean {
+  if (at < 0 || at + form.text.length > text.length) return false;
+  for (let k = 0; k < form.text.length; k++) {
+    const a = form.text.charCodeAt(k);
+    const b = text.charCodeAt(at + k);
+    if (a === b) continue;
+    if (!form.fold?.[k] || lowerHex(a) !== lowerHex(b)) return false;
+  }
+  return true;
+}
+
 /**
- * Replaces every occurrence of each value, in order, by plain search in
- * the text with its percent-escapes in upper hex case: upper-casing keeps
- * every position, so a match there is cut from the text itself, and the
- * escapes outside a match keep their case. Values with upper-case escapes
- * match escapes in any hex case; a value whose escape is cut at its end
- * (`…%c`) is left to the plain search after this one.
+ * Replaces every occurrence of each form, in order: found through its
+ * anchor by plain search, then compared in full, folding hex case only
+ * where the form has an escape. Escapes outside a match keep their case.
  */
-function replaceAnyHexCase(text: string, values: readonly string[]): string {
+function replaceFallback(text: string, forms: readonly FallbackForm[]): string {
   let out = text;
-  let upper = upperHex(out);
-  for (const value of values) {
-    let at = upper.indexOf(value);
-    if (at < 0) continue;
+  for (const form of forms) {
     let next = "";
     let from = 0;
-    while (at >= 0) {
-      next += out.slice(from, at) + REDACTED;
-      from = at + value.length;
-      at = upper.indexOf(value, from);
+    let search = 0;
+    for (;;) {
+      const found = out.indexOf(form.anchor, search);
+      if (found < 0) break;
+      const start = found - form.anchorAt;
+      if (start >= from && matchesAt(out, start, form)) {
+        next += out.slice(from, start) + REDACTED;
+        from = start + form.text.length;
+        search = from + form.anchorAt;
+      } else search = found + 1;
     }
-    out = next + out.slice(from);
-    upper = upperHex(out);
+    if (from > 0) out = next + out.slice(from);
   }
   return out;
 }
@@ -188,7 +243,7 @@ export function secretSetOf(
       return [body, json, json.replaceAll("/", "\\/")];
     }),
   );
-  const echoes: object[] = [];
+  const echoes: EchoTarget[] = [];
   for (const body of rendered) {
     let parsed: unknown;
     try {
@@ -202,7 +257,7 @@ export function secretSetOf(
       typeof parsed === "object" &&
       Object.keys(parsed).length > 0
     )
-      echoes.push(parsed);
+      echoes.push(echoTarget(parsed));
   }
   const source = values.map(formPattern).join("|");
   let pattern: RegExp | null = null;
@@ -221,9 +276,7 @@ export function secretSetOf(
     rendered: bodies,
     echoes,
     fallback:
-      values.length > 0 && pattern === null
-        ? longestFirst(values.flatMap((value) => [value, upperHex(value)]))
-        : [],
+      values.length > 0 && pattern === null ? values.map(fallbackForm) : [],
   };
 }
 
@@ -232,115 +285,75 @@ export function redactText(text: string, secrets: SecretSet): string {
   // break the body's match.
   let out = replacePlain(text, secrets.rendered);
   if (secrets.pattern) out = out.replace(secrets.pattern, REDACTED);
-  if (secrets.fallback.length === 0) return out;
-  return replacePlain(
-    replaceAnyHexCase(out, secrets.fallback),
-    secrets.fallback,
-  );
+  return secrets.fallback.length === 0
+    ? out
+    : replaceFallback(out, secrets.fallback);
+}
+
+/**
+ * A parsed body as an echo target. The recursion follows the body, a
+ * template bounded in depth and size (CUSTOM_API_BODY_LIMITS).
+ */
+function echoTarget(value: unknown): EchoTarget {
+  if (Array.isArray(value))
+    return { kind: "array", items: value.map(echoTarget) };
+  if (value !== null && typeof value === "object") {
+    const entries = new Map<string, EchoTarget>();
+    for (const [key, item] of Object.entries(value))
+      entries.set(key, echoTarget(item));
+    return { kind: "object", keys: [...entries.keys()], entries };
+  }
+  return { kind: "scalar", value };
+}
+
+/** Whether `value` has exactly `count` own keys; stops counting past it. */
+function hasKeyCount(value: object, count: number): boolean {
+  let seen = 0;
+  for (const key in value)
+    if (Object.hasOwn(value, key) && ++seen > count) return false;
+  return seen === count;
 }
 
 /**
  * Whether a JSON value equals `target`: the same keys in any order, the
- * same items in order. The recursion follows the target, a parsed body
- * template (bounded in depth and size), never the response.
+ * same items in order. The recursion follows the target, never the
+ * response; a container of another size is refused before any item.
  */
-function sameJson(value: unknown, target: unknown): boolean {
-  if (value === target) return true;
-  if (
-    value === null ||
-    target === null ||
-    typeof value !== "object" ||
-    typeof target !== "object"
-  )
-    return false;
-  if (Array.isArray(target)) {
-    if (!Array.isArray(value) || value.length !== target.length) return false;
-    for (let i = 0; i < target.length; i++)
-      if (!sameJson(value[i], target[i])) return false;
+function sameJson(value: unknown, target: EchoTarget): boolean {
+  if (target.kind === "scalar") return value === target.value;
+  if (value === null || typeof value !== "object") return false;
+  if (target.kind === "array") {
+    if (!Array.isArray(value) || value.length !== target.items.length)
+      return false;
+    for (let i = 0; i < target.items.length; i++)
+      if (!sameJson(value[i], target.items[i]!)) return false;
     return true;
   }
-  if (Array.isArray(value)) return false;
-  const keys = Object.keys(target);
-  if (Object.keys(value).length !== keys.length) return false;
-  for (const key of keys)
+  if (Array.isArray(value) || !hasKeyCount(value, target.keys.length))
+    return false;
+  for (const key of target.keys)
     if (
       !Object.hasOwn(value, key) ||
       !sameJson(
         (value as Record<string, unknown>)[key],
-        (target as Record<string, unknown>)[key],
+        target.entries.get(key)!,
       )
     )
       return false;
   return true;
 }
 
-const isEcho = (value: unknown, secrets: SecretSet): boolean =>
-  value !== null &&
-  typeof value === "object" &&
-  secrets.echoes.some((target) => sameJson(value, target));
-
 /**
- * The value with every subtree that equals a rendered body replaced by
- * "[redacted]" (#885). Copies only the containers on the way to a
- * replacement and returns the value itself when nothing matched. Walks
- * with its own stack, so a deeply nested response cannot overflow it.
+ * Whether a value of a response equals a rendered body (#885): an object
+ * or array the provider echoed, shown as "[redacted]". Checked node by
+ * node by every bounded walk over a response, never by a pass of its own.
  */
-export function redactEchoes(value: unknown, secrets: SecretSet): unknown {
-  if (secrets.echoes.length === 0) return value;
-  if (isEcho(value, secrets)) return REDACTED;
-  if (value === null || typeof value !== "object") return value;
-  type Container = Record<string, unknown> | unknown[];
-  interface Frame {
-    source: Container;
-    keys: string[];
-    next: number;
-    copy: Container | null;
-    parent: Frame | null;
-    key: string;
-  }
-  const open = (
-    source: Container,
-    parent: Frame | null,
-    key: string,
-  ): Frame => ({
-    source,
-    keys: Array.isArray(source)
-      ? Array.from(source, (_, i) => String(i))
-      : Object.keys(source),
-    next: 0,
-    copy: null,
-    parent,
-    key,
-  });
-  const set = (frame: Frame, key: string, item: unknown) => {
-    frame.copy ??= Array.isArray(frame.source)
-      ? frame.source.slice()
-      : { ...frame.source };
-    // Defined, not assigned: a "__proto__" key stays an own property.
-    Object.defineProperty(frame.copy, key, {
-      value: item,
-      writable: true,
-      enumerable: true,
-      configurable: true,
-    });
-  };
-  let result: unknown = value;
-  let top: Frame | null = open(value as Container, null, "");
-  while (top) {
-    if (top.next < top.keys.length) {
-      const key = top.keys[top.next++]!;
-      const child = (top.source as Record<string, unknown>)[key];
-      if (child === null || typeof child !== "object") continue;
-      if (isEcho(child, secrets)) set(top, key, REDACTED);
-      else top = open(child as Container, top, key);
-      continue;
-    }
-    const done: Frame = top;
-    top = done.parent;
-    if (!top) result = done.copy ?? done.source;
-    else if (done.copy) set(top, done.key, done.copy);
-  }
-  return result;
+export function isEchoedBody(value: unknown, secrets: SecretSet): boolean {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    secrets.echoes.some((target) => sameJson(value, target))
+  );
 }
 
 /**
@@ -475,7 +488,7 @@ export function boundedPreview(
       });
     }
     if (typeof value !== "object") return scalar(null);
-    if (isEcho(value, secrets)) return scalar(REDACTED);
+    if (isEchoedBody(value, secrets)) return scalar(REDACTED);
     if (depth >= limits.depth) {
       const placed = scalar("… (nested deeper)");
       if (placed !== undefined) omitted.depth += 1;

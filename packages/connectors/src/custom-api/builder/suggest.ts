@@ -68,14 +68,26 @@ function objectItems(items: readonly unknown[]): boolean {
   return checked.length > 0 && checked.every(isPlainObject);
 }
 
-/** Arrays in the body, depth-first, arrays of objects first, at most 20; "" = the body itself. */
+/**
+ * A value the caller does not show (a request body the API echoed): never
+ * looked into, and shown as `hidden` returns it.
+ */
+export type HiddenValue = (value: unknown) => string | undefined;
+
+/**
+ * Arrays in the body, depth-first, arrays of objects first, at most 20;
+ * "" = the body itself. Hidden values are neither candidates nor looked
+ * into.
+ */
 export function findRecordArrays(
   body: unknown,
   maxDepth = 8,
+  hidden: HiddenValue = () => undefined,
 ): RecordArrayCandidate[] {
   const found: RecordArrayCandidate[] = [];
   const visit = (value: unknown, path: DataPathSegment[]) => {
     if (found.length >= MAX_CANDIDATES * 4) return;
+    if (hidden(value) !== undefined) return;
     if (Array.isArray(value)) {
       found.push({
         path: formatDataPath(path),
@@ -92,6 +104,32 @@ export function findRecordArrays(
     ...found.filter((candidate) => candidate.objectItems),
     ...found.filter((candidate) => !candidate.objectItems),
   ].slice(0, MAX_CANDIDATES);
+}
+
+/**
+ * Whether the value at a dotted path, or any value on the way to it (the
+ * body included), is hidden. Reads only along the path.
+ */
+export function hiddenOnPath(
+  body: unknown,
+  path: string,
+  hidden: HiddenValue,
+): boolean {
+  let segments: DataPathSegment[];
+  try {
+    segments = parseDataPath(path);
+  } catch (error) {
+    if (error instanceof DataPathError) return false;
+    throw error;
+  }
+  let value = body;
+  if (hidden(value) !== undefined) return true;
+  for (const segment of segments) {
+    value = readDataPath(value, [segment]);
+    if (value === undefined) return false;
+    if (hidden(value) !== undefined) return true;
+  }
+  return false;
 }
 
 /** The value at a dotted path; a path that does not parse is not found. */
@@ -149,8 +187,11 @@ function leaves(
   record: Record<string, unknown>,
   into: Map<string, Leaf[]>,
   recordIndex: number,
+  hidden: HiddenValue,
 ): void {
-  const visit = (value: unknown, path: DataPathSegment[]) => {
+  const visit = (input: unknown, path: DataPathSegment[]) => {
+    const shown = hidden(input);
+    const value = shown ?? input;
     if (isPlainObject(value) && path.length < FIELD_DEPTH) {
       for (const key of ownKeys(value)) visit(value[key], [...path, { key }]);
       return;
@@ -193,10 +234,20 @@ export function shortPath(path: string): string {
     : path;
 }
 
-/** Redacted first, then cut: a cut must never split a secret out of reach of the redaction. */
-function sample(value: unknown, redact: (text: string) => string): string {
+/**
+ * Redacted first, then cut: a cut must never split a secret out of reach
+ * of the redaction. Hidden values inside an object or array are replaced
+ * while it is serialized.
+ */
+function sample(
+  value: unknown,
+  redact: (text: string) => string,
+  hidden: HiddenValue,
+): string {
   const text = redact(
-    typeof value === "string" ? value : JSON.stringify(value),
+    typeof value === "string"
+      ? value
+      : JSON.stringify(value, (_key, item: unknown) => hidden(item) ?? item),
   );
   return text.length > SAMPLE_CHARS
     ? `${text.slice(0, SAMPLE_CHARS - 1)}…`
@@ -212,11 +263,13 @@ export function suggestFields(
   records: readonly unknown[],
   limit = 100,
   redact: (text: string) => string = (text) => text,
+  hidden: HiddenValue = () => undefined,
 ): FieldSuggestion[] {
   const read = records.slice(0, limit);
   const byPath = new Map<string, Leaf[]>();
   read.forEach((record, index) => {
-    if (isPlainObject(record)) leaves(record, byPath, index);
+    if (isPlainObject(record) && hidden(record) === undefined)
+      leaves(record, byPath, index, hidden);
   });
   const taken = new Set<string>();
   const out: FieldSuggestion[] = [];
@@ -234,7 +287,7 @@ export function suggestFields(
     taken.add(id);
     const samples: string[] = [];
     for (const value of values) {
-      const text = sample(value, redact);
+      const text = sample(value, redact, hidden);
       if (!samples.includes(text)) samples.push(text);
       if (samples.length >= MAX_SAMPLES) break;
     }

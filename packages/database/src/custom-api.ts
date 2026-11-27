@@ -4,6 +4,7 @@ import {
   count,
   desc,
   eq,
+  gte,
   inArray,
   isNull,
   lt,
@@ -437,16 +438,17 @@ export interface CustomApiDefinitionVersionHash {
 }
 
 /**
- * Every version up to `through`, oldest first, for comparing contents
- * (#885): the stored hash of each, and the document of those stored at a
- * schema version below `documentsBelowSchema`, whose hash was taken
- * before an upgrade and is compared after upgrading the document again.
+ * The versions from `from` through `through`, oldest first, for comparing
+ * contents (#885): the stored hash of each, and the document of those
+ * stored at a schema version below `documentsBelowSchema`, whose hash was
+ * taken before an upgrade and is compared after upgrading the document
+ * again. The caller bounds the range.
  */
 export async function listCustomApiDefinitionVersionHashes(
   tx: Transaction,
   workspaceId: string,
   definitionId: string,
-  options: { through: number; documentsBelowSchema: number },
+  options: { from: number; through: number; documentsBelowSchema: number },
 ): Promise<CustomApiDefinitionVersionHash[]> {
   return tx
     .select({
@@ -460,6 +462,7 @@ export async function listCustomApiDefinitionVersionHashes(
       and(
         eq(versions.workspaceId, workspaceId),
         eq(versions.definitionId, definitionId),
+        gte(versions.version, options.from),
         lte(versions.version, options.through),
       ),
     )

@@ -13,6 +13,7 @@ import {
   type CustomApiTestApp,
 } from "./custom-api/test-helpers.js";
 import { canonicalSha256 } from "./custom-api/canonical-json.js";
+import { CUSTOM_API_HISTORY_SAME_AS_LOOKBACK } from "./custom-api/versions.js";
 import { TEST_DATABASE_SETUP_TIMEOUT_MS } from "./test-db.js";
 
 // Version history and rollback of custom API definitions (#808): who
@@ -221,6 +222,27 @@ describe("custom API version history", () => {
       [1, null],
     ]);
   });
+
+  it("looks back a bounded number of versions for the same content (#930 review)", async () => {
+    const definition = await create();
+    const back = CUSTOM_API_HISTORY_SAME_AS_LOOKBACK;
+    // Versions 2 … back + 21 all differ; the last one equals version 1,
+    // which lies beyond the lookback of the first page (oldest: 3).
+    const newest = back + 22;
+    for (let version = 1; version < newest - 1; version++)
+      await save(definition.id, version, shop(1_000 + version));
+    await save(definition.id, newest - 1, shop(60));
+    const first = await history(definition.id);
+    expect(first.versions[0]).toMatchObject({ version: newest, sameAs: null });
+    expect(first.versions.at(-1)!.version).toBe(newest - 19);
+    // The same content inside the lookback is found.
+    await save(definition.id, newest, shop(1_000 + newest - 2));
+    const again = await history(definition.id);
+    expect(again.versions[0]).toMatchObject({
+      version: newest + 1,
+      sameAs: newest - 1,
+    });
+  }, 60_000);
 
   it("upgrades an older schema version while restoring", async () => {
     // Only schema version 1 exists: an older shape is a version-1

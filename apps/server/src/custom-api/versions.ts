@@ -34,6 +34,8 @@ import {
 
 /** Versions per history page. */
 export const CUSTOM_API_HISTORY_PAGE = 20;
+/** Versions before a page compared for "same as version N" (#885). */
+export const CUSTOM_API_HISTORY_SAME_AS_LOOKBACK = 100;
 
 const NOT_FOUND = {
   ok: false,
@@ -46,7 +48,10 @@ const NOT_FOUND = {
  * (#885). Contents compare at today's schema version, as a restore does:
  * the stored hash of a version saved at an older schema version is that
  * of the older document, so its document is upgraded and hashed again
- * (the stored hash stays when the stored shape no longer reads).
+ * (the stored hash stays when the stored shape no longer reads). `rows`
+ * is the page and the CUSTOM_API_HISTORY_SAME_AS_LOOKBACK versions before
+ * it: a match further back is not named, so a page reads and re-hashes at
+ * most 120 versions however long the history is.
  */
 function sameAsOf(
   rows: readonly CustomApiDefinitionVersionHash[],
@@ -135,6 +140,9 @@ export function createCustomApiVersionService(deps: {
                 actor.workspaceId,
                 definitionId,
                 {
+                  from:
+                    page[page.length - 1]!.version -
+                    CUSTOM_API_HISTORY_SAME_AS_LOOKBACK,
                   through: page[0]!.version,
                   documentsBelowSchema: CUSTOM_API_SCHEMA_VERSION,
                 },
