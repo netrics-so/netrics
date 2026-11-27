@@ -147,7 +147,8 @@ const vercelDe: ManifestTranslation = {
 export const vercelManifest: ConnectorManifest = {
   id: "vercel",
   version: "0.2.0",
-  sdkVersion: "^0.2.19",
+  // 0.2.21: per-request `timeoutMs` (#901 item 1, #914).
+  sdkVersion: "^0.2.21",
   category: "web",
   brandColor: "#000000",
   name: "Vercel",

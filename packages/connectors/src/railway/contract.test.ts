@@ -19,6 +19,8 @@ import {
 } from "@netrics/connector-sdk/testing";
 import { describe, expect, it } from "vitest";
 
+import { MAX_RATE_LIMIT_HOLD_MS } from "../rate-limit-hold.js";
+
 import { RailwayApiError, assertReadOnly, graphQlError } from "./api.js";
 import { USD_PER_UNIT, usageCostUsd } from "./cost.js";
 import {
@@ -1344,6 +1346,72 @@ describe("review round 3", () => {
     expect(calls).toBe(wholeRequests + 1);
     expect(latest(run.observations)).toEqual(latest(whole.observations));
     expect(run.last.receivedDatasets).toEqual(whole.last.receivedDatasets);
+  });
+
+  it("holds a carried rate limit no longer than the host defers a run (#914)", async () => {
+    // A reset 30 days away: a longer hold would refuse every daily retry.
+    const railway = fake();
+    let calls = 0;
+    const limited: ConnectorRuntime = {
+      ...railway.runtime,
+      fetch: async (url, init) => {
+        calls += 1;
+        if (calls === 5) {
+          return jsonAnswer(
+            429,
+            {},
+            { "retry-after": String(30 * 24 * 60 * 60) },
+          );
+        }
+        return railway.runtime.fetch(url, init);
+      },
+    };
+    const first = await connector().sync(context(), WINDOW, limited);
+    expect(first.done).toBe(false);
+    const error = await connector()
+      .sync(context(), { ...WINDOW, cursor: first.nextCursor! }, limited)
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(RateLimitedError);
+    expect((error as RateLimitedError).retryAt).toBe(
+      new Date(clock() + MAX_RATE_LIMIT_HOLD_MS).toISOString(),
+    );
+  });
+
+  it("asks Railway again under a hold stored before the cap (#914 review)", async () => {
+    const railway = fake();
+    let calls = 0;
+    const limited: ConnectorRuntime = {
+      ...railway.runtime,
+      fetch: async (url, init) => {
+        calls += 1;
+        if (calls === 5) {
+          return jsonAnswer(429, {}, { "retry-after": "1800" });
+        }
+        return railway.runtime.fetch(url, init);
+      },
+    };
+    const first = await connector().sync(context(), WINDOW, limited);
+    expect(first.done).toBe(false);
+    // The checkpoint as the uncapped version stored a reset 30 days away.
+    const PREFIX = "railway.v3:";
+    const state = JSON.parse(
+      Buffer.from(first.nextCursor!.slice(PREFIX.length), "base64url").toString(
+        "utf8",
+      ),
+    ) as Record<string, unknown>;
+    state.retryAt = clock() + 30 * DAY_MS;
+    const before = calls;
+    const next = await connector().sync(
+      context(),
+      {
+        ...WINDOW,
+        cursor:
+          PREFIX + Buffer.from(JSON.stringify(state)).toString("base64url"),
+      },
+      limited,
+    );
+    expectHostAccepts(next);
+    expect(calls).toBeGreaterThan(before);
   });
 
   it("hands on a rate limit of the probe after a refused deployments read", async () => {

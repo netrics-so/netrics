@@ -170,7 +170,9 @@ const hourlyGauge = {
 export const hetznerCloudManifest: ConnectorManifest = {
   id: "hetzner-cloud",
   version: "0.1.0",
-  sdkVersion: "^0.2.19",
+  // 0.2.21: per-request `timeoutMs` (#901 item 1); 0.2.22: the stored
+  // `previousCursor` a fresh backfill carries its last run from (#893, #914).
+  sdkVersion: "^0.2.22",
   category: "other",
   brandColor: "#d50c2d",
   name: "Hetzner Cloud",

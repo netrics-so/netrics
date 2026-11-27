@@ -48,6 +48,7 @@ import {
 import { z } from "zod";
 
 import { boundFreshness } from "../freshness.js";
+import { pendingHold, rateLimitHold } from "../rate-limit-hold.js";
 import { readPageCursor } from "../page-cursor.js";
 
 import {
@@ -711,9 +712,11 @@ export async function syncPage(
 
   // A rate limit that ended the page before: nothing is asked before its
   // reset (#894). The host waits for it and repeats this page.
+  // A hold stored before the cap no longer holds (#914 review).
   if (run.retryAt !== undefined) {
-    if (run.retryAt > now()) {
-      throw new RateLimitedError(RATE_LIMIT_CARRIED, new Date(run.retryAt));
+    const until = pendingHold(run.retryAt, now());
+    if (until !== undefined) {
+      throw new RateLimitedError(RATE_LIMIT_CARRIED, new Date(until));
     }
     delete run.retryAt;
   }
@@ -1497,8 +1500,9 @@ export async function syncPage(
       if (steps === 0 || isFatal(error)) throw error;
       // A rate limit's reset holds for the next page too (#894).
       if (error instanceof RateLimitedError) {
-        const retryAt = Date.parse(error.retryAt);
-        if (Number.isFinite(retryAt)) run.retryAt = retryAt;
+        // At most as long as the host defers a run (#914).
+        const hold = rateLimitHold(error.retryAt, now());
+        if (hold !== undefined) run.retryAt = hold;
       }
       log?.warn("step failed, the next page repeats it", {
         error: error instanceof Error ? error.name : "unknown",

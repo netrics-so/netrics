@@ -19,7 +19,14 @@ import {
 } from "@netrics/connector-sdk/testing";
 import { describe, expect, it } from "vitest";
 
-import { PostHogApiError, apiError, assertReadOnly } from "./api.js";
+import { MAX_RATE_LIMIT_HOLD_MS } from "../rate-limit-hold.js";
+
+import {
+  PostHogApiError,
+  apiError,
+  assertReadOnly,
+  type PostHogClient,
+} from "./api.js";
 import { POSTHOG_DATASETS } from "./datasets.js";
 import {
   ANALYTICS_STREAM,
@@ -29,7 +36,6 @@ import {
   KEY_REJECTED_CODE,
   KEY_REJECTED_MESSAGE,
   MAX_INSIGHT_ROWS,
-  MAX_RATE_LIMIT_HOLD_MS,
   MAX_REQUESTS_PER_PAGE,
   METRICS,
   SCOPE_MISSING_CODE,
@@ -37,7 +43,7 @@ import {
   posthogManifest,
 } from "./index.js";
 import { insightsSchema, nextOffset, topEventsBody } from "./queries.js";
-import { insightsOf } from "./reading.js";
+import { insightsOf, listProjects } from "./reading.js";
 import { insightRows, topEventRows, trendValues } from "./sync.js";
 import {
   FAKE_KEY,
@@ -1795,6 +1801,36 @@ describe("pages end before the host's deadline (#888, #901 item 1)", () => {
     );
   });
 
+  it("asks PostHog again under a hold stored before the cap (#914 review)", async () => {
+    const {
+      runtime,
+      connector: posthog,
+      requests,
+    } = timed({ limitedAt: { request: 3, retryAfter: "3600" } });
+    const page = await posthog.sync(context(), WINDOW, runtime);
+    expect(page.done).toBe(false);
+    // The checkpoint as the uncapped version stored a reset 30 days away.
+    const PREFIX = "posthog.v1:";
+    const state = JSON.parse(
+      Buffer.from(page.nextCursor!.slice(PREFIX.length), "base64url").toString(
+        "utf8",
+      ),
+    ) as Record<string, unknown>;
+    state.limitedUntil = clock() + 30 * 24 * 60 * 60 * 1000;
+    const sent = requests();
+    const next = await posthog.sync(
+      context(),
+      {
+        ...WINDOW,
+        cursor:
+          PREFIX + Buffer.from(JSON.stringify(state)).toString("base64url"),
+      },
+      runtime,
+    );
+    expectHostAccepts(next);
+    expect(requests()).toBeGreaterThan(sent);
+  });
+
   it("bounds every request below the host's limit", async () => {
     const { runtime, connector: posthog, timeouts } = timed({});
     await posthog.sync(context(), WINDOW, runtime);
@@ -1803,5 +1839,38 @@ describe("pages end before the host's deadline (#888, #901 item 1)", () => {
       expect(timeout).toBeGreaterThan(0);
       expect(timeout).toBeLessThanOrEqual(20_000);
     }
+  });
+});
+
+describe("discovery of a large selection (#914)", () => {
+  // The configured projects are named without a request.
+  const noClient = {} as PostHogClient;
+
+  it("reports each project under the first spelling the connection stores", async () => {
+    expect(
+      await listProjects(
+        noClient,
+        ["1000", "02000", "3000"],
+        ["01000", "1000", "2000"],
+      ),
+    ).toEqual([
+      { id: "01000", name: "01000", organizationId: "" },
+      { id: "2000", name: "2000", organizationId: "" },
+      { id: "3000", name: "3000", organizationId: "" },
+    ]);
+  });
+
+  it("names 20,000 projects against a 20,000-ID selection without a scan per project", async () => {
+    // A scan of the selection per project is 400 million comparisons; an
+    // index of it is 40,000 and ends in milliseconds.
+    const ids = Array.from({ length: 20_000 }, (_, index) => String(index + 1));
+    const started = performance.now();
+    const projects = await listProjects(
+      noClient,
+      ids,
+      ids.map((id) => `0${id}`),
+    );
+    expect(performance.now() - started).toBeLessThan(1_000);
+    expect(projects.at(-1)!.id).toBe("020000");
   });
 });

@@ -1,3 +1,4 @@
+import { MAX_RATE_LIMIT_HOLD_MS } from "@netrics/connectors";
 import { describe, expect, it } from "vitest";
 
 import { rateLimitedRunAt } from "./engine.js";
@@ -37,5 +38,12 @@ describe("rateLimitedRunAt", () => {
     const day = 24 * 60 * 60 * 1000;
     expect(run(at(30 * day), 0)).toBe(day);
     expect(run(at(30 * day), 0.999)).toBeLessThanOrEqual(day + 60_000);
+  });
+
+  it("defers a run as long as a connector's checkpoint holds a rate limit (#888 review, #914)", () => {
+    // Connectors cap a carried hold at MAX_RATE_LIMIT_HOLD_MS, mirroring
+    // this bound: a longer hold would refuse every retry made before it.
+    const day = 24 * 60 * 60 * 1000;
+    expect(run(at(30 * day), 0)).toBe(MAX_RATE_LIMIT_HOLD_MS);
   });
 });

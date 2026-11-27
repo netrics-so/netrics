@@ -46,6 +46,7 @@ import {
 } from "@netrics/connector-sdk";
 
 import { boundFreshness } from "../freshness.js";
+import { pendingHold, rateLimitHold } from "../rate-limit-hold.js";
 
 import { HetznerApiError, type HetznerGet } from "./api.js";
 import {
@@ -540,10 +541,10 @@ export async function syncPage(
   let carried = request.cursor
     ? carriedOf(request.cursor, context.connectionId, scope)
     : carriedOf(request.previousCursor, context.connectionId, scope);
-  // A pending rate limit holds whatever the checkpoint is (#904).
-  if (state?.limitedUntil !== undefined && pageStarted < state.limitedUntil) {
-    throw rateLimited(state.limitedUntil);
-  }
+  // A pending rate limit holds whatever the checkpoint is (#904); a hold
+  // stored before the cap no longer does (#914 review).
+  const held = pendingHold(state?.limitedUntil, pageStarted);
+  if (held !== undefined) throw rateLimited(held);
   // A checkpoint of the version before #893 inside a listing has no page
   // bounds to verify that listing with.
   const legacy =
@@ -601,7 +602,8 @@ export async function syncPage(
   }
   const run = state;
   if (run.limitedUntil !== undefined) {
-    if (now() < run.limitedUntil) throw rateLimited(run.limitedUntil);
+    const until = pendingHold(run.limitedUntil, now());
+    if (until !== undefined) throw rateLimited(until);
     delete run.limitedUntil;
   }
   const out = {
@@ -965,8 +967,10 @@ export async function syncPage(
       // failure ends the page with what it read: the next page starts with
       // the failed step, and a rate limit surfaces there as itself.
       if (steps === 0 || isFatal(error)) throw error;
+      // At most as long as the host defers a run (#914).
       if (error instanceof RateLimitedError) {
-        run.limitedUntil = Date.parse(error.retryAt);
+        const hold = rateLimitHold(error.retryAt, now());
+        if (hold !== undefined) run.limitedUntil = hold;
       }
       log?.warn("step failed, the next page repeats it", {
         error:

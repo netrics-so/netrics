@@ -8,14 +8,8 @@ import type {
   SyncResult,
 } from "@netrics/connector-sdk";
 import { bindCredentialHosts } from "@netrics/connector-sdk";
-import {
-  POSTHOG_MAX_RATE_LIMIT_HOLD_MS,
-  createPostHogConnector,
-  posthogManifest,
-} from "@netrics/connectors";
+import { createPostHogConnector, posthogManifest } from "@netrics/connectors";
 import { describe, expect, it } from "vitest";
-
-import { rateLimitedRunAt } from "./sync/engine.js";
 
 // Whole PostHog syncs through the host's own result validation
 // (executeSync → validateSyncResult, ADR 0026 §7), which the connectors
@@ -272,15 +266,5 @@ describe("PostHog syncs through the host's validation (#873)", () => {
     expect(last.freshness).toEqual([
       expect.objectContaining({ stream: "analytics", resource: "1000" }),
     ]);
-  });
-
-  it("holds a checkpointed rate limit no longer than the host defers a run (#888 review)", () => {
-    // The connector mirrors the host's longest deferral: a longer hold
-    // would refuse every retry the host makes before it.
-    const now = new Date(NOW);
-    const farOff = new Date(now.getTime() + 30 * DAY_MS).toISOString();
-    expect(
-      rateLimitedRunAt(farOff, now, () => 0).getTime() - now.getTime(),
-    ).toBe(POSTHOG_MAX_RATE_LIMIT_HOLD_MS);
   });
 });
