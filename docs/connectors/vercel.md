@@ -153,10 +153,11 @@ selection, charges of other projects are left out; team-wide charges stay.
   discounts, in minor units (cents) with its currency, per project; charges
   of no single project under the team's ID as `resource`, and every value
   with its `team`. Summed over a calendar month it is the month's spend,
-  rounded to the cent: the charges are summed exactly (to a millionth of a
-  dollar), and each day is the difference of the rounded totals from the
-  1st, so the days add up to the month's rounded total even when
-  every day's cost is a fraction of a cent. The billed cost stays in the
+  rounded to the cent: the charges are summed exactly, with every decimal
+  of the export (a charge of $0.0049996 stays below half a cent), and only
+  the totals from the 1st are rounded. Each day is the difference of those
+  rounded totals, so the days add up to the month's rounded total even
+  when every day's cost is a fraction of a cent. The billed cost stays in the
   dataset.
 - The cost is published only after every team's charges of every day of
   the month so far were read. When charges are not read (a refusal, an
@@ -165,7 +166,10 @@ selection, charges of other projects are left out; team-wide charges stay.
   and team charged this month: a project the export no longer charges on
   a day (a revised export) drops to zero instead of keeping its old
   value. A team whose charges were not read (its projects are no longer
-  listed) keeps its stored cost.
+  listed) keeps its stored cost. Reloading the history keeps this: the
+  reload takes the projects and teams charged before from the previous
+  sync of the same token, team and selection, so a project charged before
+  the reload and no longer after it drops to zero too.
 
 ## History and refresh
 
@@ -212,7 +216,11 @@ until the day ends.
   the connection only, by every sync of that connection, so Web Analytics
   keeps its per-project entries. netrics then removes the per-project
   deployment checks stored before, so none shows an older check than the
-  connection's.
+  connection's. A sync that cannot check the connection (a project removed
+  at Vercel while the sync ran, or a selected project the token no longer
+  lists) still checks every project it read completely whenever those
+  entries fit; the next complete sync replaces them with the connection's
+  check.
 - Charges are checked for the connection when every team's charges were
   read.
 

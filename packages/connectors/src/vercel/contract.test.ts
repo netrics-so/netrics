@@ -1910,6 +1910,194 @@ describe("vercel follow-ups (#894)", () => {
   });
 });
 
+describe("vercel follow-ups (#905)", () => {
+  const PREFIX = "vercel.v1:";
+  const decode = (cursor: string) =>
+    JSON.parse(
+      Buffer.from(cursor.slice(PREFIX.length), "base64url").toString("utf8"),
+    ) as Record<string, unknown>;
+  const encode = (state: Record<string, unknown>) =>
+    PREFIX + Buffer.from(JSON.stringify(state)).toString("base64url");
+  const costOf = (observations: Observation[], resource: string) =>
+    observations.filter(
+      (o) =>
+        o.metricKey === "vercel.cost" && o.dimensions.resource === resource,
+    );
+  const sum = (observations: Observation[]) =>
+    observations.reduce((total, o) => total + o.value, 0);
+  /** A history reload: a fresh backfill, the stored cursor as baseline only. */
+  const RELOAD: SyncRequest = { ...RECENT, mode: "backfill" };
+
+  it("1: a history reload zeroes a cost series the export no longer has", async () => {
+    const one = await syncAll(fake().runtime, RECENT);
+    expect(sum(costOf(one.observations, "prj_beta"))).toBe(31 * 25);
+    const api = fake({ unbilled: ["prj_beta"] });
+    const reload = await syncAll(api.runtime, {
+      ...RELOAD,
+      previousCursor: one.pages.at(-1)!.nextCursor!,
+    });
+    const beta = costOf(reload.observations, "prj_beta");
+    expect(beta).toHaveLength(31);
+    expect(beta.every((o) => o.value === 0)).toBe(true);
+    expect(sum(costOf(reload.observations, "prj_alpha"))).toBe(31 * 25);
+  });
+
+  it("1: takes the baseline from an unfinished run's checkpoint, never its position", async () => {
+    const one = await syncAll(fake().runtime, RECENT);
+    // The first page of the next run: a checkpoint inside the run.
+    const unfinished = await connector().sync(
+      context(),
+      { ...RECENT, cursor: one.pages.at(-1)!.nextCursor },
+      fake().runtime,
+    );
+    expect(unfinished.done).toBe(false);
+    expect(decode(unfinished.nextCursor!).kind).toBe("run");
+    const api = fake({ unbilled: ["prj_beta"] });
+    const reload = await syncAll(api.runtime, {
+      ...RELOAD,
+      previousCursor: unfinished.nextCursor!,
+    });
+    // The reload starts at the listing, not where the checkpoint stopped.
+    expect(api.requests[0]!.url.pathname).toBe("/v10/projects");
+    const beta = costOf(reload.observations, "prj_beta");
+    expect(beta).toHaveLength(31);
+    expect(beta.every((o) => o.value === 0)).toBe(true);
+  });
+
+  it("1: ignores a baseline of another token", async () => {
+    const other = "another-token-0123456789";
+    const one = await syncAll(
+      fake({ token: other }).runtime,
+      RECENT,
+      context({ credentials: { token: other } }),
+    );
+    expect(sum(costOf(one.observations, "prj_beta"))).toBe(31 * 25);
+    const reload = await syncAll(fake({ unbilled: ["prj_beta"] }).runtime, {
+      ...RELOAD,
+      previousCursor: one.pages.at(-1)!.nextCursor!,
+    });
+    expect(costOf(reload.observations, "prj_beta")).toEqual([]);
+  });
+
+  it("2: a project gone after the listing leaves the other projects' deploy checks", async () => {
+    // 1,000 projects with Web Analytics: the listing alone does not fit
+    // per-project deployment entries. One vanishes: no connection entry
+    // can be reported, and the 999 completed checks fit.
+    const projects = Array.from({ length: 1_000 }, (_, index) => ({
+      ...FAKE_PROJECTS[0]!,
+      id: `prj_${String(index).padStart(4, "0")}`,
+      deployments: 0,
+    }));
+    const api = fake({ projects });
+    const runtime: ConnectorRuntime = {
+      ...api.runtime,
+      fetch: async (url, init) =>
+        url.includes("projectId=prj_0005") && url.includes("/v7/deployments")
+          ? reply(404, { error: { code: "not_found", message: "gone" } })
+          : api.runtime.fetch(url, init),
+    };
+    const { pages } = await syncAll(runtime, {
+      ...RECENT,
+      from: "2024-12-31T00:00:00.000Z",
+    });
+    const done = pages.at(-1)!;
+    expect(freshnessEntry(done, DEPLOYS_STREAM)).toBeUndefined();
+    const deploys = (done.freshness ?? []).filter(
+      (entry) => entry.stream === DEPLOYS_STREAM && entry.resource,
+    );
+    expect(deploys).toHaveLength(999);
+    expect(deploys.map((entry) => entry.resource)).not.toContain("prj_0005");
+    expect(
+      (done.freshness ?? []).filter(
+        (entry) => entry.stream === ANALYTICS_STREAM,
+      ),
+    ).toHaveLength(999);
+    expect(freshnessEntry(done, BILLING_STREAM)).toBeDefined();
+  }, 120_000);
+
+  const oneDay = async (usageCost: number) => {
+    const day = "2024-12-01";
+    const { observations } = await syncAll(
+      createFakeVercel({ today: day, usageCost }).runtime,
+      {
+        mode: "incremental",
+        from: `${day}T00:00:00.000Z`,
+        to: `${day}T13:00:00.000Z`,
+      },
+      context(),
+      () => Date.parse(`${day}T13:00:00.000Z`),
+    );
+    return costOf(observations, "prj_alpha");
+  };
+
+  it("3: a charge keeps all its decimals until the total is rounded", async () => {
+    // $0.0049996 is below half a cent: rounding it to millionths first
+    // ($0.005) made it a cent.
+    expect(await oneDay(0.0049996)).toEqual([
+      expect.objectContaining({ value: 0 }),
+    ]);
+    // 31 days of it: $0.1549876 is 15 cents, not 31 × $0.005 = 16.
+    const { observations } = await syncAll(
+      fake({ usageCost: 0.0049996 }).runtime,
+      RECENT,
+    );
+    expect(sum(costOf(observations, "prj_alpha"))).toBe(15);
+  });
+
+  it("3: $1.20 + $0.055 is still 126 cents, and tiny charges add up exactly", async () => {
+    const day = "2024-12-01";
+    const { observations } = await syncAll(
+      createFakeVercel({ today: day, usageCost: 1.2, extraCost: 0.055 })
+        .runtime,
+      {
+        mode: "incremental",
+        from: `${day}T00:00:00.000Z`,
+        to: `${day}T13:00:00.000Z`,
+      },
+      context(),
+      () => Date.parse(`${day}T13:00:00.000Z`),
+    );
+    expect(costOf(observations, "prj_alpha")).toEqual([
+      expect.objectContaining({ value: 126 }),
+    ]);
+    expect(await oneDay(5e-7)).toEqual([expect.objectContaining({ value: 0 })]);
+  });
+
+  it("3: a checkpoint with costs in millionths (before #905) still resumes", async () => {
+    const api = fake();
+    let cursor: string | undefined;
+    for (;;) {
+      const page = await connector().sync(
+        context(),
+        { ...RECENT, ...(cursor ? { cursor } : {}) },
+        api.runtime,
+      );
+      cursor = page.nextCursor;
+      const state = decode(cursor!);
+      const costs = state.costs as unknown[][] | undefined;
+      if (costs && costs.length > 0) {
+        // Every day read so far as millionths, the shape before #905.
+        state.costs = costs.map(([resource, team, currency, daily]) => [
+          resource,
+          team,
+          currency,
+          (daily as Array<number | string>).map((amount) =>
+            typeof amount === "number"
+              ? amount
+              : Math.round(Number(amount) * 1_000_000),
+          ),
+        ]);
+        cursor = encode(state);
+        break;
+      }
+    }
+    const rest = await syncAll(api.runtime, { ...RECENT, cursor });
+    const alpha = costOf(rest.observations, "prj_alpha");
+    expect(alpha).toHaveLength(31);
+    expect(sum(alpha)).toBe(31 * 25);
+  });
+});
+
 describe("vercel pages end before the host's deadline (#901 item 1)", () => {
   /** A clock the fake advances: a second per answer, plus every wait. */
   function timed(stallAt: number | null, limitedAt: number | null = null) {

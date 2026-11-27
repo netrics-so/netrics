@@ -449,6 +449,107 @@ describe("Vercel follow-ups through the host's validation (#894)", () => {
   });
 });
 
+// The follow-ups of #905 through the host's validation.
+describe("Vercel follow-ups through the host's validation (#905)", () => {
+  const request: SyncRequest = {
+    mode: "incremental",
+    from: "2024-12-29T00:00:00.000Z",
+    to: NOW,
+  };
+  const costOf = (results: SyncResult[], resource: string) =>
+    results
+      .flatMap((result) => result.observations)
+      .filter(
+        (o) =>
+          o.metricKey === "vercel.cost" && o.dimensions.resource === resource,
+      );
+  const total = (results: SyncResult[], resource: string) =>
+    costOf(results, resource).reduce((sum, o) => sum + o.value, 0);
+  /** The billing export, its lines changed by `edit`. */
+  const billing =
+    (edit: (lines: string[]) => string[]) =>
+    (runtime: ConnectorRuntime): ConnectorRuntime => ({
+      ...runtime,
+      fetch: async (raw, init) => {
+        const response = await runtime.fetch(raw, init);
+        if (new URL(raw).pathname !== "/v1/billing/charges") return response;
+        const lines = edit(response.text().split("\n"));
+        return answer(response.status, lines.join("\n"));
+      },
+    });
+  const projects: Project[] = [
+    { id: "prj_site", analytics: true, deployments: 2 },
+    { id: "prj_api", analytics: false, deployments: 2 },
+  ];
+
+  it("zeroes a project's cost the export no longer has after a history reload", async () => {
+    const first = await syncThroughHost(vercelWith(projects), request);
+    expect(total(first, "prj_api")).toBe(100);
+    // A fresh backfill: no cursor, the stored one as the baseline only.
+    const reload = await syncThroughHost(
+      vercelWith(
+        projects,
+        undefined,
+        billing((lines) => lines.filter((line) => !line.includes("prj_api"))),
+      ),
+      {
+        ...request,
+        mode: "backfill",
+        previousCursor: first.at(-1)!.nextCursor!,
+      },
+    );
+    const api = costOf(reload, "prj_api");
+    expect(api).toHaveLength(31);
+    expect(api.every((o) => o.value === 0)).toBe(true);
+    expect(total(reload, "prj_site")).toBe(100);
+  });
+
+  it("rounds only the total of charges with more than six decimals", async () => {
+    const results = await syncThroughHost(
+      vercelWith(
+        projects,
+        1,
+        billing((lines) =>
+          lines.map((line) =>
+            line.replace('"EffectiveCost":0.5', '"EffectiveCost":0.0049996'),
+          ),
+        ),
+      ),
+      request,
+    );
+    expect(costOf(results, "prj_site")).toHaveLength(31);
+    expect(total(results, "prj_site")).toBe(0);
+  });
+
+  it("reports the completed deploy checks when a project vanishes after the listing", async () => {
+    // 1,000 projects with Web Analytics: the listing alone does not fit
+    // per-project deployment entries; one vanishes, the 999 others fit.
+    const many: Project[] = Array.from({ length: 1_000 }, (_, index) => ({
+      id: `prj_${String(index).padStart(4, "0")}`,
+      analytics: true,
+      deployments: 0,
+    }));
+    const vanishing = (runtime: ConnectorRuntime): ConnectorRuntime => ({
+      ...runtime,
+      fetch: async (raw, init) =>
+        raw.includes("/v7/deployments") && raw.includes("projectId=prj_0005")
+          ? answer(404, { error: { code: "not_found" } })
+          : runtime.fetch(raw, init),
+    });
+    const results = await syncThroughHost(vercelWith(many, 1, vanishing), {
+      ...request,
+      from: "2024-12-31T00:00:00.000Z",
+    });
+    const freshness = results.at(-1)!.freshness ?? [];
+    const deploys = freshness.filter((entry) => entry.stream === "deploys");
+    expect(deploys).toHaveLength(999);
+    expect(deploys.every((entry) => entry.resource !== undefined)).toBe(true);
+    expect(
+      freshness.filter((entry) => entry.stream === "web_analytics"),
+    ).toHaveLength(999);
+  }, 240_000);
+});
+
 // The pages of whole runs stored the way the host stores them (#889
 // review): a run publishes one generation of the deployments dataset,
 // whatever the number of projects, so a poll writes the dataset once.
