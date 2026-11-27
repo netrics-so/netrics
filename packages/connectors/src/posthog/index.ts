@@ -40,9 +40,12 @@ import {
   apiKeyOf,
   hostOf,
   insightsOf,
+  isRefused,
   listProjects,
   organizationsPage,
+  canonicalProjectId,
   projectIdsOf,
+  storedSelectionOf,
   projectsPage,
   rethrow,
 } from "./reading.js";
@@ -50,6 +53,7 @@ import {
   ANALYTICS_STREAM,
   INSIGHTS_STREAM,
   METRICS,
+  PAGE_DEADLINE_MS,
   syncPage,
 } from "./sync.js";
 
@@ -73,6 +77,7 @@ export {
   ANALYTICS_STREAM,
   INSIGHTS_STREAM,
   MAX_INSIGHT_ROWS,
+  MAX_RATE_LIMIT_HOLD_MS,
   MAX_REQUESTS_PER_PAGE,
   METRICS,
 } from "./sync.js";
@@ -165,7 +170,8 @@ const ACTIVE_USERS = {
 export const posthogManifest: ConnectorManifest = {
   id: "posthog",
   version: "0.1.0",
-  sdkVersion: "^0.2.20",
+  // 0.2.21: per-request `timeoutMs` (#888, #901 item 1).
+  sdkVersion: "^0.2.21",
   category: "web",
   brandColor: "#1d4aff",
   name: "PostHog",
@@ -347,12 +353,13 @@ export function createPostHogConnector(
   function client(
     context: Parameters<Connector["check"]>[0],
     runtime: Parameters<Connector["check"]>[1],
+    call: Pick<ClientOptions, "deadline"> = {},
   ) {
     const apiKey = apiKeyOf(context);
     if (!apiKey) throw new Error("PostHog connection has no API key");
     const host = hostOf(context);
     if (!host) throw new Error(HOST_INVALID_MESSAGE);
-    return createPostHogClient(runtime, host, apiKey, options);
+    return createPostHogClient(runtime, host, apiKey, { ...options, ...call });
   }
 
   return {
@@ -391,18 +398,35 @@ export function createPostHogConnector(
       try {
         const api = client(context, runtime);
         if (projectIds.ids) {
-          // A key limited to projects: the first named projects answer a
-          // constant query (project endpoints only, posthog/permissions.py).
-          // The check stays within its deadline; a sync reports any other
-          // named project it cannot read (logged, and stale).
-          for (const id of projectIds.ids.slice(0, CHECK_PROBES)) {
+          // A key limited to projects: the first named projects the
+          // connection reads answer a constant query (project endpoints
+          // only, posthog/permissions.py). A named project left out of the
+          // saved selection is not probed (#888 item 3). The check stays
+          // within its deadline; a sync reports any other named project it
+          // cannot read (logged, and stale).
+          const selection = storedSelectionOf(context)?.map(canonicalProjectId);
+          const read = selection
+            ? projectIds.ids.filter((id) =>
+                selection.includes(canonicalProjectId(id)),
+              )
+            : projectIds.ids;
+          // An explicitly empty selection reads nothing: the first named
+          // project still checks the key, and only a wrong key or a missing
+          // scope fails it. A selection that names none of the Project IDs
+          // (they changed since) checks them all, as without a selection,
+          // so a project the key cannot read is reported (#888 review).
+          const empty = selection?.length === 0;
+          const probes = empty
+            ? projectIds.ids.slice(0, 1)
+            : read.length > 0
+              ? read
+              : projectIds.ids;
+          for (const id of probes.slice(0, CHECK_PROBES)) {
             try {
-              await api.query(id, PROBE_BODY);
+              await api.query(canonicalProjectId(id), PROBE_BODY);
             } catch (error) {
-              if (
-                error instanceof PostHogApiError &&
-                (error.kind === "forbidden" || error.kind === "not_found")
-              ) {
+              if (empty && isRefused(error)) break;
+              if (isRefused(error)) {
                 return {
                   ok: false,
                   message: PROJECTS_INVALID_MESSAGE,
@@ -490,6 +514,7 @@ export function createPostHogConnector(
           await listProjects(
             client(context, runtime),
             projectIdsOf(context).ids,
+            storedSelectionOf(context),
           )
         ).map((project) => ({
           id: project.id,
@@ -506,7 +531,13 @@ export function createPostHogConnector(
 
     async sync(context, request: SyncRequest, runtime): Promise<SyncResult> {
       try {
-        return await syncPage(client(context, runtime), context, request, {
+        // Every request and wait of the page ends by its deadline, well
+        // before the host's, so a stalled request still returns the
+        // checkpoint (#901 item 1).
+        const api = client(context, runtime, {
+          deadline: now() + PAGE_DEADLINE_MS,
+        });
+        return await syncPage(api, context, request, {
           now,
           ...(runtime.log ? { log: runtime.log } : {}),
         });

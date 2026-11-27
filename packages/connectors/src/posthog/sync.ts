@@ -22,6 +22,7 @@ import { createHash } from "node:crypto";
 
 import {
   DATASET_LIMITS,
+  RateLimitedError,
   type ConnectionContext,
   type ConnectorLogger,
   type DatasetPage,
@@ -60,9 +61,12 @@ import {
 import {
   apiKeyOf,
   insightsOf,
+  isRefused,
   organizationsPage,
+  canonicalProjectId,
   projectIdsOf,
   projectsPage,
+  resourceIdOf,
 } from "./reading.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -78,6 +82,22 @@ export const INCREMENTAL_LOOKBACK_DAYS = 2;
 export const MAX_REQUESTS_PER_PAGE = 5;
 /** No step starts after this much of a page has passed. */
 export const PAGE_TIME_BUDGET_MS = 20_000;
+/**
+ * Every request and wait of a page is over by this much after it started
+ * (#888, #901 item 1): a step begun just inside PAGE_TIME_BUDGET_MS whose
+ * request stalls still ends in time for the page to return its checkpoint
+ * before the host's 60-second deadline for the call.
+ */
+export const PAGE_DEADLINE_MS = 45_000;
+/**
+ * The longest rate-limit hold a checkpoint keeps: the host defers a
+ * rate-limited connection by at most a day (`rateLimitedRunAt` in
+ * apps/server/src/sync/engine.ts, which the connectors package may not
+ * import; apps/server's posthog-sync.test.ts pins the two together). A
+ * longer hold would refuse every retry the host makes before it (#888
+ * review).
+ */
+export const MAX_RATE_LIMIT_HOLD_MS = 24 * 60 * 60 * 1000;
 /** Rows and bytes per dataset page, well inside ADR 0026's limits. */
 const PAGE_ROWS = 500;
 const PAGE_BYTES = DATASET_LIMITS.pageBytes / 2;
@@ -171,6 +191,11 @@ interface RunState {
   /** The listing position; absent once every organization is listed. */
   listing?: Listing;
   orgs: string[];
+  /**
+   * An organization's projects were refused: a project the run did not
+   * list may be one of them, unread rather than left out (#888 item 1).
+   */
+  orgsSkipped?: boolean;
   /** [project id, name] of the selected projects, in reading order. */
   projects: Array<[string, string]>;
   index: number;
@@ -192,6 +217,12 @@ interface RunState {
    * final: the next page completes the refreshes.
    */
   finishing?: boolean;
+  /**
+   * A step met a rate limit whose reset is past the page's deadline: the
+   * page went out with what it read, and the next one hands the limit to
+   * the host before it sends anything (ms since the epoch, #901 item 1).
+   */
+  limitedUntil?: number;
 }
 
 const CURSOR_PREFIX = "posthog.v1:";
@@ -509,11 +540,11 @@ function isFatal(error: unknown): boolean {
   );
 }
 
-/** A project the key may not read (any more). */
-function isRefused(error: unknown): boolean {
-  return (
-    error instanceof PostHogApiError &&
-    (error.kind === "forbidden" || error.kind === "not_found")
+/** The rate limit a checkpoint holds, handed to the host. Fixed text. */
+function rateLimited(until: number): RateLimitedError {
+  return new RateLimitedError(
+    "PostHog's API rate limit or query budget is used up (429). netrics continues after the reset.",
+    new Date(until),
   );
 }
 
@@ -529,6 +560,14 @@ export async function syncPage(
 
   let state = decodeState(request.cursor, context.connectionId, scope);
   const projectIds = projectIdsOf(context).ids;
+  // Projects are compared by their canonical ID (01000 = 1000) and
+  // reported under the spelling the connection stores (#888 review).
+  const selected = request.resources
+    ? new Set(request.resources.map(canonicalProjectId))
+    : null;
+  const spellings = [...(request.resources ?? []), ...(projectIds ?? [])];
+  /** The resource ID of a project, by its canonical ID. */
+  const resourceOf = (canonical: string) => resourceIdOf(canonical, spellings);
   if (!state) {
     const at = now();
     const startMs = startOfUtcDay(Date.parse(request.from));
@@ -555,8 +594,9 @@ export async function syncPage(
         : {}),
       orgs: [],
       projects: (projectIds ?? [])
-        .filter((id) => !request.resources || request.resources.includes(id))
-        .map((id): [string, string] => [id, id]),
+        .map(canonicalProjectId)
+        .filter((id) => !selected || selected.has(id))
+        .map((id): [string, string] => [resourceOf(id), resourceOf(id)]),
       index: 0,
       done: [],
       denied: [],
@@ -571,8 +611,15 @@ export async function syncPage(
     };
   }
   const run = state;
+  // A pending rate limit holds the checkpoint until its reset.
+  if (run.limitedUntil !== undefined) {
+    if (pageStarted < run.limitedUntil) throw rateLimited(run.limitedUntil);
+    delete run.limitedUntil;
+  }
   const today = startOfUtcDay(run.at);
-  const selected = request.resources ? new Set(request.resources) : null;
+  /** The run's project of a canonical ID: its resource ID, or undefined. */
+  const runProject = (canonical: string) =>
+    run.projects.find(([id]) => canonicalProjectId(id) === canonical)?.[0];
 
   const out = {
     observations: [] as Observation[],
@@ -605,6 +652,7 @@ export async function syncPage(
       // listed: the run goes on with the next one instead of repeating
       // this step forever (#884 review 2). Its projects get no freshness.
       if (!isRefused(error)) throw error;
+      run.orgsSkipped = true;
       log?.warn("organization refused, skipped", {
         organization: run.orgs[listing.org]!,
         status: (error as PostHogApiError).status,
@@ -614,8 +662,8 @@ export async function syncPage(
     }
     for (const project of page.projects) {
       if (selected && !selected.has(project.id)) continue;
-      if (run.projects.some(([id]) => id === project.id)) continue;
-      run.projects.push([project.id, project.name]);
+      if (runProject(project.id) !== undefined) continue;
+      run.projects.push([resourceOf(project.id), project.name]);
     }
     if (page.next !== null) listing.offset = page.next;
     else advance();
@@ -629,6 +677,8 @@ export async function syncPage(
 
   async function projectStep() {
     const [projectId, projectName] = run.projects[run.index]!;
+    /** The project in PostHog's paths: its canonical ID. */
+    const path = canonicalProjectId(projectId);
     if (run.startMs > run.lastDay) {
       // A window of nothing but future days: nothing to read.
       run.done.push(projectId);
@@ -646,7 +696,7 @@ export async function syncPage(
     try {
       if (progress.part === "trends") {
         const values = trendValues(
-          await client.query(projectId, trendsBody(fromDay, toDay)),
+          await client.query(path, trendsBody(fromDay, toDay)),
           fromDay,
           toDay,
         );
@@ -664,7 +714,7 @@ export async function syncPage(
         return;
       }
       const rows = topEventRows(
-        await client.query(projectId, topEventsBody(fromDay, toDay)),
+        await client.query(path, topEventsBody(fromDay, toDay)),
       );
       const ranks = new Map<string, number>();
       for (const [day, event, events] of rows) {
@@ -750,15 +800,30 @@ export async function syncPage(
   }
 
   async function insightStep() {
-    const [projectId, shortId] = run.insights[run.insight]!;
-    if (!run.projects.some(([id]) => id === projectId)) {
-      outcome(projectId, shortId, null, "not_selected", null, 0, null);
+    const [canonical, shortId] = run.insights[run.insight]!;
+    const read = runProject(canonical);
+    const projectId = read ?? resourceOf(canonical);
+    if (read === undefined) {
+      // Left out by the selection, or not among the projects the key
+      // lists: "not_selected". A project of an organization whose projects
+      // were refused may be either: its insight is unread, and the stored
+      // results stay (#888 item 1, ADR 0026 §7).
+      const excluded = selected !== null && !selected.has(canonical);
+      outcome(
+        projectId,
+        shortId,
+        null,
+        !excluded && run.orgsSkipped ? "denied" : "not_selected",
+        null,
+        0,
+        null,
+      );
       return;
     }
     let answer;
     try {
       answer = insightsSchema.parse(
-        await client.get(`/api/projects/${projectId}/insights/`, {
+        await client.get(`/api/projects/${canonical}/insights/`, {
           short_id: shortId,
           refresh: "blocking",
           limit: 1,
@@ -838,6 +903,13 @@ export async function syncPage(
       // waits for a rate limit's reset). A later one ends the page with
       // what it read: the next page starts with the failed step.
       if (steps === 0 || isFatal(error)) throw error;
+      // A rate limit is the host's to wait for: the checkpoint carries it.
+      if (error instanceof RateLimitedError) {
+        const retryAt = Date.parse(error.retryAt);
+        if (Number.isFinite(retryAt)) {
+          run.limitedUntil = Math.min(retryAt, now() + MAX_RATE_LIMIT_HOLD_MS);
+        }
+      }
       log?.warn("step failed, the next page repeats it", {
         error: error instanceof Error ? error.name : "unknown",
       });
