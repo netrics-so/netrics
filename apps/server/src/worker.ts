@@ -396,6 +396,7 @@ export async function startWorker(config: Config): Promise<void> {
     oauthProviders,
     oauthTokens,
     customApiPrivateHosts: config.customApiPrivateHosts,
+    connectorPrivateHosts: config.connectorPrivateHosts,
   });
   const worker = createWorker({
     schedulerDb,
@@ -407,6 +408,7 @@ export async function startWorker(config: Config): Promise<void> {
       customApiImageQuota: config.customApiImageQuota,
       dataPolicy: config.dataPolicy,
       customApiPrivateHosts: config.customApiPrivateHosts,
+      connectorPrivateHosts: config.connectorPrivateHosts,
       oauthTokens,
       purgeConnection: (workspaceId, connectionId) =>
         connections.removeForPurge(workspaceId, connectionId),

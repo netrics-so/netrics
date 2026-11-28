@@ -226,6 +226,12 @@ export interface ConnectionServiceDeps {
    * custom-api connector may reach. Never given to bundled connectors.
    */
   customApiPrivateHosts?: readonly string[];
+  /**
+   * Self-host only (NETRICS_CONNECTOR_PRIVATE_HOSTS, #892): private hosts
+   * a bundled connector's configured hosts may resolve to. Never given to
+   * the custom-api or HTTP check connector.
+   */
+  connectorPrivateHosts?: readonly string[];
 }
 
 /** Who acts on which workspace (see routes/access.ts). */
@@ -398,6 +404,7 @@ export async function checkCredentials(
   options: {
     executeOptions?: ExecuteOptions;
     privateHosts?: readonly string[];
+    connectorPrivateHosts?: readonly string[];
   } = {},
 ): Promise<Result<true>> {
   if (!registered) {
@@ -411,6 +418,7 @@ export async function checkCredentials(
         credentials,
         config,
         privateHosts: options.privateHosts ?? [],
+        connectorPrivateHosts: options.connectorPrivateHosts ?? [],
       }),
     );
     return check.ok
@@ -761,10 +769,11 @@ function storedCustomAuthType(document: unknown): string | null {
 
 export function createConnectionService(deps: ConnectionServiceDeps) {
   const { db, registry, credentialKeyring, oauthProviders } = deps;
-  /** Execute options of connector checks: test egress, custom API private hosts. */
+  /** Execute options of connector checks: test egress, self-host private hosts. */
   const callOptions = {
     ...(deps.executeOptions ? { executeOptions: deps.executeOptions } : {}),
     privateHosts: deps.customApiPrivateHosts ?? [],
+    connectorPrivateHosts: deps.connectorPrivateHosts ?? [],
   };
   const signedKeys = deps.signedKeys ?? createSignedKeyProviders();
   const previews = deps.previews ?? PREVIEW_CONNECTORS;
@@ -821,6 +830,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
                 credentials: { ...credentials },
                 config,
                 privateHosts: callOptions.privateHosts,
+                connectorPrivateHosts: callOptions.connectorPrivateHosts,
               },
             ),
           ),
@@ -868,7 +878,12 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       callOptionsFor(
         registered,
         { ...deps.executeOptions, ...base },
-        { credentials, config, privateHosts: callOptions.privateHosts },
+        {
+          credentials,
+          config,
+          privateHosts: callOptions.privateHosts,
+          connectorPrivateHosts: callOptions.connectorPrivateHosts,
+        },
       );
     const oauthProvider = connectionOAuthProvider(
       registered,

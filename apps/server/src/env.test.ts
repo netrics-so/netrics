@@ -573,6 +573,43 @@ describe("custom API private hosts (#801)", () => {
   );
 });
 
+describe("connector private hosts (#892)", () => {
+  it("reads private hosts for configured-host connectors and defaults to none", () => {
+    // Unset, as on the hosted service: no private host for any connector.
+    expect(loadConfig({}).connectorPrivateHosts).toEqual([]);
+    expect(
+      loadConfig({ NETRICS_CONNECTOR_PRIVATE_HOSTS: "" }).connectorPrivateHosts,
+    ).toEqual([]);
+    const config = loadConfig({
+      NETRICS_CONNECTOR_PRIVATE_HOSTS:
+        " PostHog.Internal.Example,,10.20.0.0/16 ",
+    });
+    expect(config.connectorPrivateHosts).toEqual([
+      "posthog.internal.example",
+      "10.20.0.0/16",
+    ]);
+    // Separate from the custom API list, in both directions.
+    expect(config.customApiPrivateHosts).toEqual([]);
+    expect(
+      loadConfig({ NETRICS_CUSTOM_API_PRIVATE_HOSTS: "intranet.example" })
+        .connectorPrivateHosts,
+    ).toEqual([]);
+  });
+
+  it.each([
+    "*",
+    "0.0.0.0/0",
+    "https://posthog.internal",
+    "posthog.internal:8443",
+  ])("refuses the private host entry %s", (entry) => {
+    expect(() =>
+      loadConfig({ NETRICS_CONNECTOR_PRIVATE_HOSTS: entry }),
+    ).toThrow(
+      `NETRICS_CONNECTOR_PRIVATE_HOSTS: invalid private host entry: ${entry}`,
+    );
+  });
+});
+
 describe("custom API limits (#803)", () => {
   it("reads the custom API limits with defaults and refuses NETRICS_CUSTOM_API_MAX_STREAMS=21", () => {
     expect(loadConfig({}).customApi).toEqual({

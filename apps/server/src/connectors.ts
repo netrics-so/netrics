@@ -107,6 +107,8 @@ export function logRegisteredConnectors(
     previews?: ReadonlySet<string>;
     /** NETRICS_CUSTOM_API_PRIVATE_HOSTS; broad entries get a warning. */
     customApiPrivateHosts?: readonly string[];
+    /** NETRICS_CONNECTOR_PRIVATE_HOSTS; broad entries get a warning. */
+    connectorPrivateHosts?: readonly string[];
   } = {},
 ): void {
   const ignored = options.previewConnectorsIgnored ?? [];
@@ -122,6 +124,15 @@ export function logRegisteredConnectors(
     log.warn(
       { entries: broad },
       "NETRICS_CUSTOM_API_PRIVATE_HOSTS has broad entries; a listed name may resolve to any private address, loopback included (metadata stays refused). List exact hosts or ranges instead",
+    );
+  }
+  const broadConnector = broadPrivateHostEntries(
+    options.connectorPrivateHosts ?? [],
+  );
+  if (broadConnector.length > 0) {
+    log.warn(
+      { entries: broadConnector },
+      "NETRICS_CONNECTOR_PRIVATE_HOSTS has broad entries; a configured host under a listed name may resolve to any private address, loopback included (metadata stays refused). List exact hosts or ranges instead",
     );
   }
   log.info(

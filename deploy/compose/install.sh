@@ -159,6 +159,10 @@ NETRICS_SIGNUP=closed
 # Custom APIs on your own network (README): hosts they may reach, and a CA
 # certificate in ./certs to trust for them.
 # NETRICS_CUSTOM_API_PRIVATE_HOSTS=intranet.example
+
+# Connectors on your own network (README): hosts a connector's configured
+# host (a self-hosted PostHog) may resolve to.
+# NETRICS_CONNECTOR_PRIVATE_HOSTS=posthog.internal.example
 # NODE_EXTRA_CA_CERTS=/etc/netrics/certs/internal-ca.pem
 ENV
 chmod 600 .env

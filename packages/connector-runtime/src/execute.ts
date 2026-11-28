@@ -72,6 +72,15 @@ export interface ExecuteOptions {
    */
   redactValues?: readonly string[];
   /**
+   * Self-host only (NETRICS_CONNECTOR_PRIVATE_HOSTS, #892): private host
+   * entries (validated by parsePrivateHostEntries) this connection's
+   * configured hosts may resolve to. Applied to the hosts its configuration
+   * names under the manifest's `configuredHosts` only, never to the
+   * manifest's outboundDomains; a manifest without `configuredHosts` gets
+   * nothing from it. The server sets it for bundled connectors only.
+   */
+  connectorPrivateHosts?: readonly string[];
+  /**
    * Host-set egress policy (see EgressOptions). The server sets the custom
    * API values only for the custom-api connector, never for bundled
    * connectors; lookup, allowPrivateAddresses, allowInsecureHttp and tlsCa
@@ -195,8 +204,17 @@ async function withRuntime<T>(
   assertCallOptions(connector, options);
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const controller = new AbortController();
+  const configured = configuredHostsOf(connector.manifest, context.config);
   const egressFetch = createEgressFetch({
     ...options.egress,
+    ...(options.connectorPrivateHosts?.length && configured.length
+      ? {
+          scopedPrivateHosts: {
+            entries: options.connectorPrivateHosts,
+            hosts: configured,
+          },
+        }
+      : {}),
     // URLs a user entered (SDK 0.2.21, `<key>[].<item>` configuredHosts,
     // #874) follow redirects on their own host only, whatever the call
     // site passed (ADR 0027 §3).
@@ -206,10 +224,7 @@ async function withRuntime<T>(
     // The manifest's hosts, and the hosts this connection's configuration
     // names under the manifest's configuredHosts (SDK 0.2.20, #873): a
     // self-hosted provider, reachable by this connection only.
-    allowedDomains: [
-      ...connector.manifest.outboundDomains,
-      ...configuredHostsOf(connector.manifest, context.config),
-    ],
+    allowedDomains: [...connector.manifest.outboundDomains, ...configured],
     signal: controller.signal,
   });
   const onResponse = options.onResponse;

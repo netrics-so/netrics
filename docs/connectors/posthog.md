@@ -96,9 +96,31 @@ the host adds to that connection's egress allowlist (`configuredHosts`), and
 the PostHog connector names `host`. The key is bound to that host in its
 encrypted envelope, and the runtime refuses to use it with another one
 (see `docs/architecture.md`). The egress guard still refuses private,
-loopback and metadata addresses, so the instance must be reachable from the
-internet over https. A PostHog on a private network is not supported (the
-private-host allowance of self-hosted netrics applies to custom APIs only).
+loopback and metadata addresses, so on the hosted service the instance must
+be reachable from the internet over https.
+
+### A PostHog on your own network (self-hosted netrics)
+
+A self-hosted netrics can reach a PostHog on a private network once the
+operator lists it in `NETRICS_CONNECTOR_PRIVATE_HOSTS` (#892) and restarts
+the `api` and `worker`:
+
+```dotenv
+NETRICS_CONNECTOR_PRIVATE_HOSTS=posthog.internal.example
+```
+
+The entries read like `NETRICS_CUSTOM_API_PRIVATE_HOSTS` (host names,
+`*.corp.example`, IP addresses, CIDR ranges; no ports; see
+`deploy/compose/README.md`, "Connectors on your own network"). The
+allowance applies to a connection's configured **Host** only: PostHog
+Cloud's hosts and any host the connection does not name keep the
+private-address refusal, and the key stays bound to the host it was
+entered for, so listing another host never carries it there. Cloud
+metadata and link-local addresses stay refused even when listed. The
+connection still speaks https on port 443; a certificate from your own
+certificate authority needs `NODE_EXTRA_CA_CERTS`. Without the variable, as
+on the hosted service, a host that resolves to a private address is
+refused (`egress denied: … resolves to a non-public address`).
 
 ## What is collected
 

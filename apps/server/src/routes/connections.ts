@@ -74,6 +74,8 @@ export interface ConnectionRouteDeps {
   executeOptions?: ExecuteOptions;
   /** Self-host private hosts of the custom-api connector only. */
   customApiPrivateHosts?: readonly string[];
+  /** Self-host private hosts of bundled connectors' configured hosts. */
+  connectorPrivateHosts?: readonly string[];
 }
 
 const connectionParamsSchema = z.object({ connectionId: z.uuid() });

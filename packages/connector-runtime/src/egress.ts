@@ -407,6 +407,17 @@ export interface EgressOptions {
    * widens allowedDomains.
    */
   allowPrivateHosts?: readonly string[];
+  /**
+   * Self-host only (NETRICS_CONNECTOR_PRIVATE_HOSTS, #892): entries read as
+   * allowPrivateHosts, applied only to requests whose host is one of
+   * `hosts` (a connection's configured hosts, never a manifest's
+   * outboundDomains). Every other host keeps the private-address refusal.
+   * Never widens allowedDomains.
+   */
+  scopedPrivateHosts?: {
+    entries: readonly string[];
+    hosts: readonly string[];
+  };
   /** Tests only: resolve names differently and permit private addresses. */
   lookup?: LookupFunction;
   allowPrivateAddresses?: boolean;
@@ -448,6 +459,8 @@ type LookupEntry = { address: string; family: number };
 export function createEgressFetch(options: EgressOptions) {
   const baseLookup: LookupFunction = options.lookup ?? dnsLookup;
   const policy = privateHostPolicy(options.allowPrivateHosts ?? []);
+  const scoped = options.scopedPrivateHosts;
+  const scopedPolicy = privateHostPolicy(scoped?.entries ?? []);
   const pinDns = options.pinDns ?? true;
   const pins = new Map<string, LookupEntry[]>();
 
@@ -459,6 +472,13 @@ export function createEgressFetch(options: EgressOptions) {
     if (isMetadataAddress(address)) return "metadata";
     if (!isBlockedAddress(address)) return null;
     if (options.allowPrivateAddresses || policy.allows(host, address)) {
+      return null;
+    }
+    if (
+      scoped &&
+      hostAllowed(host, scoped.hosts) &&
+      scopedPolicy.allows(host, address)
+    ) {
       return null;
     }
     return "private";

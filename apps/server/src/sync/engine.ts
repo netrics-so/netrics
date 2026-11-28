@@ -156,6 +156,12 @@ export interface SyncEngineDeps {
    * custom-api connector may reach. Never given to bundled connectors.
    */
   customApiPrivateHosts?: readonly string[];
+  /**
+   * Self-host only (NETRICS_CONNECTOR_PRIVATE_HOSTS, #892): private hosts
+   * a bundled connector's configured hosts may resolve to. Never given to
+   * the custom-api or HTTP check connector.
+   */
+  connectorPrivateHosts?: readonly string[];
   /** The workspace image quota icons count against (#226). */
   imageQuota?: ImageQuota;
   /** The workspace quota of custom API item images (#809). */
@@ -1032,6 +1038,7 @@ async function runSync(
       credentials,
       config: connection.config,
       privateHosts: deps.customApiPrivateHosts ?? [],
+      connectorPrivateHosts: deps.connectorPrivateHosts ?? [],
     },
   );
   /**

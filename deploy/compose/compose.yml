@@ -82,6 +82,11 @@ services:
       # network (README, "Custom APIs on your own network"); unset: none.
       # Set the same on the worker.
       NETRICS_CUSTOM_API_PRIVATE_HOSTS: ${NETRICS_CUSTOM_API_PRIVATE_HOSTS:-}
+      # Self-hosting only: hosts or ranges a connector's configured host (a
+      # self-hosted PostHog) may resolve to on your own network (README,
+      # "Connectors on your own network"); unset: none. Set the same on the
+      # worker.
+      NETRICS_CONNECTOR_PRIVATE_HOSTS: ${NETRICS_CONNECTOR_PRIVATE_HOSTS:-}
       # Self-hosting only: a PEM file in ./certs with extra certificate
       # authorities to trust, e.g. your network's own CA (README, "Custom APIs
       # on your own network"); unset: the public ones only. Set the same on
@@ -123,6 +128,8 @@ services:
       NETRICS_PREVIEW_CONNECTORS: ${NETRICS_PREVIEW_CONNECTORS:-}
       # The worker runs custom API syncs, so it reads the same private hosts.
       NETRICS_CUSTOM_API_PRIVATE_HOSTS: ${NETRICS_CUSTOM_API_PRIVATE_HOSTS:-}
+      # ... the same connector private hosts (it syncs PostHog)
+      NETRICS_CONNECTOR_PRIVATE_HOSTS: ${NETRICS_CONNECTOR_PRIVATE_HOSTS:-}
       # ... and trusts the same extra certificate authorities.
       NODE_EXTRA_CA_CERTS: ${NODE_EXTRA_CA_CERTS:-}
       # The worker copies custom API item images after a sync, within their

@@ -1,10 +1,20 @@
+import { createServer } from "node:http";
+import type { AddressInfo, LookupFunction } from "node:net";
+
 import {
   ConnectorRegistry,
   ContractViolationError,
+  CredentialHostMismatchError,
   executeCheck,
 } from "@netrics/connector-runtime";
+import { CREDENTIAL_HOSTS_KEY, type Connector } from "@netrics/connector-sdk";
 import { CUSTOM_API_LIMITS } from "@netrics/connector-sdk/custom-api";
-import { createDemoConnector } from "@netrics/connectors";
+import {
+  createDemoConnector,
+  createHttpCheckConnector,
+  createPostHogConnector,
+  posthogManifest,
+} from "@netrics/connectors";
 import type { ConnectionCustomApi } from "@netrics/database";
 import { describe, expect, it } from "vitest";
 
@@ -13,6 +23,8 @@ import { customApiFixture } from "./test-helpers.js";
 
 const registry = new ConnectorRegistry();
 registry.register(createDemoConnector());
+registry.register(createPostHogConnector());
+registry.register(createHttpCheckConnector());
 
 function conn(pin: Partial<ConnectionCustomApi> = {}): {
   row: { connectorId: string };
@@ -149,6 +161,155 @@ describe("custom API call options", () => {
     expect(bundled.egress?.redirects).toBeUndefined();
     expect(bundled.redactValues).toBeUndefined();
     expect(bundled.timeoutMs).toBe(5);
+  });
+
+  it("gives the connector private hosts to configured-host bundled connectors only (#892)", () => {
+    const bundled = (connectorId: string) =>
+      connectorFor(registry, { row: { connectorId }, customApi: null })!;
+    const input = {
+      credentials: {},
+      privateHosts: ["intranet.example"],
+      connectorPrivateHosts: ["posthog.internal.example", "10.20.0.0/16"],
+    };
+    // A base that carries them (a caller's spread) never decides it.
+    const base = {
+      timeoutMs: 5,
+      connectorPrivateHosts: ["10.0.0.0/8"],
+      egress: { allowPrivateHosts: ["10.0.0.1"] },
+    };
+
+    const posthog = callOptionsFor(bundled("posthog"), base, input);
+    expect(posthog.connectorPrivateHosts).toEqual([
+      "posthog.internal.example",
+      "10.20.0.0/16",
+    ]);
+    // Never the custom API private hosts, nor unscoped ones.
+    expect(posthog.egress?.allowPrivateHosts).toBeUndefined();
+    expect(
+      callOptionsFor(bundled("posthog"), base, {
+        credentials: {},
+        privateHosts: [],
+      }).connectorPrivateHosts,
+    ).toBeUndefined();
+
+    // No configuredHosts, the HTTP check and the custom API: none.
+    expect(
+      callOptionsFor(bundled("demo"), base, input).connectorPrivateHosts,
+    ).toBeUndefined();
+    const check = callOptionsFor(bundled("http-check"), base, input);
+    expect(check.connectorPrivateHosts).toBeUndefined();
+    expect(check.egress?.allowPrivateHosts).toEqual([
+      "10.0.0.1",
+      "intranet.example",
+    ]);
+    const custom = callOptionsFor(
+      connectorFor(registry, conn({ versionId: "v5" }))!,
+      base,
+      {
+        ...input,
+        credentials: { host: "api.example.com", token: "tok-123456" },
+      },
+    );
+    expect(custom.connectorPrivateHosts).toBeUndefined();
+  });
+
+  it("lets a self-hosted PostHog on a listed private host through, and nothing else (#892)", async () => {
+    const requests: string[] = [];
+    const server = createServer((request, response) => {
+      requests.push(String(request.headers.host));
+      response.setHeader("connection", "close");
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end("{}");
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    const { port } = server.address() as AddressInfo;
+    // Every name resolves to this machine: a private address.
+    const lookup: LookupFunction = (_hostname, options, callback) => {
+      const entry = { address: "127.0.0.1", family: 4 };
+      if (options.all)
+        (callback as unknown as (e: null, a: (typeof entry)[]) => void)(null, [
+          entry,
+        ]);
+      else callback(null, entry.address, entry.family);
+    };
+    // The PostHog manifest, reaching its configured host (or another name
+    // the config names as `target`) over the fixture's plain http.
+    const posthog: Connector = {
+      ...createPostHogConnector(),
+      manifest: posthogManifest,
+      check: async (context, runtime) => {
+        const target = String(context.config.target ?? context.config.host);
+        await runtime.fetch(`http://${target}:${port}/api/projects/`);
+        return { ok: true };
+      },
+    };
+    const local = new ConnectorRegistry();
+    local.register(posthog);
+    const resolved = connectorFor(local, {
+      row: { connectorId: "posthog" },
+      customApi: null,
+    })!;
+    const credentials = {
+      personal_api_key: "phx_private_host_test_key",
+      [CREDENTIAL_HOSTS_KEY]: ["posthog.internal.example"],
+    };
+    const check = (
+      config: Record<string, unknown>,
+      connectorPrivateHosts: readonly string[] | undefined,
+    ) =>
+      executeCheck(
+        posthog,
+        { connectionId: "c1", config, credentials },
+        callOptionsFor(
+          resolved,
+          { egress: { lookup, allowInsecureHttp: true } },
+          {
+            credentials,
+            config,
+            privateHosts: ["posthog.internal.example"],
+            ...(connectorPrivateHosts ? { connectorPrivateHosts } : {}),
+          },
+        ),
+      );
+    const self = { host: "posthog.internal.example" };
+    try {
+      // Unset (the hosted service): refused; the custom API list is not it.
+      await expect(check(self, undefined)).rejects.toThrow(
+        /non-public address/,
+      );
+      await expect(check(self, [])).rejects.toThrow(/non-public address/);
+      // Listed by the operator: reached.
+      await expect(check(self, ["posthog.internal.example"])).resolves.toEqual({
+        ok: true,
+      });
+      await expect(check(self, ["127.0.0.0/8"])).resolves.toEqual({
+        ok: true,
+      });
+      // Not listed: refused.
+      await expect(check(self, ["intranet.example"])).rejects.toThrow(
+        /non-public address/,
+      );
+      // PostHog Cloud's own hosts never get the allowance.
+      await expect(
+        check({ ...self, target: "us.posthog.com" }, ["127.0.0.0/8"]),
+      ).rejects.toThrow(/us\.posthog\.com resolves to a non-public address/);
+      // Listing another host never carries the key there.
+      await expect(
+        check({ host: "posthog.other.example" }, [
+          "posthog.internal.example",
+          "posthog.other.example",
+        ]),
+      ).rejects.toBeInstanceOf(CredentialHostMismatchError);
+      expect(requests).toEqual([
+        `posthog.internal.example:${port}`,
+        `posthog.internal.example:${port}`,
+      ]);
+    } finally {
+      server.closeAllConnections();
+      server.close();
+    }
   });
 
   it("redacts a POST stream's rendered body like rendered headers (ADR 0030 §4)", async () => {

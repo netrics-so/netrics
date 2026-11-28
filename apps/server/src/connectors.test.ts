@@ -177,6 +177,26 @@ describe("createDefaultRegistry", () => {
     expect(warnings[0]![1]).toMatch(/NETRICS_CUSTOM_API_PRIVATE_HOSTS/);
   });
 
+  it("warns about broad NETRICS_CONNECTOR_PRIVATE_HOSTS entries (#892)", () => {
+    const warnings: Array<[object, string]> = [];
+    const log = {
+      info: () => {},
+      warn: (details: object, message: string) =>
+        warnings.push([details, message]),
+    };
+    const registry = createDefaultRegistry({ nodeEnv: "production" });
+    logRegisteredConnectors(log, registry, {
+      connectorPrivateHosts: ["posthog.internal.example", "10.20.0.0/16"],
+    });
+    expect(warnings).toEqual([]);
+    logRegisteredConnectors(log, registry, {
+      connectorPrivateHosts: ["*.local", "posthog.internal.example"],
+    });
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]![0]).toEqual({ entries: ["*.local"] });
+    expect(warnings[0]![1]).toMatch(/NETRICS_CONNECTOR_PRIVATE_HOSTS/);
+  });
+
   it("builds the same bundle from the API and the migration config (#378)", () => {
     const env = {
       NODE_ENV: "production",
