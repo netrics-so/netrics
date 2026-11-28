@@ -34,6 +34,7 @@ import { z } from "zod";
 import {
   EgressDeniedError,
   createEgressFetch,
+  hostAllowed,
   type EgressOptions,
 } from "./egress.js";
 import { createConnectorLogger, type ConnectorLogSink } from "./log.js";
@@ -205,13 +206,19 @@ async function withRuntime<T>(
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const controller = new AbortController();
   const configured = configuredHostsOf(connector.manifest, context.config);
+  // A configured host that is one of the manifest's own domains (a schema
+  // default such as PostHog Cloud's host) is the provider's, never a
+  // self-hosted one: it never gets the private allowance (#892 review).
+  const selfHosted = configured.filter(
+    (host) => !hostAllowed(host, connector.manifest.outboundDomains),
+  );
   const egressFetch = createEgressFetch({
     ...options.egress,
-    ...(options.connectorPrivateHosts?.length && configured.length
+    ...(options.connectorPrivateHosts?.length && selfHosted.length
       ? {
           scopedPrivateHosts: {
             entries: options.connectorPrivateHosts,
-            hosts: configured,
+            hosts: selfHosted,
           },
         }
       : {}),

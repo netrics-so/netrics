@@ -197,23 +197,30 @@ export function isMetadataAddress(address: string): boolean {
   );
 }
 
+/** The fixed text of an invalid entry, by its position; never its value. */
+export function privateHostEntryError(position: number): string {
+  return `invalid private host entry ${position}: expected a host name, "*." and a domain, an IP address or a CIDR range (at least /8 for IPv4, /16 for IPv6), without scheme, port or path`;
+}
+
 const HOST_PATTERN =
   /^(\*\.)?[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/;
 
 /**
  * Validates self-host private-host entries: host patterns as hostAllowed
  * reads them ("intranet.example", "*.corp.example"), IP addresses, or CIDR
- * ranges ("10.20.0.0/16", "fd12::/48"). Throws Error("invalid private host
- * entry: <entry>") for "*", "0.0.0.0/0", "::/0", prefixes shorter than /8
- * (IPv4) or /16 (IPv6), and anything else malformed. Trims, lowercases,
- * drops empty entries.
+ * ranges ("10.20.0.0/16", "fd12::/48"). Throws privateHostEntryError
+ * with the entry's position (1-based, as listed) for "*", "0.0.0.0/0",
+ * "::/0", prefixes shorter than /8 (IPv4) or /16 (IPv6), and anything else
+ * malformed. The message never repeats the entry: a pasted URL may carry
+ * credentials, and the message reaches startup errors and logs. Trims,
+ * lowercases, drops empty entries.
  */
 export function parsePrivateHostEntries(entries: readonly string[]): string[] {
   const result: string[] = [];
-  for (const raw of entries) {
+  for (const [index, raw] of entries.entries()) {
     const entry = raw.trim().toLowerCase();
     if (!entry) continue;
-    const invalid = () => new Error(`invalid private host entry: ${entry}`);
+    const invalid = () => new Error(privateHostEntryError(index + 1));
     const range = /^([^/]+)\/(\d{1,3})$/.exec(entry);
     if (range) {
       const family = isIP(range[1]!);

@@ -1526,6 +1526,46 @@ describe("host egress policy (#801)", () => {
       });
     });
 
+    it("never gives the allowance to a manifest domain named as the configured host (#892 review)", async () => {
+      await withProvider(async (port) => {
+        // The configured host defaults to the provider's own (cloud) host.
+        const cloudDefault: Connector = {
+          ...selfHostedOn(port),
+          manifest: {
+            ...selfHostedOn(port).manifest,
+            configSchema: {
+              type: "object",
+              properties: {
+                host: { type: "string", default: "api.fixture.test" },
+              },
+            },
+          },
+        };
+        for (const context of [
+          // No host entered: the default applies.
+          { ...baseContext, config: { target: "api.fixture.test" } },
+          at("api.fixture.test"),
+          at("API.fixture.test"),
+        ]) {
+          await expect(
+            executeCheck(cloudDefault, context, {
+              egress,
+              connectorPrivateHosts: ["127.0.0.0/8", "api.fixture.test"],
+            }),
+          ).rejects.toThrow(
+            /api\.fixture\.test resolves to a non-public address/i,
+          );
+        }
+        // A self-hosted host on the same connector still gets it.
+        await expect(
+          executeCheck(cloudDefault, at("posthog.fixture.test"), {
+            egress,
+            connectorPrivateHosts: ["127.0.0.0/8"],
+          }),
+        ).resolves.toEqual({ ok: true });
+      });
+    });
+
     it("never sends credentials to a host they were not entered for", async () => {
       await withProvider(async (port) => {
         const seen: string[] = [];

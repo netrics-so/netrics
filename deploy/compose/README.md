@@ -255,10 +255,15 @@ reason `egress_refused` until then.
 Some connectors reach a host you enter in the connection: a self-hosted
 PostHog (preview) is one. Such a host is refused like any other when it
 resolves to a private address. To let these connectors reach services on
-your own network, list them in `.env` and restart the `api` and `worker`:
+your own network, list them in `.env` and recreate the `api` and `worker`
+(`docker compose restart` keeps the old environment):
 
 ```dotenv
 NETRICS_CONNECTOR_PRIVATE_HOSTS=posthog.internal.example
+```
+
+```sh
+docker compose up -d api worker
 ```
 
 Entries are the same as for `NETRICS_CUSTOM_API_PRIVATE_HOSTS` above (host

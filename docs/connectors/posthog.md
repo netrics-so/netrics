@@ -102,11 +102,16 @@ be reachable from the internet over https.
 ### A PostHog on your own network (self-hosted netrics)
 
 A self-hosted netrics can reach a PostHog on a private network once the
-operator lists it in `NETRICS_CONNECTOR_PRIVATE_HOSTS` (#892) and restarts
-the `api` and `worker`:
+operator lists it in `NETRICS_CONNECTOR_PRIVATE_HOSTS` (#892) in `.env` and
+recreates the `api` and `worker` (`docker compose restart` keeps the old
+environment):
 
 ```dotenv
 NETRICS_CONNECTOR_PRIVATE_HOSTS=posthog.internal.example
+```
+
+```sh
+docker compose up -d api worker
 ```
 
 The entries read like `NETRICS_CUSTOM_API_PRIVATE_HOSTS` (host names,

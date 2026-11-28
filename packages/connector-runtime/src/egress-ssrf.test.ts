@@ -26,6 +26,7 @@ import {
   isMetadataAddress,
   broadPrivateHostEntries,
   parsePrivateHostEntries,
+  privateHostEntryError,
   privateHostPolicy,
   type EgressOptions,
 } from "./egress.js";
@@ -188,9 +189,21 @@ describe("private host entries", () => {
     "intranet.example:8080",
   ])("refuses %s", (entry) =>
     expect(() => parsePrivateHostEntries([entry])).toThrow(
-      /invalid private host entry/,
+      /^invalid private host entry 1: expected /,
     ),
   );
+  it("names the position of a refused entry, never its value (#892 review)", () => {
+    const pasted = "https://user:hunter2-secret@intranet.example/";
+    let message = "";
+    try {
+      parsePrivateHostEntries(["intranet.example", "", pasted]);
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toBe(privateHostEntryError(3));
+    expect(message).not.toContain("hunter2");
+    expect(message).not.toContain("intranet");
+  });
   it("never allows metadata, even for a listed host or range", () => {
     const policy = privateHostPolicy(["intranet.example", "169.254.0.0/16"]);
     expect(policy.allows("intranet.example", "10.1.2.3")).toBe(true);

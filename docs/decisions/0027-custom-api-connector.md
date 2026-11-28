@@ -94,8 +94,10 @@ with the same entries and checks. `callOptionsFor` passes it as
 `connectorPrivateHosts` to those connectors only (never to `custom-api` or
 `http-check`, never from a caller's base options), and the runtime applies
 it only to the hosts the connection's configuration names, never to the
-manifest's `outboundDomains`. The address check still runs on every
-resolved address (metadata never, DNS pinning unchanged), and §2 holds:
+manifest's `outboundDomains`, even when the configuration names one (a
+schema default such as PostHog Cloud's host). An invalid entry is reported
+by variable and position, never by value. The address check still runs on
+every resolved address (metadata never, DNS pinning unchanged), and §2 holds:
 credentials stay bound to their configured host, so a listed host never
 receives credentials entered for another. The hosted service never sets it.
 

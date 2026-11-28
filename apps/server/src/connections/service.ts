@@ -2530,9 +2530,21 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           body.credentials ?? {},
         ),
       };
+      // The same egress as every other call of this connector: test
+      // egress, and a configured host's self-host private hosts (#892).
+      const options = callOptionsFor(
+        { ...registered, customApi: null },
+        deps.executeOptions ?? {},
+        {
+          credentials: context.credentials,
+          config: context.config,
+          privateHosts: callOptions.privateHosts,
+          connectorPrivateHosts: callOptions.connectorPrivateHosts,
+        },
+      );
       let check;
       try {
-        check = await executeCheck(registered.connector, context);
+        check = await executeCheck(registered.connector, context, options);
       } catch (error) {
         rethrowWorkspaceGone(error);
         return fail(400, safeMessage(error));
@@ -2541,7 +2553,11 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         return ok({ check, resources: [] });
       }
       try {
-        const resources = await executeDiscover(registered.connector, context);
+        const resources = await executeDiscover(
+          registered.connector,
+          context,
+          options,
+        );
         return ok({ check, resources });
       } catch (error) {
         rethrowWorkspaceGone(error);
