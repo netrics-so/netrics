@@ -26,6 +26,7 @@ import {
 } from "@/lib/api";
 import {
   coerceConfigValues,
+  explicitEmptyKeys,
   initialConfigValues,
   parseConfigSchema,
   type ConfigField,
@@ -71,10 +72,16 @@ export function editConnectionRequest(input: {
   configValues: Record<string, string>;
   token: string;
   fixedConfig: boolean;
+  /** Picked fields sent empty when cleared (#937). */
+  explicitEmpty?: ReadonlySet<string>;
 }): UpdateConnectionRequest {
   const { connection } = input;
   const customApi = connection.customApi != null;
-  const config = coerceConfigValues(input.fields, input.configValues);
+  const config = coerceConfigValues(
+    input.fields,
+    input.configValues,
+    input.explicitEmpty,
+  );
   const configChanged = input.fields.some(
     (field) => config[field.key] !== connection.config[field.key],
   );
@@ -137,6 +144,11 @@ export function EditConnectionForm({
       ),
     [fields, pickedFields],
   );
+  // A cleared picker is sent empty, not left out (#937).
+  const explicitEmpty = useMemo(
+    () => explicitEmptyKeys(pickedFields.map((picked) => picked.field)),
+    [pickedFields],
+  );
   const [name, setName] = useState(connection.name);
   const [configValues, setConfigValues] = useState<Record<string, string>>(() =>
     initialConfigValues(fields, connection.config),
@@ -184,6 +196,7 @@ export function EditConnectionForm({
           configValues,
           token,
           fixedConfig,
+          explicitEmpty,
         }),
       );
       if (token !== "") setCredentialRevision((current) => current + 1);
@@ -253,7 +266,13 @@ export function EditConnectionForm({
                 const preview = await previewStoredConnection(
                   workspaceId,
                   connection.id,
-                  { config: coerceConfigValues(fields, configValues) },
+                  {
+                    config: coerceConfigValues(
+                      fields,
+                      configValues,
+                      explicitEmpty,
+                    ),
+                  },
                 );
                 if (!preview.check.ok) {
                   throw new Error(
@@ -279,7 +298,11 @@ export function EditConnectionForm({
               }
               load={(resourceId) =>
                 listStoredConfigOptions(workspaceId, connection.id, {
-                  config: coerceConfigValues(fields, configValues),
+                  config: coerceConfigValues(
+                    fields,
+                    configValues,
+                    explicitEmpty,
+                  ),
                   key: field.key,
                   resourceId,
                 })

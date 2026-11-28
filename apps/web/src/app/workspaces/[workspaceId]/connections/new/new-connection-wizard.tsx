@@ -32,6 +32,7 @@ import {
 } from "@/lib/api";
 import {
   coerceConfigValues,
+  explicitEmptyKeys,
   initialConfigValues,
   parseConfigSchema,
 } from "@/lib/config-schema";
@@ -136,6 +137,11 @@ export function NewConnectionWizard({
       }),
     [connector, fields],
   );
+  // A cleared picker is sent empty, not left out (#937).
+  const explicitEmpty = useMemo(
+    () => explicitEmptyKeys(pickedFields.map((picked) => picked.field)),
+    [pickedFields],
+  );
   const typedFields = useMemo(
     () =>
       fields.filter(
@@ -204,7 +210,7 @@ export function NewConnectionWizard({
   }
 
   function buildPayload() {
-    const config = coerceConfigValues(fields, configValues);
+    const config = coerceConfigValues(fields, configValues, explicitEmpty);
     if (keyStrategy) {
       return {
         config,
@@ -543,6 +549,13 @@ export function NewConnectionWizard({
                   disabled={pending !== null}
                   // An unticked project is not connected: its choices go.
                   dropOutsideResources
+                  leftOutResources={preview.resources
+                    .filter(
+                      (resource) =>
+                        selectedResources !== null &&
+                        !selectedResources.has(resource.id),
+                    )
+                    .map((resource) => resource.id)}
                   initialPicked={pickedOwners[field.key] ?? null}
                   onPickedChange={(next) =>
                     setPickedOwners((current) => ({
@@ -561,7 +574,11 @@ export function NewConnectionWizard({
                     listConfigOptions(workspaceId, {
                       connectorId: connector!.id,
                       // Pickers take a token (no signed key has one).
-                      config: coerceConfigValues(fields, configValues),
+                      config: coerceConfigValues(
+                        fields,
+                        configValues,
+                        explicitEmpty,
+                      ),
                       ...(wantsToken && token !== ""
                         ? { credentials: { token } }
                         : {}),

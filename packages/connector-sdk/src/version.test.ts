@@ -168,6 +168,30 @@ describe("assertManifestCompatible", () => {
     ).toHaveLength(1);
   });
 
+  it("reads an empty enum as no enum for a picked field's default, as the host does (#937)", () => {
+    // validateConnectionConfig only checks a nonempty enum, so a default
+    // under `enum: []` is one the host accepts.
+    const withRequired = (reports: Record<string, unknown>) => ({
+      ...validManifest(),
+      configSchema: {
+        type: "object",
+        properties: { reports },
+        required: ["reports"],
+      },
+      configOptions: [{ key: "reports", per: "resource", maxSelected: 5 }],
+    });
+    expect(
+      assertManifestCompatible(
+        withRequired({ type: "string", default: "r1/a", enum: [] }),
+      ).configOptions,
+    ).toHaveLength(1);
+    expect(() =>
+      assertManifestCompatible(
+        withRequired({ type: "string", default: "r1/a", enum: ["r1/b"] }),
+      ),
+    ).toThrow(/required property without a valid default/);
+  });
+
   it("accepts configuredHosts that name config properties only (0.2.20)", () => {
     const withHosts = (configuredHosts: string[]) => ({
       ...validManifest(),

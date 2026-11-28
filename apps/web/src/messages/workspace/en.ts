@@ -702,6 +702,7 @@ export const workspaceEn = {
       removeShort: "Remove",
       clearAll: "Clear all",
       otherResource: "(not in the lists below)",
+      keepsOne: "At least one must stay chosen.",
     },
     oauthButton: {
       otherAccount: "Use a different {name} account",

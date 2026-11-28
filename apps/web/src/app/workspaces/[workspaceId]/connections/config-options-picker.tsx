@@ -5,7 +5,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { ConnectionConfigOptionsResponse } from "@netrics/contracts";
 
 import { apiErrorMessage } from "@/lib/api";
-import type { ConfigField } from "@/lib/config-schema";
+import { pickedEmptying, type ConfigField } from "@/lib/config-schema";
 import { useLocale, useT } from "@/lib/i18n/client";
 
 /** A resource whose choices can be listed: discovery's ID and a name. */
@@ -60,15 +60,47 @@ export function rawChoices(value: string): string[] {
 }
 
 /**
- * `picked` without the choices of resources outside `keep` (a project
- * unticked in the setup, #891 review). The same map when none is dropped.
+ * `picked` without the choices of resources left out of the setup (#891
+ * review): always those of `leftOut` (projects the user unticked), and
+ * those of any other resource outside `resources` only once the owners are
+ * `confirmed` by a listing. Owners restored from an earlier check may
+ * spell a resource as it was named then (`01000`, now `1000`), and such a
+ * choice is not dropped for its spelling (#937). The same map when none is
+ * dropped.
  */
 export function withinResources(
   picked: Picked,
-  keep: ReadonlySet<string>,
+  resources: ReadonlySet<string>,
+  leftOut: ReadonlySet<string> = new Set(),
+  confirmed = true,
 ): Picked {
-  const next = new Map([...picked].filter(([, owner]) => keep.has(owner)));
+  const next = new Map(
+    [...picked].filter(
+      ([, owner]) =>
+        !leftOut.has(owner) && (!confirmed || resources.has(owner)),
+    ),
+  );
   return next.size === picked.size ? picked : next;
+}
+
+/**
+ * `picked` with each choice's resource as a listing's `selected` names it
+ * now (#937): the connector knows which resource a choice belongs to under
+ * the current settings. Choices it does not name keep theirs, and none is
+ * added or removed. The same map when nothing changed.
+ */
+export function reconcileOwners(
+  picked: Picked,
+  selected: ReadonlyArray<{ value: string; resourceId: string }>,
+): Picked {
+  let next: Map<string, string> | null = null;
+  for (const entry of selected) {
+    const owner = picked.get(entry.value);
+    if (owner === undefined || owner === entry.resourceId) continue;
+    next ??= new Map(picked);
+    next.set(entry.value, entry.resourceId);
+  }
+  return next ?? picked;
 }
 
 interface ConfigOptionsPickerProps {
@@ -90,6 +122,11 @@ interface ConfigOptionsPickerProps {
    * where unticking a project leaves it out of the connection).
    */
   dropOutsideResources?: boolean;
+  /**
+   * With `dropOutsideResources`: the resources the user left out (unticked
+   * projects), whose choices go even before a listing confirmed them.
+   */
+  leftOutResources?: readonly string[];
   /**
    * What the lists depend on besides the field (host, IDs, credentials):
    * when it changes, the listed resources and choices are listed afresh.
@@ -123,6 +160,7 @@ export function ConfigOptionsPicker({
   load,
   disabled,
   dropOutsideResources = false,
+  leftOutResources = [],
   discoveryKey = "",
   initialPicked = null,
   onPickedChange,
@@ -140,17 +178,27 @@ export function ConfigOptionsPicker({
     | { status: "error"; message: string }
   >({ status: "idle" });
   const resources = givenResources ?? loadedResources;
-  const [picked, setPicked] = useState<Picked | null>(() =>
+  const restored =
     initialPicked && pickedValue(initialPicked) === value
       ? initialPicked
-      : null,
-  );
+      : null;
+  const [picked, setPicked] = useState<Picked | null>(restored);
+  // Whether the choices' resources are as the connector names them under
+  // the current settings: not yet for choices restored from an earlier
+  // check, until a listing reconciles them (#937).
+  const [ownersConfirmed, setOwnersConfirmed] = useState(restored === null);
   // Read by requests when they answer: the value and choices then, and
   // the discovery revision they were sent under (#891 review).
   const valueNow = useRef(value);
   valueNow.current = value;
   const pickedNow = useRef(picked);
   pickedNow.current = picked;
+  // The current loaders: a request sent again (below) lists with the
+  // settings of now, not of the render that first sent it (#937).
+  const loadNow = useRef(load);
+  loadNow.current = load;
+  const loadResourcesNow = useRef(loadResources);
+  loadResourcesNow.current = loadResources;
   const revision = useRef(0);
   useEffect(() => {
     onPickedChange?.(picked);
@@ -188,7 +236,7 @@ export function ConfigOptionsPicker({
       new Map(current).set(resourceId, { status: "loading" }),
     );
     try {
-      const result = await load(resourceId);
+      const result = await loadNow.current(resourceId);
       // Inputs changed since: this answer is for other settings.
       if (revision.current !== sent) return;
       // The field changed while the first list loaded (a choice removed
@@ -211,14 +259,16 @@ export function ConfigOptionsPicker({
         }
         return next;
       });
-      // The first listing reads what the field chooses now.
-      setPicked(
-        (current) =>
-          current ??
-          new Map(
-            result.selected.map((entry) => [entry.value, entry.resourceId]),
-          ),
+      // The first listing reads what the field chooses now; a later one
+      // names the resources of the choices made (#937).
+      setPicked((current) =>
+        current
+          ? reconcileOwners(current, result.selected)
+          : new Map(
+              result.selected.map((entry) => [entry.value, entry.resourceId]),
+            ),
       );
+      setOwnersConfirmed(true);
     } catch (cause) {
       if (revision.current !== sent) return;
       setListings((current) =>
@@ -262,6 +312,7 @@ export function ConfigOptionsPicker({
     if (discovered.current === discoveryKey) return;
     discovered.current = discoveryKey;
     revision.current += 1;
+    setOwnersConfirmed(false);
     setListings(new Map());
     setOpen(new Set());
     setLoadedResources(null);
@@ -270,21 +321,25 @@ export function ConfigOptionsPicker({
 
   // A resource left out of the setup takes its choices with it.
   const resourceIds = resources?.map((resource) => resource.id).join("\n");
+  const leftOutIds = leftOutResources.join("\n");
   useEffect(() => {
     if (!dropOutsideResources || !resources || !picked) return;
     const next = withinResources(
       picked,
       new Set(resources.map((resource) => resource.id)),
+      new Set(leftOutResources),
+      ownersConfirmed,
     );
     if (next !== picked) choose(next);
-  }, [resourceIds, picked, dropOutsideResources]);
+  }, [resourceIds, leftOutIds, picked, ownersConfirmed, dropOutsideResources]);
 
   async function onLoadResources() {
-    if (!loadResources) return;
+    const loader = loadResourcesNow.current;
+    if (!loader) return;
     const sent = revision.current;
     setResourcesState({ status: "loading" });
     try {
-      const loaded = await loadResources();
+      const loaded = await loader();
       if (revision.current !== sent) return;
       setLoadedResources(loaded);
       setResourcesState({ status: "idle" });
@@ -324,6 +379,10 @@ export function ConfigOptionsPicker({
     }
   }
   const full = picked !== null && picked.size >= maxSelected;
+  // A field whose schema refuses it empty, with a default that leaving it
+  // out would choose again, keeps its last choice (#937).
+  const keepsOne = pickedEmptying(field) === "keepOne";
+  const lastOne = keepsOne && chosen.length <= 1;
   const label = field.required
     ? field.label
     : config("optionalLabel", { label: field.label });
@@ -365,7 +424,7 @@ export function ConfigOptionsPicker({
                   ) : null}{" "}
                   <button
                     type="button"
-                    disabled={disabled}
+                    disabled={disabled || lastOne}
                     aria-label={t("remove", { choice: name })}
                     onClick={() => remove(entry.value)}
                   >
@@ -375,15 +434,19 @@ export function ConfigOptionsPicker({
               );
             })}
           </ul>
-          <div className="actions">
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={() => choose(new Map())}
-            >
-              {t("clearAll")}
-            </button>
-          </div>
+          {keepsOne ? (
+            <p className="muted">{t("keepsOne")}</p>
+          ) : (
+            <div className="actions">
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => choose(new Map())}
+              >
+                {t("clearAll")}
+              </button>
+            </div>
+          )}
         </div>
       ) : null}
       {resources === null ? (
@@ -477,7 +540,11 @@ export function ConfigOptionsPicker({
                                     <input
                                       type="checkbox"
                                       checked={checked}
-                                      disabled={disabled || (!checked && full)}
+                                      disabled={
+                                        disabled ||
+                                        (!checked && full) ||
+                                        (checked && lastOne)
+                                      }
                                       onChange={() =>
                                         picked &&
                                         choose(
@@ -509,7 +576,7 @@ export function ConfigOptionsPicker({
                                   <input
                                     type="checkbox"
                                     checked
-                                    disabled={disabled}
+                                    disabled={disabled || lastOne}
                                     onChange={() =>
                                       picked &&
                                       choose(

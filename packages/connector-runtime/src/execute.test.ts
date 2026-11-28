@@ -641,6 +641,60 @@ describe("executeConfigOptions (SDK 0.2.24, #891)", () => {
     });
   });
 
+  it("drops choices that hold a short credential value (#937)", async () => {
+    // The log redactor skips values under four characters; a choice is
+    // shown and stored, so any nonempty value counts at this boundary.
+    const context: ConnectionContext = {
+      ...baseContext,
+      credentials: { token: "Q7z", pin: " 9 " },
+    };
+    const connector = withOptions(() => ({
+      options: [
+        { value: "r1/a", label: "Report A" },
+        { value: "r1/b", label: "Leak q7Z" },
+        { value: "r1/c", label: "C", description: "pin 9" },
+      ],
+      selected: [
+        { value: "r1/a", resourceId: "r1" },
+        { value: "r1/Q7z", resourceId: "r1" },
+      ],
+    }));
+    await expect(
+      executeConfigOptions(connector, context, {
+        key: "reports",
+        resourceId: "r1",
+      }),
+    ).resolves.toEqual({
+      options: [{ value: "r1/a", label: "Report A" }],
+      selected: [{ value: "r1/a", resourceId: "r1" }],
+    });
+  });
+
+  it("reads the credentials once per listing, not per choice (#937)", async () => {
+    let reads = 0;
+    const credentials = {
+      get token() {
+        reads += 1;
+        return "sk-live-9f8e7d6c";
+      },
+    };
+    const readsFor = async (count: number) => {
+      reads = 0;
+      const options = Array.from({ length: count }, (_, index) => ({
+        value: `r1/${index}`,
+        label: `Report ${index}`,
+      }));
+      const result = await executeConfigOptions(
+        withOptions(() => ({ options, selected: [] })),
+        { ...baseContext, credentials },
+        { key: "reports", resourceId: "r1" },
+      );
+      expect(result.options).toHaveLength(count);
+      return reads;
+    };
+    expect(await readsFor(200)).toBe(await readsFor(1));
+  });
+
   it("redacts credential values from thrown errors", async () => {
     const context: ConnectionContext = {
       ...baseContext,

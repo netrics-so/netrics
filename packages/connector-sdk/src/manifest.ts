@@ -279,7 +279,8 @@ export const brandColorSchema = z
 /**
  * Whether a string property's default passes its own schema (#891
  * review): a string, within minLength/maxLength (code points of the
- * trimmed value, as the host counts them) and among its enum, if any.
+ * trimmed value, as the host counts them) and among its enum, if any is
+ * nonempty.
  */
 function validStringDefault(property: Record<string, unknown>): boolean {
   const value = property.default;
@@ -289,7 +290,13 @@ function validStringDefault(property: Record<string, unknown>): boolean {
     return false;
   if (typeof property.maxLength === "number" && length > property.maxLength)
     return false;
-  return !Array.isArray(property.enum) || property.enum.includes(value);
+  // An empty enum restricts nothing, as validateConnectionConfig reads
+  // it (#937).
+  return (
+    !Array.isArray(property.enum) ||
+    property.enum.length === 0 ||
+    property.enum.includes(value)
+  );
 }
 
 /** A configSchema property's schema, or undefined. */

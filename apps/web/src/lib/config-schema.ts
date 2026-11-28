@@ -102,13 +102,56 @@ function coerceScalar(
 }
 
 /**
+ * How a field chosen in a picker (#891) is emptied (#937). Without a
+ * nonempty default, an empty field is left out ("omit"). With one, leaving
+ * it out would choose the default again: the field is sent empty when its
+ * schema accepts an empty string ("explicit"); otherwise its last choice
+ * cannot be removed ("keepOne").
+ */
+export function pickedEmptying(
+  field: ConfigField,
+): "omit" | "explicit" | "keepOne" {
+  const fallback = field.defaultValue;
+  if (
+    fallback === undefined ||
+    fallback === null ||
+    String(fallback).trim() === ""
+  ) {
+    return "omit";
+  }
+  // The checks validateConnectionConfig makes of an empty string.
+  const enumRefuses =
+    field.enumValues !== undefined &&
+    field.enumValues.length > 0 &&
+    !field.enumValues.includes("");
+  const lengthRefuses = (field.minLength ?? 0) > 0;
+  return field.type === "string" && !enumRefuses && !lengthRefuses
+    ? "explicit"
+    : "keepOne";
+}
+
+/** The keys of picked fields sent as "" when emptied (#937). */
+export function explicitEmptyKeys(
+  pickedFields: readonly ConfigField[],
+): ReadonlySet<string> {
+  return new Set(
+    pickedFields
+      .filter((field) => pickedEmptying(field) === "explicit")
+      .map((field) => field.key),
+  );
+}
+
+/**
  * Coerces form values back to JSON: empty strings are dropped (server-side
- * defaults then apply), integers/numbers are parsed, booleans become real,
- * and an array field's items are coerced the same way, item by item.
+ * defaults then apply), except for the keys in `explicitEmpty` (picked
+ * fields emptied on purpose, #937), integers/numbers are parsed, booleans
+ * become real, and an array field's items are coerced the same way, item
+ * by item.
  */
 export function coerceConfigValues(
   fields: ConfigField[],
   values: Record<string, string>,
+  explicitEmpty: ReadonlySet<string> = new Set(),
 ): Record<string, unknown> {
   const config: Record<string, unknown> = {};
   for (const field of fields) {
@@ -121,6 +164,10 @@ export function coerceConfigValues(
         }
         return coerced;
       });
+      continue;
+    }
+    if (values[field.key] === "" && explicitEmpty.has(field.key)) {
+      config[field.key] = "";
       continue;
     }
     const result = coerceScalar(field, values[field.key]);
