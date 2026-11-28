@@ -179,9 +179,12 @@ export const sharedEn = {
       /** A host that is no valid host name. */
       hostInvalid:
         "Enter your PostHog's host: us.posthog.com, eu.posthog.com, or your own instance's host name such as posthog.example.com: a public name reached over https, without a path or port.",
-      /** Saved insights that are not insight links. */
+      /** Saved insights that are not insight links, or more than 20. */
       insightsInvalid:
-        "netrics could not read the saved insights. Paste each insight's link from PostHog (…/project/12345/insights/AbCd1234), separated by spaces or commas, at most 20.",
+        "netrics could not read the saved insights of this connection. Choose them again under Saved insights, per project, at most 20.",
+      /** The insight listing of a project was refused (#891). */
+      insightsUnavailable:
+        "PostHog did not let the personal API key list this project's saved insights. Check that the key may read the project and has the scope Insight: Read.",
       /** A key limited to projects, without their IDs (#884 review). */
       projectsRequired:
         "The personal API key is limited to some projects, so PostHog does not list them. Enter their project IDs under Project IDs (PostHog: Project settings → Project ID).",

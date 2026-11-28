@@ -45,6 +45,8 @@ import {
   POSTHOG_HOST_INVALID_MESSAGE,
   POSTHOG_INSIGHTS_INVALID_CODE,
   POSTHOG_INSIGHTS_INVALID_MESSAGE,
+  POSTHOG_INSIGHTS_UNAVAILABLE_CODE,
+  POSTHOG_INSIGHTS_UNAVAILABLE_MESSAGE,
   POSTHOG_KEY_REJECTED_CODE,
   POSTHOG_KEY_REJECTED_MESSAGE,
   POSTHOG_PROJECTS_INVALID_CODE,
@@ -424,6 +426,7 @@ describe("provider reason codes (#795)", () => {
     [POSTHOG_SCOPE_MISSING_CODE, POSTHOG_SCOPE_MISSING_MESSAGE],
     [POSTHOG_HOST_INVALID_CODE, POSTHOG_HOST_INVALID_MESSAGE],
     [POSTHOG_INSIGHTS_INVALID_CODE, POSTHOG_INSIGHTS_INVALID_MESSAGE],
+    [POSTHOG_INSIGHTS_UNAVAILABLE_CODE, POSTHOG_INSIGHTS_UNAVAILABLE_MESSAGE],
     [POSTHOG_PROJECTS_REQUIRED_CODE, POSTHOG_PROJECTS_REQUIRED_MESSAGE],
     [POSTHOG_PROJECTS_INVALID_CODE, POSTHOG_PROJECTS_INVALID_MESSAGE],
     [HETZNER_CLOUD_TOKEN_REJECTED_CODE, HETZNER_CLOUD_TOKEN_REJECTED_MESSAGE],
@@ -440,7 +443,7 @@ describe("provider reason codes (#795)", () => {
   ];
 
   it("are worded by the catalog in English and German", () => {
-    expect(recorded).toHaveLength(27);
+    expect(recorded).toHaveLength(28);
     for (const [code, english] of recorded) {
       expect(code, english).toEqual(expect.any(String));
       expect(providerMessageForCode(code, "en"), code).toBe(english);
@@ -448,7 +451,7 @@ describe("provider reason codes (#795)", () => {
       expect(german, code).toEqual(expect.any(String));
       expect(german, code).not.toBe(english);
     }
-    expect(new Set(recorded.map(([code]) => code)).size).toBe(27);
+    expect(new Set(recorded.map(([code]) => code)).size).toBe(28);
     expect([...recorded.map(([code]) => code), ...generic].sort()).toEqual(
       Object.keys(PROVIDER_MESSAGE_CODES).sort(),
     );

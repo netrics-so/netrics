@@ -39,6 +39,13 @@ describe("redactCredentialValues", () => {
     expect(message).not.toContain("sk-live-1234");
   });
 
+  it("redacts the trimmed form of a value pasted with spaces (#891 review)", () => {
+    const message = redactCredentialValues("provider rejected sk-live-1234", {
+      token: "  sk-live-1234\n",
+    });
+    expect(message).toBe("provider rejected [redacted]");
+  });
+
   it("walks nested credential structures and ignores short values", () => {
     const message = redactCredentialValues(
       "failed for x=ab and y=long-secret",

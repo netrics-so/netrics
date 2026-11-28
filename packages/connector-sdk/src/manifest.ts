@@ -276,6 +276,22 @@ export const brandColorSchema = z
   .string()
   .regex(/^#[0-9a-fA-F]{6}$/, { message: 'brandColor must be "#rrggbb"' });
 
+/**
+ * Whether a string property's default passes its own schema (#891
+ * review): a string, within minLength/maxLength (code points of the
+ * trimmed value, as the host counts them) and among its enum, if any.
+ */
+function validStringDefault(property: Record<string, unknown>): boolean {
+  const value = property.default;
+  if (typeof value !== "string") return false;
+  const length = [...value.trim()].length;
+  if (typeof property.minLength === "number" && length < property.minLength)
+    return false;
+  if (typeof property.maxLength === "number" && length > property.maxLength)
+    return false;
+  return !Array.isArray(property.enum) || property.enum.includes(value);
+}
+
 /** A configSchema property's schema, or undefined. */
 function configProperty(
   schema: unknown,
@@ -436,6 +452,28 @@ export const connectorManifestSchema = z
      * host is another connection, with credentials entered for it.
      */
     configuredHosts: z.array(z.string().min(1)).max(4).optional(),
+    /**
+     * Config fields chosen in a picker instead of typed (SDK 0.2.24,
+     * #891): a string property of configSchema whose value is the chosen
+     * option values separated by spaces. Its choices are listed per
+     * resource by `Connector.configOptions`; at most `maxSelected` of
+     * them are chosen. Optional; hosts without pickers show the field as
+     * text.
+     */
+    configOptions: z
+      .array(
+        z.object({
+          key: z.string().min(1),
+          per: z.literal("resource"),
+          maxSelected: z.number().int().positive().max(100),
+        }),
+      )
+      .max(4)
+      .refine(
+        (items) => new Set(items.map((item) => item.key)).size === items.length,
+        { message: "configOptions keys must be unique" },
+      )
+      .optional(),
     rateLimit: rateLimitHintSchema.optional(),
     resourceNoun: resourceNounSchema.optional(),
     /** Honors SyncRequest.resources as a multi-resource collection scope. */
@@ -496,6 +534,35 @@ export const connectorManifestSchema = z
               ? `configuredHosts names "${entry}", which is not a property of configSchema`
               : `configuredHosts names "${entry}", which is not an item property of an array in configSchema`,
           path: ["configuredHosts"],
+        });
+    }
+    const required = new Set(
+      Array.isArray(
+        (manifest.configSchema as { required?: unknown } | undefined)?.required,
+      )
+        ? ((manifest.configSchema as { required: unknown[] }).required.filter(
+            (key): key is string => typeof key === "string",
+          ) as string[])
+        : [],
+    );
+    for (const entry of manifest.configOptions ?? []) {
+      const property = configProperty(manifest.configSchema, entry.key);
+      if (property?.type !== "string")
+        context.addIssue({
+          code: "custom",
+          message: `configOptions names "${entry.key}", which is not a string property of configSchema`,
+          path: ["configOptions"],
+        });
+      // A picker is filled only after the check passed, so a field the
+      // connection cannot be created without needs a default (#891 review).
+      else if (
+        required.has(entry.key) &&
+        !validStringDefault(property as Record<string, unknown>)
+      )
+        context.addIssue({
+          code: "custom",
+          message: `configOptions names "${entry.key}", a required property without a valid default`,
+          path: ["configOptions"],
         });
     }
     if (!manifest.translations) {

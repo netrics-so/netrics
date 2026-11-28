@@ -13,6 +13,7 @@ import { AppleAdsSetup } from "./apple-ads-setup";
 import { inProject } from "@/lib/project-scope";
 import { AppPicker } from "../app-picker";
 import { ConfigFields } from "../config-fields";
+import { ConfigOptionsPicker, type Picked } from "../config-options-picker";
 import { ConnectOAuthButton } from "../connect-oauth-button";
 import {
   presetRetentionValues,
@@ -26,6 +27,7 @@ import {
   apiErrorMessage,
   providerFailureMessage,
   createConnection,
+  listConfigOptions,
   previewConnection,
 } from "@/lib/api";
 import {
@@ -114,11 +116,32 @@ export function NewConnectionWizard({
     presetRetentionValues(initial?.datasets ?? []),
   );
   const [pending, setPending] = useState<"preview" | "create" | null>(null);
+  // Picked choices with their resources, kept across checks (#891
+  // review): a project unticked after another check still drops them.
+  const [pickedOwners, setPickedOwners] = useState<
+    Readonly<Record<string, Picked | null>>
+  >({});
   const [error, setError] = useState<string | null>(null);
 
   const fields = useMemo(
     () => (connector ? parseConfigSchema(connector.configSchema) : []),
     [connector],
+  );
+  // Fields chosen in a picker once the check passed (#891), not typed.
+  const pickedFields = useMemo(
+    () =>
+      (connector?.configOptions ?? []).flatMap((entry) => {
+        const field = fields.find((candidate) => candidate.key === entry.key);
+        return field ? [{ field, maxSelected: entry.maxSelected }] : [];
+      }),
+    [connector, fields],
+  );
+  const typedFields = useMemo(
+    () =>
+      fields.filter(
+        (field) => !pickedFields.some((picked) => picked.field === field),
+      ),
+    [fields, pickedFields],
   );
   const tokenStrategy = connector?.authStrategies.find(
     (strategy) => strategy.strategy === "token",
@@ -156,6 +179,7 @@ export function NewConnectionWizard({
     setFieldErrors({});
     setPreview(null);
     setSelectedResources(null);
+    setPickedOwners({});
     setRetention(presetRetentionValues(entry.datasets ?? []));
     setError(null);
   }
@@ -418,7 +442,7 @@ export function NewConnectionWizard({
               />
             ) : null}
             <ConfigFields
-              fields={fields}
+              fields={typedFields}
               values={configValues}
               errors={fieldErrors}
               disabled={pending !== null}
@@ -504,6 +528,50 @@ export function NewConnectionWizard({
               </ul>
             </>
           ) : null}
+          {!appStore && !fixedResources && preview.resources.length > 0
+            ? pickedFields.map(({ field, maxSelected }) => (
+                <ConfigOptionsPicker
+                  key={field.key}
+                  field={field}
+                  maxSelected={maxSelected}
+                  resources={preview.resources
+                    .filter(
+                      (resource) => selectedResources?.has(resource.id) ?? true,
+                    )
+                    .map(({ id, name }) => ({ id, name }))}
+                  value={configValues[field.key] ?? ""}
+                  disabled={pending !== null}
+                  // An unticked project is not connected: its choices go.
+                  dropOutsideResources
+                  initialPicked={pickedOwners[field.key] ?? null}
+                  onPickedChange={(next) =>
+                    setPickedOwners((current) => ({
+                      ...current,
+                      [field.key]: next,
+                    }))
+                  }
+                  // A choice changes no credential: the check stands.
+                  onChange={(value) =>
+                    setConfigValues((current) => ({
+                      ...current,
+                      [field.key]: value,
+                    }))
+                  }
+                  load={(resourceId) =>
+                    listConfigOptions(workspaceId, {
+                      connectorId: connector!.id,
+                      // Pickers take a token (no signed key has one).
+                      config: coerceConfigValues(fields, configValues),
+                      ...(wantsToken && token !== ""
+                        ? { credentials: { token } }
+                        : {}),
+                      key: field.key,
+                      resourceId,
+                    })
+                  }
+                />
+              ))
+            : null}
           {connector?.datasets?.length ? (
             <section className="stack" aria-labelledby="setup-retention">
               <h3 id="setup-retention">{retentionT("setupTitle")}</h3>

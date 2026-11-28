@@ -584,6 +584,31 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
       removeItem: "Eintrag {number} entfernen",
       listLimit: "Höchstens {max} Einträge.",
     },
+    configOptions: {
+      limit: "Wähle höchstens {max}.",
+      noneChosen: "Nichts ist ausgewählt.",
+      keepsCurrent:
+        "Die bisherige Auswahl bleibt, bis du sie in einer Liste unten änderst.",
+      chosen: "{count} von {max} ausgewählt.",
+      full: "{max} sind ausgewählt, mehr geht nicht: Entferne eine Auswahl, um eine andere zu treffen.",
+      loadResources: "Listen anzeigen",
+      noResources:
+        "Nichts zur Auswahl: Es ist nichts ausgewählt, worin du wählen kannst.",
+      show: "In {resource} auswählen",
+      hide: "Liste von {resource} ausblenden",
+      loading: "Wird geladen…",
+      retry: "Erneut versuchen",
+      empty: "In {resource} gibt es nichts zur Auswahl.",
+      unlisted: "(ausgewählt, nicht mehr aufgelistet)",
+      truncated:
+        "Nur die ersten {count} sind aufgelistet. Früher ausgewählte bleiben ausgewählt.",
+      showMore: "{count} weitere anzeigen",
+      chosenList: "Ausgewählt",
+      remove: "{choice} entfernen",
+      removeShort: "Entfernen",
+      clearAll: "Alle entfernen",
+      otherResource: "(nicht in den Listen unten)",
+    },
     oauthButton: {
       otherAccount: "Anderes {name}-Konto verwenden",
       otherAccountHint:
@@ -671,6 +696,7 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
       connectorMissing:
         "Der Connector {connector} ist nicht im installierten Paket enthalten; die Einstellungen können nicht bearbeitet werden.",
       saveChanges: "Änderungen speichern",
+      checkFailed: "Die Prüfung der Verbindung ist fehlgeschlagen.",
     },
     appleAds: {
       title: "2. Apple Ads verbinden",

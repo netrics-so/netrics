@@ -20,6 +20,9 @@ import type {
   LatestReviewResponse,
   ObservationListQuery,
   PreviewConnectionRequest,
+  ConnectionConfigOptionsRequest,
+  ConnectionConfigOptionsResponse,
+  StoredConnectionConfigOptionsRequest,
   SharedKeyResourcesResponse,
   UpdateConnectionRequest,
   StoredConnectionPreviewRequest,
@@ -36,13 +39,17 @@ import {
 import { retentionNamesDatasets } from "./retention.js";
 import {
   executeCheck,
+  executeConfigOptions,
   executeDiscover,
+  supportsConfigOptions,
   type ConnectorRegistry,
   type ExecuteOptions,
 } from "@netrics/connector-runtime";
 import {
+  ConnectorError,
   bindCredentialHosts,
   configuredHostsChanged,
+  isErrorCode,
   type ConnectionContext,
   type Connector,
   type ConnectorManifest,
@@ -282,6 +289,21 @@ type ConnectionDetail = ReturnType<typeof presentConnectionDetail>;
 function safeMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return String(redactSecrets(message)).slice(0, 500);
+}
+
+/** A config field without a picker (#891). */
+const CONFIG_OPTIONS_UNAVAILABLE = "config_options_unavailable";
+
+/**
+ * A failed config-options listing (#891) as a 400: the connector's fixed,
+ * redacted message, with its reason code when it names one.
+ */
+function configOptionsFailure<T>(error: unknown): Result<T> {
+  const code =
+    error instanceof ConnectorError && isErrorCode(error.code)
+      ? error.code
+      : undefined;
+  return fail(400, safeMessage(error), code);
 }
 
 function validateConfig(
@@ -2271,8 +2293,13 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     /** The installation's catalog, from the deployed bundle. */
     /** The catalog, its texts in `locale` (#257). */
     listConnectors(locale: Locale = DEFAULT_LOCALE) {
-      return registry.list().map(({ manifest: english }) => {
+      return registry.list().map(({ manifest: english, connector }) => {
         const manifest = localizedManifest(english, locale);
+        // A picker only where the connector lists its choices, by the
+        // rule the config-options routes use (#891 review).
+        const configOptions = (manifest.configOptions ?? []).filter((entry) =>
+          supportsConfigOptions(connector, entry.key),
+        );
         return {
           id: manifest.id,
           name: manifest.name,
@@ -2293,6 +2320,14 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           minRefreshIntervalSeconds: manifest.minRefreshIntervalSeconds,
           supportsBackfill: manifest.supportsBackfill,
           configSchema: { ...manifest.configSchema },
+          ...(configOptions.length
+            ? {
+                configOptions: configOptions.map(({ key, maxSelected }) => ({
+                  key,
+                  maxSelected,
+                })),
+              }
+            : {}),
           authStrategies: manifest.authStrategies.map((strategy) =>
             presentAuthStrategy(strategy, signedKeys),
           ),
@@ -2633,6 +2668,118 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
      */
     callConnection: callStoredConnection,
     previewStored: previewStoredConnection,
+
+    /**
+     * The choices of a picked config field in one resource, before a
+     * connection exists (#891): the draft config and credentials, as in a
+     * preview. Persists nothing.
+     */
+    async configOptions(
+      actor: Actor,
+      body: ConnectionConfigOptionsRequest,
+    ): Promise<Result<ConnectionConfigOptionsResponse>> {
+      const registered = registry.get(body.connectorId);
+      if (!registered || body.connectorId === CUSTOM_API_CONNECTOR_ID) {
+        return fail(400, "invalid_request");
+      }
+      if (!supportsConfigOptions(registered.connector, body.key)) {
+        return fail(400, CONFIG_OPTIONS_UNAVAILABLE);
+      }
+      const usable = checkCredentialConnector(registered.manifest);
+      if (!usable.ok) return usable;
+      // Signed keys sign a token per call; no such connector has a picker.
+      if (signedKeys.providerFor(registered.manifest, body.credentials)) {
+        return fail(400, CONFIG_OPTIONS_UNAVAILABLE);
+      }
+      const validated = validateConfig(registered.manifest, body.config);
+      if (!validated.ok) return validated;
+      const context = {
+        connectionId: "preview",
+        config: validated.value,
+        credentials: bindCredentialHosts(
+          registered.manifest,
+          validated.value,
+          body.credentials ?? {},
+        ),
+      };
+      // The same egress as the preview: test egress, and a configured
+      // host's self-host private hosts (#892).
+      const options = callOptionsFor(
+        { ...registered, customApi: null },
+        deps.executeOptions ?? {},
+        {
+          credentials: context.credentials,
+          config: context.config,
+          privateHosts: callOptions.privateHosts,
+          connectorPrivateHosts: callOptions.connectorPrivateHosts,
+        },
+      );
+      try {
+        return ok(
+          await executeConfigOptions(
+            registered.connector,
+            context,
+            { key: body.key, resourceId: body.resourceId },
+            options,
+          ),
+        );
+      } catch (error) {
+        rethrowWorkspaceGone(error);
+        return configOptionsFailure(error);
+      }
+    },
+
+    /**
+     * The same for an existing connection (#891), with its stored
+     * credentials and its draft config; the configured host stays fixed,
+     * and the connector sees the stored selection, as a sync does.
+     */
+    async configOptionsStored(
+      actor: Actor,
+      connectionId: string,
+      body: StoredConnectionConfigOptionsRequest,
+    ): Promise<Result<ConnectionConfigOptionsResponse>> {
+      const existing = await inWorkspace(actor, (tx) =>
+        findConnection(tx, actor.workspaceId, connectionId),
+      );
+      if (!existing) return fail(404, NOT_FOUND);
+      const registered = connectorFor(registry, existing);
+      if (!registered) return fail(400, "connector_unavailable");
+      if (!supportsConfigOptions(registered.connector, body.key)) {
+        return fail(400, CONFIG_OPTIONS_UNAVAILABLE);
+      }
+      const validated = validateConfig(registered.manifest, body.config);
+      if (!validated.ok) return validated;
+      const stored = existing.row.config as Record<string, unknown>;
+      if (
+        configuredHostsChanged(registered.manifest, stored, validated.value)
+      ) {
+        return fail(400, CONNECTION_HOST_FIXED);
+      }
+      const selection = resourceSelectionOf(stored);
+      const config = selection
+        ? { ...validated.value, resourceSelection: [...selection] }
+        : validated.value;
+      try {
+        return await callStoredConnection(
+          actor,
+          connectionId,
+          (connector, context, options) =>
+            executeConfigOptions(
+              connector,
+              context,
+              { key: body.key, resourceId: body.resourceId },
+              options,
+            ),
+          config,
+        );
+      } catch (error) {
+        rethrowWorkspaceGone(error);
+        return connectionOAuthProvider(registered, existing.oauth?.provider)
+          ? oauthCallFailure(error)
+          : configOptionsFailure(error);
+      }
+    },
 
     /**
      * Whether an App Store Connect connection holds the optional reviews

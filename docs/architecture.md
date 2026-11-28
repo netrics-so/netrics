@@ -480,6 +480,19 @@ keeps loading on every 0.2.x runtime.
 | 0.2.21 | `configuredHosts` item URLs, `HEAD`, per-request limits (#874)       |
 | 0.2.22 | Optional `previousCursor`: a fresh backfill's stored cursor (#893)   |
 | 0.2.23 | Optional final `skipped`; a body failure's egress error has `status` |
+| 0.2.24 | Optional `configOptions`: a config field chosen in a picker (#891)   |
+
+Since SDK 0.2.24 a manifest may name string config fields that are chosen
+from lists instead of typed (`configOptions`, per resource, at most
+`maxSelected` in all). The connector's optional `configOptions(context,
+{ key, resourceId }, runtime)` lists one resource's choices with the draft
+config (one listing, never a request per choice) and reads what the field
+chooses now into option values; the field stores the chosen values
+separated by spaces. The host serves it to the setup and edit forms
+(`POST …/connections/config-options` with draft credentials, `POST
+…/connections/{id}/config-options` with the stored ones), inside the same
+boundary as discovery: egress allowlist, configured-host binding, time
+budget and redacted errors.
 
 Since SDK 0.2.13 a manifest may group its metrics and datasets into
 `freshnessStreams` (periodic, with the provider's time zone, or continuous),

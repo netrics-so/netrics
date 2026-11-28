@@ -56,8 +56,8 @@ describe("assertManifestCompatible", () => {
     ).toThrow();
   });
 
-  it("keeps loading connectors written for SDK ^0.2.0 to ^0.2.23", () => {
-    expect(SDK_VERSION).toBe("0.2.23");
+  it("keeps loading connectors written for SDK ^0.2.0 to ^0.2.24", () => {
+    expect(SDK_VERSION).toBe("0.2.24");
     for (const sdkVersion of [
       "^0.2.0",
       "^0.2.1",
@@ -83,11 +83,89 @@ describe("assertManifestCompatible", () => {
       "^0.2.21",
       "^0.2.22",
       "^0.2.23",
+      "^0.2.24",
     ]) {
       expect(
         assertManifestCompatible({ ...validManifest(), sdkVersion }).id,
       ).toBe("acme-analytics");
     }
+  });
+
+  it("accepts configOptions that name string config properties only (0.2.24)", () => {
+    const withOptions = (configOptions: unknown) => ({
+      ...validManifest(),
+      configSchema: {
+        type: "object",
+        properties: {
+          reports: { type: "string" },
+          limit: { type: "integer" },
+        },
+      },
+      configOptions,
+    });
+    expect(
+      assertManifestCompatible(
+        withOptions([{ key: "reports", per: "resource", maxSelected: 20 }]),
+      ).configOptions,
+    ).toEqual([{ key: "reports", per: "resource", maxSelected: 20 }]);
+    expect(
+      assertManifestCompatible(validManifest()).configOptions,
+    ).toBeUndefined();
+    expect(() =>
+      assertManifestCompatible(
+        withOptions([{ key: "limit", per: "resource", maxSelected: 20 }]),
+      ),
+    ).toThrow(/not a string property of configSchema/);
+    expect(() =>
+      assertManifestCompatible(
+        withOptions([{ key: "missing", per: "resource", maxSelected: 20 }]),
+      ),
+    ).toThrow(/not a string property of configSchema/);
+    expect(() =>
+      assertManifestCompatible(
+        withOptions([
+          { key: "reports", per: "resource", maxSelected: 20 },
+          { key: "reports", per: "resource", maxSelected: 5 },
+        ]),
+      ),
+    ).toThrow(/unique/);
+    expect(() =>
+      assertManifestCompatible(
+        withOptions([{ key: "reports", per: "resource", maxSelected: 0 }]),
+      ),
+    ).toThrow();
+  });
+
+  it("refuses a required picked field without a default (0.2.24 review)", () => {
+    const withRequired = (reports: Record<string, unknown>) => ({
+      ...validManifest(),
+      configSchema: {
+        type: "object",
+        properties: { reports },
+        required: ["reports"],
+      },
+      configOptions: [{ key: "reports", per: "resource", maxSelected: 5 }],
+    });
+    expect(() =>
+      assertManifestCompatible(withRequired({ type: "string" })),
+    ).toThrow(/required property without a valid default/);
+    expect(() =>
+      assertManifestCompatible(withRequired({ type: "string", default: null })),
+    ).toThrow(/required property without a valid default/);
+    expect(() =>
+      assertManifestCompatible(
+        withRequired({ type: "string", default: "", minLength: 1 }),
+      ),
+    ).toThrow(/required property without a valid default/);
+    expect(() =>
+      assertManifestCompatible(
+        withRequired({ type: "string", default: "x", enum: ["a", "b"] }),
+      ),
+    ).toThrow(/required property without a valid default/);
+    expect(
+      assertManifestCompatible(withRequired({ type: "string", default: "" }))
+        .configOptions,
+    ).toHaveLength(1);
   });
 
   it("accepts configuredHosts that name config properties only (0.2.20)", () => {

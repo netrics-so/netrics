@@ -96,6 +96,20 @@ export type Insight = z.infer<typeof insightSchema>;
 
 export const insightsSchema = pageSchema(insightSchema);
 
+/**
+ * A page of the insight list for the picker (#891), with `basic=true`:
+ * only what names an insight and says its kind (the query may be left out).
+ */
+export const insightListSchema = pageSchema(
+  insightSchema.pick({
+    short_id: true,
+    name: true,
+    derived_name: true,
+    deleted: true,
+    query: true,
+  }),
+);
+
 export const trendsResultSchema = z.array(seriesSchema);
 
 // ─── Pagination ─────────────────────────────────────────────────────────────

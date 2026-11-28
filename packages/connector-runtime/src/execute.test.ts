@@ -28,10 +28,12 @@ import {
   CredentialHostMismatchError,
   customApiCallOptions,
   executeCheck,
+  executeConfigOptions,
   executeDiscover,
   executeResourceIcons,
   executeSync,
   executeTrustedCall,
+  supportsConfigOptions,
   supportsResourceIcons,
 } from "./execute.js";
 
@@ -520,6 +522,140 @@ describe("executeDiscover", () => {
     await expect(executeDiscover(connector, context)).rejects.not.toThrow(
       /sk-live-9f8e7d6c/,
     );
+  });
+});
+
+describe("executeConfigOptions (SDK 0.2.24, #891)", () => {
+  const manifest: ConnectorManifest = {
+    ...demoManifest,
+    configSchema: {
+      type: "object",
+      properties: { reports: { type: "string" } },
+    },
+    configOptions: [{ key: "reports", per: "resource", maxSelected: 20 }],
+  };
+  const listing = {
+    options: [{ value: "r1/a", label: "Report A" }],
+    selected: [{ value: "r1/b", resourceId: "r1" }],
+  };
+  function withOptions(result: () => unknown): Connector {
+    return {
+      ...connectorWith(manifest),
+      async configOptions() {
+        return result() as typeof listing;
+      },
+    };
+  }
+
+  it("passes a valid listing through", async () => {
+    const connector = withOptions(() => listing);
+    expect(supportsConfigOptions(connector, "reports")).toBe(true);
+    expect(supportsConfigOptions(connector, "other")).toBe(false);
+    await expect(
+      executeConfigOptions(connector, baseContext, {
+        key: "reports",
+        resourceId: "r1",
+      }),
+    ).resolves.toEqual(listing);
+  });
+
+  it("refuses a field the manifest does not name, and a malformed listing", async () => {
+    await expect(
+      executeConfigOptions(
+        withOptions(() => listing),
+        baseContext,
+        {
+          key: "other",
+          resourceId: "r1",
+        },
+      ),
+    ).rejects.toBeInstanceOf(ContractViolationError);
+    await expect(
+      executeConfigOptions(
+        withOptions(() => ({
+          options: [{ value: "has space", label: "x" }],
+          selected: [],
+        })),
+        baseContext,
+        { key: "reports", resourceId: "r1" },
+      ),
+    ).rejects.toBeInstanceOf(ContractViolationError);
+    // A connector without the capability lists nothing.
+    expect(supportsConfigOptions(connectorWith(manifest), "reports")).toBe(
+      false,
+    );
+  });
+
+  it("drops choices that hold a credential or derived secret (review)", async () => {
+    const context: ConnectionContext = {
+      ...baseContext,
+      credentials: { token: "sk-live-9f8e7d6c" },
+    };
+    const connector = withOptions(() => ({
+      options: [
+        { value: "r1/a", label: "Report A" },
+        { value: "r1/b", label: "Leak sk-live-9f8e7d6c" },
+        { value: "r1/SK-LIVE-9F8E7D6C", label: "Upper" },
+        { value: "r1/c", label: "C", description: "derived-secret-01" },
+      ],
+      selected: [
+        { value: "r1/a", resourceId: "r1" },
+        { value: "r1/sk-live-9f8e7d6c", resourceId: "r1" },
+      ],
+    }));
+    await expect(
+      executeConfigOptions(
+        connector,
+        context,
+        { key: "reports", resourceId: "r1" },
+        { redactValues: ["derived-secret-01"] },
+      ),
+    ).resolves.toEqual({
+      options: [{ value: "r1/a", label: "Report A" }],
+      selected: [{ value: "r1/a", resourceId: "r1" }],
+    });
+  });
+
+  it("drops choices that hold a padded key's trimmed value (review)", async () => {
+    // A key pasted with spaces: the connector authenticates with it
+    // trimmed, so the trimmed value must not leave either.
+    const context: ConnectionContext = {
+      ...baseContext,
+      credentials: { token: "  sk-live-9f8e7d6c\n" },
+    };
+    const connector = withOptions(() => ({
+      options: [
+        { value: "r1/a", label: "Report A" },
+        { value: "r1/b", label: "Leak sk-live-9f8e7d6c" },
+      ],
+      selected: [],
+    }));
+    await expect(
+      executeConfigOptions(connector, context, {
+        key: "reports",
+        resourceId: "r1",
+      }),
+    ).resolves.toEqual({
+      options: [{ value: "r1/a", label: "Report A" }],
+      selected: [],
+    });
+  });
+
+  it("redacts credential values from thrown errors", async () => {
+    const context: ConnectionContext = {
+      ...baseContext,
+      credentials: { token: "sk-live-9f8e7d6c" },
+    };
+    const connector = withOptions(() => {
+      throw new Error("provider rejected token sk-live-9f8e7d6c");
+    });
+    const call = () =>
+      executeConfigOptions(connector, context, {
+        key: "reports",
+        resourceId: "r1",
+      });
+    await expect(call()).rejects.toThrow(/rejected token/);
+    await expect(call()).rejects.not.toThrow(/sk-live-9f8e7d6c/);
   });
 });
 

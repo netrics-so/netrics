@@ -117,6 +117,8 @@ export const apiErrorsEn = {
       "Select at least one project, or all projects. An empty selection cannot be saved.",
     connection_host_fixed:
       "The host of a connection cannot change: its stored key goes only to the host it was entered for. Create a new connection for the other host.",
+    config_options_unavailable:
+      "This setting has no list to choose from here. Reload the page and try again.",
     custom_api_definition_not_found: "That custom API no longer exists.",
     custom_api_definition_invalid:
       "The custom API definition has errors. Fix the marked fields and save again.",

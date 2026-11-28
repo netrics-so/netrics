@@ -42,7 +42,10 @@ import { satisfiesRange } from "./semver.js";
 // 0.2.23: optional done-SyncResult skipped, a run that requested nothing
 // on purpose: the host keeps the connection's next due time; egress errors
 // raised while reading a body carry the response's status (#898).
-export const SDK_VERSION = "0.2.23";
+// 0.2.24: the optional manifest field configOptions and the optional
+// Connector.configOptions capability: a config field chosen in a picker
+// from choices listed per resource (#891).
+export const SDK_VERSION = "0.2.24";
 
 /**
  * Validates a manifest against the contract schema and verifies that its

@@ -45,9 +45,13 @@ function collectSecretValues(credentials: Record<string, unknown>): string[] {
   const walk = (value: unknown): void => {
     if (typeof value === "string") {
       // Short values would over-redact (e.g. replacing every "a"); real
-      // tokens are never this short.
-      if (value.length >= 4) {
-        values.push(value);
+      // tokens are never this short. A connector may use a value trimmed
+      // (a key pasted with spaces), so its trimmed form counts too (#891
+      // review).
+      for (const form of new Set([value, value.trim()])) {
+        if (form.length >= 4) {
+          values.push(form);
+        }
       }
       return;
     }
@@ -102,6 +106,21 @@ export function credentialFreeCode(
     }
   }
   return code;
+}
+
+/**
+ * Whether `text` holds a credential value (compared in lower case too,
+ * as credentialFreeCode does): such text must not leave the credential
+ * boundary, and is dropped whole rather than rewritten (#891 review).
+ */
+export function holdsCredentialValue(
+  text: string,
+  credentials: Record<string, unknown>,
+): boolean {
+  const lower = text.toLowerCase();
+  return collectSecretValues(credentials).some(
+    (secret) => text.includes(secret) || lower.includes(secret.toLowerCase()),
+  );
 }
 
 /**
