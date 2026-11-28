@@ -32,6 +32,7 @@ import {
 } from "@/lib/api";
 import {
   coerceConfigValues,
+  explicitEmptyKeys,
   initialConfigValues,
   parseConfigSchema,
 } from "@/lib/config-schema";
@@ -121,6 +122,11 @@ export function NewConnectionWizard({
   const [pickedOwners, setPickedOwners] = useState<
     Readonly<Record<string, Picked | null>>
   >({});
+  // Pickers whose restored choices wait for a listing (#937 review).
+  const [settling, setSettling] = useState<Readonly<Record<string, boolean>>>(
+    {},
+  );
+  const pickersSettling = Object.values(settling).some(Boolean);
   const [error, setError] = useState<string | null>(null);
 
   const fields = useMemo(
@@ -135,6 +141,11 @@ export function NewConnectionWizard({
         return field ? [{ field, maxSelected: entry.maxSelected }] : [];
       }),
     [connector, fields],
+  );
+  // A cleared picker is sent empty, not left out (#937).
+  const explicitEmpty = useMemo(
+    () => explicitEmptyKeys(pickedFields.map((picked) => picked.field)),
+    [pickedFields],
   );
   const typedFields = useMemo(
     () =>
@@ -204,7 +215,7 @@ export function NewConnectionWizard({
   }
 
   function buildPayload() {
-    const config = coerceConfigValues(fields, configValues);
+    const config = coerceConfigValues(fields, configValues, explicitEmpty);
     if (keyStrategy) {
       return {
         config,
@@ -260,7 +271,7 @@ export function NewConnectionWizard({
   }
 
   async function onCreate() {
-    if (!connector) {
+    if (!connector || pickersSettling) {
       return;
     }
     setError(null);
@@ -543,7 +554,21 @@ export function NewConnectionWizard({
                   disabled={pending !== null}
                   // An unticked project is not connected: its choices go.
                   dropOutsideResources
+                  leftOutResources={preview.resources
+                    .filter(
+                      (resource) =>
+                        selectedResources !== null &&
+                        !selectedResources.has(resource.id),
+                    )
+                    .map((resource) => resource.id)}
                   initialPicked={pickedOwners[field.key] ?? null}
+                  onSettlingChange={(busy) =>
+                    setSettling((current) =>
+                      current[field.key] === busy
+                        ? current
+                        : { ...current, [field.key]: busy },
+                    )
+                  }
                   onPickedChange={(next) =>
                     setPickedOwners((current) => ({
                       ...current,
@@ -561,7 +586,11 @@ export function NewConnectionWizard({
                     listConfigOptions(workspaceId, {
                       connectorId: connector!.id,
                       // Pickers take a token (no signed key has one).
-                      config: coerceConfigValues(fields, configValues),
+                      config: coerceConfigValues(
+                        fields,
+                        configValues,
+                        explicitEmpty,
+                      ),
                       ...(wantsToken && token !== ""
                         ? { credentials: { token } }
                         : {}),
@@ -589,7 +618,7 @@ export function NewConnectionWizard({
             <button
               type="button"
               className="primary"
-              disabled={pending !== null}
+              disabled={pending !== null || pickersSettling}
               onClick={onCreate}
             >
               {pending === "create" ? common("creating") : t("create")}

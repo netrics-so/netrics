@@ -39,17 +39,25 @@ export function redactSecrets(input: unknown): unknown {
   return walk(input);
 }
 
-/** Collects string credential values long enough to redact safely. */
-function collectSecretValues(credentials: Record<string, unknown>): string[] {
+/** Shorter values are not redacted from logs and errors (see below). */
+const LOG_MIN_SECRET_LENGTH = 4;
+
+/**
+ * Collects string credential values of at least `minLength` characters.
+ * Logs and error messages use LOG_MIN_SECRET_LENGTH: short values would
+ * over-redact (e.g. replacing every "a"), and real tokens are never this
+ * short. A connector may use a value trimmed (a key pasted with spaces),
+ * so its trimmed form counts too (#891 review).
+ */
+function collectSecretValues(
+  credentials: Record<string, unknown>,
+  minLength = LOG_MIN_SECRET_LENGTH,
+): string[] {
   const values: string[] = [];
   const walk = (value: unknown): void => {
     if (typeof value === "string") {
-      // Short values would over-redact (e.g. replacing every "a"); real
-      // tokens are never this short. A connector may use a value trimmed
-      // (a key pasted with spaces), so its trimmed form counts too (#891
-      // review).
       for (const form of new Set([value, value.trim()])) {
-        if (form.length >= 4) {
+        if (form.length >= minLength) {
           values.push(form);
         }
       }
@@ -109,18 +117,29 @@ export function credentialFreeCode(
 }
 
 /**
- * Whether `text` holds a credential value (compared in lower case too,
- * as credentialFreeCode does): such text must not leave the credential
- * boundary, and is dropped whole rather than rewritten (#891 review).
+ * A test for text that a response would carry out of the credential
+ * boundary (a config option's value, label or description, #891): true
+ * when it holds a credential value, compared in lower case too, as
+ * credentialFreeCode does. Such text is dropped whole rather than
+ * rewritten. Unlike the log redactor, every nonempty value counts, short
+ * ones included (#937): dropping a choice too many is safe, a short secret
+ * shown or stored in the config is not. The values are collected and
+ * normalized once, so one matcher serves a whole response.
  */
-export function holdsCredentialValue(
-  text: string,
+export function responseCredentialMatcher(
   credentials: Record<string, unknown>,
-): boolean {
-  const lower = text.toLowerCase();
-  return collectSecretValues(credentials).some(
-    (secret) => text.includes(secret) || lower.includes(secret.toLowerCase()),
+): (text: string) => boolean {
+  const secrets = [...new Set(collectSecretValues(credentials, 1))].map(
+    (secret) => ({ secret, lower: secret.toLowerCase() }),
   );
+  if (secrets.length === 0) return () => false;
+  return (text) => {
+    const lower = text.toLowerCase();
+    return secrets.some(
+      ({ secret, lower: lowerSecret }) =>
+        text.includes(secret) || lower.includes(lowerSecret),
+    );
+  };
 }
 
 /**

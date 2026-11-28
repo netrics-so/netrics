@@ -608,6 +608,7 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
       removeShort: "Entfernen",
       clearAll: "Alle entfernen",
       otherResource: "(nicht in den Listen unten)",
+      keepsOne: "Mindestens eine Auswahl muss bleiben.",
     },
     oauthButton: {
       otherAccount: "Anderes {name}-Konto verwenden",

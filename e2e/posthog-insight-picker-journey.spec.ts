@@ -256,3 +256,243 @@ test("existing PostHog connection: a pasted insight shows as chosen and the choi
     "1000/EfGh5678",
   );
 });
+
+test("existing PostHog connection: a choice removed while the first list loads stays removed (#937)", async ({
+  page,
+}, testInfo) => {
+  const locale = testInfo.project.name as Locale;
+  const t = messages(locale);
+  const { workspaceId } = await startWorkspace(page, locale);
+  const connectionId = await seedConnection(workspaceId);
+  const path = `/v1/workspaces/${workspaceId}/connections/${connectionId}`;
+  const pasted = "https://us.posthog.com/project/1000/insights/AbCd1234";
+
+  const listed: Array<Record<string, unknown>> = [];
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(`**${path}/config-options`, async (route) => {
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    listed.push(body);
+    // The first answer is delayed until the stored choice was removed.
+    if (listed.length === 1) await held;
+    // As the connector reads the draft it was sent: the pasted link is
+    // chosen while the draft still names it.
+    const insights = String(
+      (body.config as Record<string, unknown>).insights ?? "",
+    );
+    return route.fulfill({
+      json: listing(
+        String(body.resourceId),
+        insights.includes("AbCd1234")
+          ? [{ value: "1000/AbCd1234", resourceId: "1000" }]
+          : [],
+      ),
+    });
+  });
+
+  await page.goto(`/workspaces/${workspaceId}/connections/${connectionId}`);
+  const form = page.locator("#edit-connection");
+  const picker = form.getByTestId("config-options-insights");
+  await expect.poll(() => listed.length).toBe(1);
+  await picker
+    .getByRole("button", {
+      name: fill(t.configOptions.remove, { choice: pasted }),
+    })
+    .click();
+  release();
+
+  // Listed again with the draft of now, which no longer names it.
+  await expect.poll(() => listed.length).toBe(2);
+  expect(
+    (listed[1]!.config as Record<string, unknown>).insights,
+  ).toBeUndefined();
+  const signups = picker.getByRole("checkbox", { name: /Signups/ });
+  await expect(signups).toBeVisible();
+  await expect(signups).not.toBeChecked();
+  await expect(
+    picker.getByText(fill(t.configOptions.chosen, { count: 0, max: 20 }), {
+      exact: true,
+    }),
+  ).toBeVisible();
+});
+
+test("new PostHog connection: a project ID spelled anew keeps its chosen insights (#937)", async ({
+  page,
+}, testInfo) => {
+  const locale = testInfo.project.name as Locale;
+  const t = messages(locale);
+  const { workspaceId } = await startWorkspace(page, locale);
+  const connectionId = await seedConnection(workspaceId);
+  const base = `/v1/workspaces/${workspaceId}/connections`;
+
+  const created: Array<Record<string, unknown>> = [];
+  // A key limited to projects: the projects are the IDs typed, spelled as
+  // typed, and a choice belongs to the project as the draft spells it.
+  const projectOf = (body: Record<string, unknown>) =>
+    String((body.config as Record<string, unknown>).projects ?? "");
+  await page.route(`**${base}/preview`, (route) => {
+    const id = projectOf(route.request().postDataJSON());
+    return route.fulfill({
+      json: {
+        check: { ok: true },
+        resources: [{ id, name: id, kind: "project" }],
+      },
+    });
+  });
+  await page.route(`**${base}/config-options`, (route) => {
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    const insights = String(
+      (body.config as Record<string, unknown>).insights ?? "",
+    );
+    return route.fulfill({
+      json: {
+        ...listing("1000"),
+        selected: insights
+          .split(/\s+/)
+          .filter((value) => value !== "")
+          .map((value) => ({ value, resourceId: projectOf(body) })),
+      },
+    });
+  });
+  await page.route(`**${base}`, async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    created.push(route.request().postDataJSON() as Record<string, unknown>);
+    const current = await page.request.get(`${base}/${connectionId}`);
+    const { connection } = (await current.json()) as { connection: unknown };
+    return route.fulfill({ json: { connection } });
+  });
+
+  await page.goto(`/workspaces/${workspaceId}/connections/new`);
+  await page
+    .getByRole("button", { name: /PostHog/ })
+    .first()
+    .click();
+  await page.locator("#connection-token").fill("phx_not_a_real_key");
+  await page.locator("#config-projects").fill("01000");
+  await page.getByRole("button", { name: t.wizard.test }).click();
+
+  const picker = page.getByTestId("config-options-insights");
+  // One project: its list opens by itself.
+  await picker.getByRole("checkbox", { name: /Weekly revenue/ }).check();
+  const chosen = picker.getByRole("list", { name: t.configOptions.chosenList });
+  await expect(chosen).toContainText("Weekly revenue (01000)");
+
+  // The same project, spelled without its leading zero, checked again.
+  await page.locator("#config-projects").fill("1000");
+  await page.getByRole("button", { name: t.wizard.test }).click();
+  await expect(
+    picker.getByRole("checkbox", { name: /Weekly revenue/ }),
+  ).toBeChecked();
+  await expect(chosen).toContainText("Weekly revenue (1000)");
+  await expect(
+    picker.getByText(fill(t.configOptions.chosen, { count: 1, max: 20 }), {
+      exact: true,
+    }),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: t.wizard.create }).click();
+  await expect(page).toHaveURL(
+    new RegExp(`/workspaces/${workspaceId}/connections/${connectionId}`),
+  );
+  expect(created).toHaveLength(1);
+  expect((created[0]!.config as Record<string, unknown>).insights).toBe(
+    "1000/EfGh5678",
+  );
+});
+
+test("new PostHog connection: project IDs changed to others drop a project's insights before create (#937 review)", async ({
+  page,
+}, testInfo) => {
+  const locale = testInfo.project.name as Locale;
+  const t = messages(locale);
+  const { workspaceId } = await startWorkspace(page, locale);
+  const connectionId = await seedConnection(workspaceId);
+  const base = `/v1/workspaces/${workspaceId}/connections`;
+
+  const listed: Array<Record<string, unknown>> = [];
+  const created: Array<Record<string, unknown>> = [];
+  const configOf = (body: Record<string, unknown>) =>
+    body.config as Record<string, unknown>;
+  // A key limited to projects: the projects are the IDs typed.
+  await page.route(`**${base}/preview`, (route) => {
+    const ids = String(configOf(route.request().postDataJSON()).projects)
+      .split(/\s+/)
+      .filter((id) => id !== "");
+    return route.fulfill({
+      json: {
+        check: { ok: true },
+        resources: ids.map((id) => ({ id, name: id, kind: "project" })),
+      },
+    });
+  });
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(`**${base}/config-options`, async (route) => {
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    listed.push(body);
+    // The listing after the IDs changed waits, so create is tried first.
+    if (listed.length === 2) await held;
+    // An insight belongs to its own project, named or not.
+    const insights = String(configOf(body).insights ?? "");
+    return route.fulfill({
+      json: {
+        ...listing(String(body.resourceId)),
+        selected: insights
+          .split(/\s+/)
+          .filter((value) => value !== "")
+          .map((value) => ({ value, resourceId: value.split("/")[0]! })),
+      },
+    });
+  });
+  await page.route(`**${base}`, async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    created.push(route.request().postDataJSON() as Record<string, unknown>);
+    const current = await page.request.get(`${base}/${connectionId}`);
+    const { connection } = (await current.json()) as { connection: unknown };
+    return route.fulfill({ json: { connection } });
+  });
+
+  await page.goto(`/workspaces/${workspaceId}/connections/new`);
+  await page
+    .getByRole("button", { name: /PostHog/ })
+    .first()
+    .click();
+  await page.locator("#connection-token").fill("phx_not_a_real_key");
+  await page.locator("#config-projects").fill("1000");
+  await page.getByRole("button", { name: t.wizard.test }).click();
+  const picker = page.getByTestId("config-options-insights");
+  await picker.getByRole("checkbox", { name: /Weekly revenue/ }).check();
+
+  // Two other projects: no list opens by itself.
+  await page.locator("#config-projects").fill("1001 1002");
+  await page.getByRole("button", { name: t.wizard.test }).click();
+  await expect(
+    picker.getByRole("button", {
+      name: fill(t.configOptions.show, { resource: "1001" }),
+    }),
+  ).toBeVisible();
+  // The chosen insight's project is in neither: one listing settles it,
+  // and nothing is created meanwhile.
+  await expect.poll(() => listed.length).toBe(2);
+  expect(configOf(listed[1]!).insights).toBe("1000/EfGh5678");
+  const create = page.getByRole("button", { name: t.wizard.create });
+  await expect(create).toBeDisabled();
+  release();
+  await expect(
+    picker.getByText(fill(t.configOptions.chosen, { count: 0, max: 20 }), {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(picker.getByRole("checkbox")).toHaveCount(0);
+
+  await create.click();
+  await expect(page).toHaveURL(
+    new RegExp(`/workspaces/${workspaceId}/connections/${connectionId}`),
+  );
+  expect(created).toHaveLength(1);
+  expect(configOf(created[0]!).insights).toBeUndefined();
+});

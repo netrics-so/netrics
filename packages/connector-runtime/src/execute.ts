@@ -44,9 +44,9 @@ import {
 import { createConnectorLogger, type ConnectorLogSink } from "./log.js";
 import {
   credentialFreeCode,
-  holdsCredentialValue,
   redactConnectorError,
   redactCredentialValues,
+  responseCredentialMatcher,
 } from "./redact.js";
 
 /** Time budget per connector call (one check, discover, or sync page). */
@@ -676,12 +676,11 @@ export async function executeConfigOptions(
   }
   // Choices are shown and stored in the config: one that holds a value of
   // the call's credentials (or a secret derived from them) is dropped
-  // whole, never rewritten (#891 review).
-  const secrets = redactionSet(context, options);
+  // whole, never rewritten (#891 review), however short the value
+  // (#937). The values are prepared once for the whole listing (#937).
+  const holdsSecret = responseCredentialMatcher(redactionSet(context, options));
   const clean = (...texts: Array<string | undefined>) =>
-    texts.every(
-      (text) => text === undefined || !holdsCredentialValue(text, secrets),
-    );
+    texts.every((text) => text === undefined || !holdsSecret(text));
   const { options: choices, selected, ...rest } = parsed.data;
   return {
     ...rest,
