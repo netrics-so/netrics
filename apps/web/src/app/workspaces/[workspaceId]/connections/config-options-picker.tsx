@@ -51,6 +51,26 @@ export function togglePicked(
   return next;
 }
 
+/**
+ * The values of a field not read by a listing yet, as typed or stored
+ * (pasted links included): separated by spaces or commas.
+ */
+export function rawChoices(value: string): string[] {
+  return value.split(/[\s,]+/).filter((token) => token !== "");
+}
+
+/**
+ * `picked` without the choices of resources outside `keep` (a project
+ * unticked in the setup, #891 review). The same map when none is dropped.
+ */
+export function withinResources(
+  picked: Picked,
+  keep: ReadonlySet<string>,
+): Picked {
+  const next = new Map([...picked].filter(([, owner]) => keep.has(owner)));
+  return next.size === picked.size ? picked : next;
+}
+
 interface ConfigOptionsPickerProps {
   field: ConfigField;
   /** How many choices may be made in all (`configOptions.maxSelected`). */
@@ -65,6 +85,24 @@ interface ConfigOptionsPickerProps {
   /** Lists one resource's choices with the draft settings. */
   load: (resourceId: string) => Promise<ConnectionConfigOptionsResponse>;
   disabled?: boolean;
+  /**
+   * Drops the choices of resources that leave `resources` (the setup,
+   * where unticking a project leaves it out of the connection).
+   */
+  dropOutsideResources?: boolean;
+  /**
+   * What the lists depend on besides the field (host, IDs, credentials):
+   * when it changes, the listed resources and choices are listed afresh.
+   */
+  discoveryKey?: string;
+  /**
+   * Choices with their resources from an earlier picker of the same
+   * field (the setup's previous check), used while they still spell the
+   * field's value, so a resource unticked later still takes its choices.
+   */
+  initialPicked?: Picked | null;
+  /** Hears every change of the choices and their resources. */
+  onPickedChange?: (picked: Picked | null) => void;
 }
 
 /**
@@ -84,6 +122,10 @@ export function ConfigOptionsPicker({
   onChange,
   load,
   disabled,
+  dropOutsideResources = false,
+  discoveryKey = "",
+  initialPicked = null,
+  onPickedChange,
 }: ConfigOptionsPickerProps) {
   const locale = useLocale();
   const t = useT("connections.configOptions");
@@ -98,12 +140,29 @@ export function ConfigOptionsPicker({
     | { status: "error"; message: string }
   >({ status: "idle" });
   const resources = givenResources ?? loadedResources;
-  const [picked, setPicked] = useState<Picked | null>(null);
+  const [picked, setPicked] = useState<Picked | null>(() =>
+    initialPicked && pickedValue(initialPicked) === value
+      ? initialPicked
+      : null,
+  );
+  // Read by requests when they answer: the value and choices then, and
+  // the discovery revision they were sent under (#891 review).
+  const valueNow = useRef(value);
+  valueNow.current = value;
+  const pickedNow = useRef(picked);
+  pickedNow.current = picked;
+  const revision = useRef(0);
+  useEffect(() => {
+    onPickedChange?.(picked);
+    // Reports the choices only; the callback may change identity.
+  }, [picked]);
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
   const [listings, setListings] = useState<ReadonlyMap<string, Listing>>(
     new Map(),
   );
   const [shown, setShown] = useState(PICKER_RESOURCES_SHOWN);
+  // Names of choices seen in a listing, for the list of chosen ones.
+  const [labels, setLabels] = useState<ReadonlyMap<string, string>>(new Map());
   // The value the picker last wrote, so a value changed from outside (a
   // new draft) is not overwritten by an older choice.
   const written = useRef<string | null>(null);
@@ -122,12 +181,22 @@ export function ConfigOptionsPicker({
     onChange(text);
   }
 
-  async function list(resourceId: string) {
+  async function list(resourceId: string): Promise<void> {
+    const sent = revision.current;
+    const sentValue = valueNow.current;
     setListings((current) =>
       new Map(current).set(resourceId, { status: "loading" }),
     );
     try {
       const result = await load(resourceId);
+      // Inputs changed since: this answer is for other settings.
+      if (revision.current !== sent) return;
+      // The field changed while the first list loaded (a choice removed
+      // from its text): its `selected` is out of date, so list again
+      // with the current value instead of undoing the change.
+      if (pickedNow.current === null && valueNow.current !== sentValue) {
+        return list(resourceId);
+      }
       setListings((current) =>
         new Map(current).set(resourceId, {
           status: "ready",
@@ -135,6 +204,13 @@ export function ConfigOptionsPicker({
           truncated: result.truncated === true,
         }),
       );
+      setLabels((current) => {
+        const next = new Map(current);
+        for (const option of result.options) {
+          next.set(option.value, option.label);
+        }
+        return next;
+      });
       // The first listing reads what the field chooses now.
       setPicked(
         (current) =>
@@ -144,6 +220,7 @@ export function ConfigOptionsPicker({
           ),
       );
     } catch (cause) {
+      if (revision.current !== sent) return;
       setListings((current) =>
         new Map(current).set(resourceId, {
           status: "error",
@@ -166,23 +243,53 @@ export function ConfigOptionsPicker({
     }
   }
 
-  // One resource: nothing to open first.
+  // One resource: nothing to open first. A list already loaded or
+  // loading for it is kept (#891 review).
   const single = resources?.length === 1 ? resources[0]!.id : null;
   useEffect(() => {
     if (single !== null && !disabled) {
       setOpen(new Set([single]));
-      void list(single);
+      const listing = listings.get(single);
+      if (!listing || listing.status === "error") void list(single);
     }
     // Listed once per single resource; `list` reads the latest draft.
   }, [single]);
 
+  // New discovery inputs: the lists are read again on request (#891
+  // review); the choices made stay.
+  const discovered = useRef(discoveryKey);
+  useEffect(() => {
+    if (discovered.current === discoveryKey) return;
+    discovered.current = discoveryKey;
+    revision.current += 1;
+    setListings(new Map());
+    setOpen(new Set());
+    setLoadedResources(null);
+    setResourcesState({ status: "idle" });
+  }, [discoveryKey]);
+
+  // A resource left out of the setup takes its choices with it.
+  const resourceIds = resources?.map((resource) => resource.id).join("\n");
+  useEffect(() => {
+    if (!dropOutsideResources || !resources || !picked) return;
+    const next = withinResources(
+      picked,
+      new Set(resources.map((resource) => resource.id)),
+    );
+    if (next !== picked) choose(next);
+  }, [resourceIds, picked, dropOutsideResources]);
+
   async function onLoadResources() {
     if (!loadResources) return;
+    const sent = revision.current;
     setResourcesState({ status: "loading" });
     try {
-      setLoadedResources(await loadResources());
+      const loaded = await loadResources();
+      if (revision.current !== sent) return;
+      setLoadedResources(loaded);
       setResourcesState({ status: "idle" });
     } catch (cause) {
+      if (revision.current !== sent) return;
       setResourcesState({
         status: "error",
         message: apiErrorMessage(cause, locale),
@@ -191,6 +298,31 @@ export function ConfigOptionsPicker({
   }
 
   const count = picked?.size ?? null;
+  const resourceNames = new Map(
+    (resources ?? []).map((resource) => [resource.id, resource.name]),
+  );
+  // Every current choice, removable whatever its resource's list does
+  // (not opened, refused, or the resource left out): the listed values,
+  // or the field's own text before any list was read (#891 review).
+  const chosen: Array<{ value: string; owner: string | null }> = picked
+    ? [...picked].map(([chosenValue, owner]) => ({
+        value: chosenValue,
+        owner,
+      }))
+    : rawChoices(value).map((token) => ({ value: token, owner: null }));
+  function remove(chosenValue: string) {
+    if (picked) {
+      const next = new Map(picked);
+      next.delete(chosenValue);
+      choose(next);
+    } else {
+      onChange(
+        rawChoices(value)
+          .filter((token) => token !== chosenValue)
+          .join(" "),
+      );
+    }
+  }
   const full = picked !== null && picked.size >= maxSelected;
   const label = field.required
     ? field.label
@@ -214,6 +346,46 @@ export function ConfigOptionsPicker({
             : t("noneChosen")
           : t("chosen", { count, max: maxSelected })}
       </p>
+      {chosen.length > 0 ? (
+        <div className="stack">
+          <ul className="workspace-list" aria-label={t("chosenList")}>
+            {chosen.map((entry) => {
+              const name = labels.get(entry.value) ?? entry.value;
+              const where =
+                entry.owner === null
+                  ? null
+                  : (resourceNames.get(entry.owner) ?? null);
+              return (
+                <li key={entry.value}>
+                  {name}
+                  {where ? (
+                    <span className="muted"> ({where})</span>
+                  ) : entry.owner !== null && resources ? (
+                    <span className="muted"> {t("otherResource")}</span>
+                  ) : null}{" "}
+                  <button
+                    type="button"
+                    disabled={disabled}
+                    aria-label={t("remove", { choice: name })}
+                    onClick={() => remove(entry.value)}
+                  >
+                    {t("removeShort")}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          <div className="actions">
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => choose(new Map())}
+            >
+              {t("clearAll")}
+            </button>
+          </div>
+        </div>
+      ) : null}
       {resources === null ? (
         loadResources ? (
           <div className="actions">

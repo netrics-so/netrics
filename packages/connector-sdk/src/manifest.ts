@@ -276,6 +276,22 @@ export const brandColorSchema = z
   .string()
   .regex(/^#[0-9a-fA-F]{6}$/, { message: 'brandColor must be "#rrggbb"' });
 
+/**
+ * Whether a string property's default passes its own schema (#891
+ * review): a string, within minLength/maxLength (code points of the
+ * trimmed value, as the host counts them) and among its enum, if any.
+ */
+function validStringDefault(property: Record<string, unknown>): boolean {
+  const value = property.default;
+  if (typeof value !== "string") return false;
+  const length = [...value.trim()].length;
+  if (typeof property.minLength === "number" && length < property.minLength)
+    return false;
+  if (typeof property.maxLength === "number" && length > property.maxLength)
+    return false;
+  return !Array.isArray(property.enum) || property.enum.includes(value);
+}
+
 /** A configSchema property's schema, or undefined. */
 function configProperty(
   schema: unknown,
@@ -520,12 +536,32 @@ export const connectorManifestSchema = z
           path: ["configuredHosts"],
         });
     }
+    const required = new Set(
+      Array.isArray(
+        (manifest.configSchema as { required?: unknown } | undefined)?.required,
+      )
+        ? ((manifest.configSchema as { required: unknown[] }).required.filter(
+            (key): key is string => typeof key === "string",
+          ) as string[])
+        : [],
+    );
     for (const entry of manifest.configOptions ?? []) {
       const property = configProperty(manifest.configSchema, entry.key);
       if (property?.type !== "string")
         context.addIssue({
           code: "custom",
           message: `configOptions names "${entry.key}", which is not a string property of configSchema`,
+          path: ["configOptions"],
+        });
+      // A picker is filled only after the check passed, so a field the
+      // connection cannot be created without needs a default (#891 review).
+      else if (
+        required.has(entry.key) &&
+        !validStringDefault(property as Record<string, unknown>)
+      )
+        context.addIssue({
+          code: "custom",
+          message: `configOptions names "${entry.key}", a required property without a valid default`,
           path: ["configOptions"],
         });
     }

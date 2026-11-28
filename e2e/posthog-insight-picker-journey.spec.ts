@@ -162,6 +162,22 @@ test("new PostHog connection: insights are chosen per project, none at first", a
       exact: true,
     }),
   ).toBeVisible();
+  // Chosen insights are listed apart from the project lists, each
+  // removable (#891 review).
+  const chosen = picker.getByRole("list", { name: t.configOptions.chosenList });
+  await expect(chosen.getByRole("listitem")).toHaveCount(2);
+  await expect(chosen).toContainText("App opens (Mobile app)");
+
+  // Unticking a project leaves it out of the connection, and its chosen
+  // insights with it.
+  await page.getByRole("checkbox", { name: /^Mobile app/ }).uncheck();
+  await expect(chosen.getByRole("listitem")).toHaveCount(1);
+  await expect(chosen).toContainText("Weekly revenue (Website)");
+  await expect(
+    picker.getByText(fill(t.configOptions.chosen, { count: 1, max: 20 }), {
+      exact: true,
+    }),
+  ).toBeVisible();
 
   await page.getByRole("button", { name: t.wizard.create }).click();
   await expect(page).toHaveURL(
@@ -169,7 +185,7 @@ test("new PostHog connection: insights are chosen per project, none at first", a
   );
   expect(created).toHaveLength(1);
   expect((created[0]!.config as Record<string, unknown>).insights).toBe(
-    "1000/EfGh5678 1001/IjKl9012",
+    "1000/EfGh5678",
   );
 });
 
@@ -224,11 +240,19 @@ test("existing PostHog connection: a pasted insight shows as chosen and the choi
     }),
   ).toBeVisible();
 
+  // The stored choice is removed from the chosen list, not only from its
+  // project's list (#891 review).
+  await picker
+    .getByRole("button", {
+      name: fill(t.configOptions.remove, { choice: "Signups" }),
+    })
+    .click();
+  await expect(signups).not.toBeChecked();
   await revenue.check();
   await form.getByRole("button", { name: t.edit.saveChanges }).click();
   await expect(form.getByText(t.edit.updated)).toBeVisible();
   expect(saved).toHaveLength(1);
   expect((saved[0]!.config as Record<string, unknown>).insights).toBe(
-    "1000/AbCd1234 1000/EfGh5678",
+    "1000/EfGh5678",
   );
 });

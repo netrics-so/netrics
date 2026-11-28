@@ -586,6 +586,61 @@ describe("executeConfigOptions (SDK 0.2.24, #891)", () => {
     );
   });
 
+  it("drops choices that hold a credential or derived secret (review)", async () => {
+    const context: ConnectionContext = {
+      ...baseContext,
+      credentials: { token: "sk-live-9f8e7d6c" },
+    };
+    const connector = withOptions(() => ({
+      options: [
+        { value: "r1/a", label: "Report A" },
+        { value: "r1/b", label: "Leak sk-live-9f8e7d6c" },
+        { value: "r1/SK-LIVE-9F8E7D6C", label: "Upper" },
+        { value: "r1/c", label: "C", description: "derived-secret-01" },
+      ],
+      selected: [
+        { value: "r1/a", resourceId: "r1" },
+        { value: "r1/sk-live-9f8e7d6c", resourceId: "r1" },
+      ],
+    }));
+    await expect(
+      executeConfigOptions(
+        connector,
+        context,
+        { key: "reports", resourceId: "r1" },
+        { redactValues: ["derived-secret-01"] },
+      ),
+    ).resolves.toEqual({
+      options: [{ value: "r1/a", label: "Report A" }],
+      selected: [{ value: "r1/a", resourceId: "r1" }],
+    });
+  });
+
+  it("drops choices that hold a padded key's trimmed value (review)", async () => {
+    // A key pasted with spaces: the connector authenticates with it
+    // trimmed, so the trimmed value must not leave either.
+    const context: ConnectionContext = {
+      ...baseContext,
+      credentials: { token: "  sk-live-9f8e7d6c\n" },
+    };
+    const connector = withOptions(() => ({
+      options: [
+        { value: "r1/a", label: "Report A" },
+        { value: "r1/b", label: "Leak sk-live-9f8e7d6c" },
+      ],
+      selected: [],
+    }));
+    await expect(
+      executeConfigOptions(connector, context, {
+        key: "reports",
+        resourceId: "r1",
+      }),
+    ).resolves.toEqual({
+      options: [{ value: "r1/a", label: "Report A" }],
+      selected: [],
+    });
+  });
+
   it("redacts credential values from thrown errors", async () => {
     const context: ConnectionContext = {
       ...baseContext,

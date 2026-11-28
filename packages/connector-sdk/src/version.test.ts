@@ -136,6 +136,38 @@ describe("assertManifestCompatible", () => {
     ).toThrow();
   });
 
+  it("refuses a required picked field without a default (0.2.24 review)", () => {
+    const withRequired = (reports: Record<string, unknown>) => ({
+      ...validManifest(),
+      configSchema: {
+        type: "object",
+        properties: { reports },
+        required: ["reports"],
+      },
+      configOptions: [{ key: "reports", per: "resource", maxSelected: 5 }],
+    });
+    expect(() =>
+      assertManifestCompatible(withRequired({ type: "string" })),
+    ).toThrow(/required property without a valid default/);
+    expect(() =>
+      assertManifestCompatible(withRequired({ type: "string", default: null })),
+    ).toThrow(/required property without a valid default/);
+    expect(() =>
+      assertManifestCompatible(
+        withRequired({ type: "string", default: "", minLength: 1 }),
+      ),
+    ).toThrow(/required property without a valid default/);
+    expect(() =>
+      assertManifestCompatible(
+        withRequired({ type: "string", default: "x", enum: ["a", "b"] }),
+      ),
+    ).toThrow(/required property without a valid default/);
+    expect(
+      assertManifestCompatible(withRequired({ type: "string", default: "" }))
+        .configOptions,
+    ).toHaveLength(1);
+  });
+
   it("accepts configuredHosts that name config properties only (0.2.20)", () => {
     const withHosts = (configuredHosts: string[]) => ({
       ...validManifest(),

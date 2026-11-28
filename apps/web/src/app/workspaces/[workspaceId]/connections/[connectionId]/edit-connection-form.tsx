@@ -142,6 +142,15 @@ export function EditConnectionForm({
     initialConfigValues(fields, connection.config),
   );
   const [token, setToken] = useState("");
+  // Saved credential updates: the lists use the stored credential, so a
+  // token being typed changes nothing until it is saved (#891 review).
+  const [credentialRevision, setCredentialRevision] = useState(0);
+  // What the pickers' lists depend on (#891 review): the typed settings
+  // (host, project IDs) and the stored credential, never the picked fields.
+  const discoveryKey = JSON.stringify([
+    typedFields.map((field) => configValues[field.key] ?? ""),
+    credentialRevision,
+  ]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -177,6 +186,7 @@ export function EditConnectionForm({
           fixedConfig,
         }),
       );
+      if (token !== "") setCredentialRevision((current) => current + 1);
       setToken("");
       setNotice(t("updated"));
       router.refresh();
@@ -260,6 +270,7 @@ export function EditConnectionForm({
               }}
               value={configValues[field.key] ?? ""}
               disabled={pending}
+              discoveryKey={discoveryKey}
               onChange={(value) =>
                 setConfigValues((current) => ({
                   ...current,

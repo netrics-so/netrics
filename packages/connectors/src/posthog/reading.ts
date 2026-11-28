@@ -29,8 +29,24 @@ export const INSIGHTS_KEY = "insights";
  * be chosen by an older pasted link.
  */
 export const MAX_INSIGHT_OPTIONS = 500;
-/** Longest insight name the picker shows, in characters. */
-const MAX_INSIGHT_LABEL = 300;
+/** Listing pages the picker reads per project at most. */
+export const MAX_INSIGHT_PAGES = MAX_INSIGHT_OPTIONS / LIST_LIMIT;
+/**
+ * Longest insight name the picker shows, in UTF-16 code units (the SDK's
+ * option label limit counts them), cut on a code-point boundary.
+ */
+export const MAX_INSIGHT_LABEL = 300;
+
+/** `text` cut to at most `max` UTF-16 code units, never inside a pair. */
+export function truncateUtf16(text: string, max: number): string {
+  if (text.length <= max) return text;
+  let out = "";
+  for (const point of text) {
+    if (out.length + point.length > max) break;
+    out += point;
+  }
+  return out;
+}
 /** Project IDs a project-scoped key's connection names at most. */
 export const MAX_PROJECT_IDS = 50;
 
@@ -386,8 +402,14 @@ export async function listInsightOptions(
   const project = canonicalProjectId(resourceId);
   const options: ConfigOptionsResult["options"] = [];
   let truncated = false;
-  for (let offset: number | null = 0; offset !== null;) {
-    if (options.length >= MAX_INSIGHT_OPTIONS) {
+  // At most MAX_INSIGHT_PAGES requests, however many insights they hold
+  // (#891 review): another page left over means the list is cut.
+  for (
+    let offset: number | null = 0, request = 0;
+    offset !== null;
+    request += 1
+  ) {
+    if (request >= MAX_INSIGHT_PAGES || options.length >= MAX_INSIGHT_OPTIONS) {
       truncated = true;
       break;
     }
@@ -426,9 +448,7 @@ export async function listInsightOptions(
       const name = (insight.name || insight.derived_name || "").trim();
       options.push({
         value: insightValue({ project, shortId: insight.short_id }),
-        label: name
-          ? [...name].slice(0, MAX_INSIGHT_LABEL).join("")
-          : insight.short_id,
+        label: name ? truncateUtf16(name, MAX_INSIGHT_LABEL) : insight.short_id,
         ...(name ? { description: insight.short_id } : {}),
       });
     }

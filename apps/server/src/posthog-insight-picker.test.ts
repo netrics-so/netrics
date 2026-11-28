@@ -308,17 +308,24 @@ describe("PostHog insight picker (#891)", () => {
   });
 
   it("keeps the stored connection's host fixed", async () => {
+    const created = await call("POST", base(), {
+      connectorId: "posthog",
+      name: "Fixed host",
+      config: { host: HOST },
+      credentials: { token: KEY },
+    });
+    expect(created.statusCode, created.body).toBe(200);
+    const fixed = connectionResponseSchema.parse(created.json()).connection.id;
     seen.length = 0;
-    const response = await call(
-      "POST",
-      `${base()}/${connectionId}/config-options`,
-      {
-        config: { host: "posthog.other.example" },
-        key: "insights",
-        resourceId: "1000",
-      },
-    );
+    const response = await call("POST", `${base()}/${fixed}/config-options`, {
+      config: { host: "posthog.other.example" },
+      key: "insights",
+      resourceId: "1000",
+    });
     expect(response.statusCode, response.body).toBe(400);
+    expect(connectionErrorResponseSchema.parse(response.json()).error).toBe(
+      "connection_host_fixed",
+    );
     expect(seen).toEqual([]);
   });
 });

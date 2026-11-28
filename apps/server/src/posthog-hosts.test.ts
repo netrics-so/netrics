@@ -4,6 +4,7 @@ import pino from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
+  connectorListResponseSchema,
   connectionResponseSchema,
   errorResponseSchema,
   storedConnectionPreviewResponseSchema,
@@ -213,6 +214,20 @@ afterAll(async () => {
   await owner?.end({ timeout: 5 }).catch(() => undefined);
   await schedulerDb?.$client.end({ timeout: 5 }).catch(() => undefined);
   await db?.$client.end({ timeout: 5 }).catch(() => undefined);
+});
+
+describe("the catalog's pickers (#891 review)", () => {
+  it("advertises no picker for a connector that lists no choices", async () => {
+    // This registry's PostHog has no configOptions method, though its
+    // manifest names the field: the field stays a text field.
+    const response = await call("GET", "/v1/connectors");
+    expect(response.statusCode, response.body).toBe(200);
+    const posthog = connectorListResponseSchema
+      .parse(response.json())
+      .connectors.find((entry) => entry.id === "posthog");
+    expect(posthog).toBeDefined();
+    expect(posthog!.configOptions).toBeUndefined();
+  });
 });
 
 describe("a PostHog key stays with its host (#884 review)", () => {

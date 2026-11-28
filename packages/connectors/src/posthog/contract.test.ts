@@ -35,6 +35,7 @@ import {
   INSIGHTS_STREAM,
   INSIGHTS_UNAVAILABLE_CODE,
   MAX_INSIGHT_OPTIONS,
+  MAX_INSIGHT_PAGES,
   KEY_REJECTED_CODE,
   KEY_REJECTED_MESSAGE,
   MAX_INSIGHT_ROWS,
@@ -1966,6 +1967,51 @@ describe("insight picker (#891)", () => {
     expect(
       posthog.requests.map((request) => request.params.get("offset")),
     ).toEqual(["0", "100", "200", "300", "400"]);
+  });
+
+  it("reads at most five pages, however few trends insights they hold (review)", async () => {
+    posthog = fake({
+      projects: fakeProjects(1),
+      insights: [
+        ...Array.from({ length: 700 }, (_, index) => ({
+          project: 1000,
+          shortId: `Fu${String(index).padStart(6, "0")}`,
+          query: {
+            kind: "InsightVizNode",
+            source: { kind: "FunnelsQuery" },
+          },
+        })),
+        { project: 1000, shortId: "Late0001" },
+      ],
+    });
+    const result = await options({}, "1000");
+    expect(posthog.requests).toHaveLength(MAX_INSIGHT_PAGES);
+    expect(result.options).toEqual([]);
+    expect(result.truncated).toBe(true);
+    // Five pages that end the list are not cut.
+    posthog = fake({
+      projects: fakeProjects(1),
+      insights: Array.from({ length: 450 }, (_, index) => ({
+        project: 1000,
+        shortId: `Fu${String(index).padStart(6, "0")}`,
+        query: { kind: "InsightVizNode", source: { kind: "FunnelsQuery" } },
+      })),
+    });
+    const whole = await options({}, "1000");
+    expect(posthog.requests).toHaveLength(5);
+    expect(whole.truncated).toBeUndefined();
+  });
+
+  it("cuts a long name to 300 UTF-16 units on a code-point boundary (review)", async () => {
+    posthog = fake({
+      projects: fakeProjects(1),
+      insights: [
+        { project: 1000, shortId: "Emoji001", name: "😀".repeat(151) },
+      ],
+    });
+    const [option] = (await options({}, "1000")).options;
+    expect(option!.label).toBe("😀".repeat(150));
+    expect(option!.label.length).toBe(300);
   });
 
   it("names a refused project, a wrong key and a missing scope with fixed reasons", async () => {

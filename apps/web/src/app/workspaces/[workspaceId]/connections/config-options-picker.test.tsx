@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   ConfigOptionsPicker,
   pickedValue,
+  rawChoices,
   togglePicked,
+  withinResources,
 } from "./config-options-picker";
 import { parseConfigSchema } from "@/lib/config-schema";
 import { renderI18n } from "@/lib/i18n/test-render";
@@ -92,5 +94,23 @@ describe("config options picker (#891)", () => {
       "The current choice stays as it is until you change it in a list below.",
     );
     expect(html).toContain("Show the lists");
+    // Removable before any list is read, one by one or all (#891 review).
+    expect(html).toContain(
+      'aria-label="Remove https://us.posthog.com/project/1000/insights/AbCd1234"',
+    );
+    expect(html).toContain("Clear all");
+  });
+
+  it("reads typed choices, and drops those of resources left out (#891 review)", () => {
+    expect(rawChoices(" a/1, b/2\nc/3 ")).toEqual(["a/1", "b/2", "c/3"]);
+    expect(rawChoices("")).toEqual([]);
+    const picked = new Map([
+      ["1000/a", "1000"],
+      ["1001/b", "1001"],
+    ]);
+    expect(withinResources(picked, new Set(["1000", "1001"]))).toBe(picked);
+    expect([...withinResources(picked, new Set(["1000"]))]).toEqual([
+      ["1000/a", "1000"],
+    ]);
   });
 });

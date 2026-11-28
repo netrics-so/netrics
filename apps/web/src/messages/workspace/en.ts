@@ -697,6 +697,11 @@ export const workspaceEn = {
       truncated:
         "Only the first {count} are listed. Others chosen before stay chosen.",
       showMore: "Show {count} more",
+      chosenList: "Chosen",
+      remove: "Remove {choice}",
+      removeShort: "Remove",
+      clearAll: "Clear all",
+      otherResource: "(not in the lists below)",
     },
     oauthButton: {
       otherAccount: "Use a different {name} account",

@@ -44,6 +44,7 @@ import {
 import { createConnectorLogger, type ConnectorLogSink } from "./log.js";
 import {
   credentialFreeCode,
+  holdsCredentialValue,
   redactConnectorError,
   redactCredentialValues,
 } from "./redact.js";
@@ -673,7 +674,22 @@ export async function executeConfigOptions(
       `connector "${connector.manifest.id}" returned invalid config options: ${formatIssues(parsed.error.issues)}`,
     );
   }
-  return parsed.data;
+  // Choices are shown and stored in the config: one that holds a value of
+  // the call's credentials (or a secret derived from them) is dropped
+  // whole, never rewritten (#891 review).
+  const secrets = redactionSet(context, options);
+  const clean = (...texts: Array<string | undefined>) =>
+    texts.every(
+      (text) => text === undefined || !holdsCredentialValue(text, secrets),
+    );
+  const { options: choices, selected, ...rest } = parsed.data;
+  return {
+    ...rest,
+    options: choices.filter((option) =>
+      clean(option.value, option.label, option.description),
+    ),
+    selected: selected.filter((entry) => clean(entry.value, entry.resourceId)),
+  };
 }
 
 /**

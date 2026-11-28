@@ -603,6 +603,11 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
       truncated:
         "Nur die ersten {count} sind aufgelistet. Früher ausgewählte bleiben ausgewählt.",
       showMore: "{count} weitere anzeigen",
+      chosenList: "Ausgewählt",
+      remove: "{choice} entfernen",
+      removeShort: "Entfernen",
+      clearAll: "Alle entfernen",
+      otherResource: "(nicht in den Listen unten)",
     },
     oauthButton: {
       otherAccount: "Anderes {name}-Konto verwenden",

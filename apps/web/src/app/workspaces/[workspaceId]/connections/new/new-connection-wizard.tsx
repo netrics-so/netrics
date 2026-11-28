@@ -13,7 +13,7 @@ import { AppleAdsSetup } from "./apple-ads-setup";
 import { inProject } from "@/lib/project-scope";
 import { AppPicker } from "../app-picker";
 import { ConfigFields } from "../config-fields";
-import { ConfigOptionsPicker } from "../config-options-picker";
+import { ConfigOptionsPicker, type Picked } from "../config-options-picker";
 import { ConnectOAuthButton } from "../connect-oauth-button";
 import {
   presetRetentionValues,
@@ -116,6 +116,11 @@ export function NewConnectionWizard({
     presetRetentionValues(initial?.datasets ?? []),
   );
   const [pending, setPending] = useState<"preview" | "create" | null>(null);
+  // Picked choices with their resources, kept across checks (#891
+  // review): a project unticked after another check still drops them.
+  const [pickedOwners, setPickedOwners] = useState<
+    Readonly<Record<string, Picked | null>>
+  >({});
   const [error, setError] = useState<string | null>(null);
 
   const fields = useMemo(
@@ -174,6 +179,7 @@ export function NewConnectionWizard({
     setFieldErrors({});
     setPreview(null);
     setSelectedResources(null);
+    setPickedOwners({});
     setRetention(presetRetentionValues(entry.datasets ?? []));
     setError(null);
   }
@@ -535,6 +541,15 @@ export function NewConnectionWizard({
                     .map(({ id, name }) => ({ id, name }))}
                   value={configValues[field.key] ?? ""}
                   disabled={pending !== null}
+                  // An unticked project is not connected: its choices go.
+                  dropOutsideResources
+                  initialPicked={pickedOwners[field.key] ?? null}
+                  onPickedChange={(next) =>
+                    setPickedOwners((current) => ({
+                      ...current,
+                      [field.key]: next,
+                    }))
+                  }
                   // A choice changes no credential: the check stands.
                   onChange={(value) =>
                     setConfigValues((current) => ({

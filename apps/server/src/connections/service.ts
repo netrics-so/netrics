@@ -2293,8 +2293,13 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     /** The installation's catalog, from the deployed bundle. */
     /** The catalog, its texts in `locale` (#257). */
     listConnectors(locale: Locale = DEFAULT_LOCALE) {
-      return registry.list().map(({ manifest: english }) => {
+      return registry.list().map(({ manifest: english, connector }) => {
         const manifest = localizedManifest(english, locale);
+        // A picker only where the connector lists its choices, by the
+        // rule the config-options routes use (#891 review).
+        const configOptions = (manifest.configOptions ?? []).filter((entry) =>
+          supportsConfigOptions(connector, entry.key),
+        );
         return {
           id: manifest.id,
           name: manifest.name,
@@ -2315,11 +2320,12 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           minRefreshIntervalSeconds: manifest.minRefreshIntervalSeconds,
           supportsBackfill: manifest.supportsBackfill,
           configSchema: { ...manifest.configSchema },
-          ...(manifest.configOptions?.length
+          ...(configOptions.length
             ? {
-                configOptions: manifest.configOptions.map(
-                  ({ key, maxSelected }) => ({ key, maxSelected }),
-                ),
+                configOptions: configOptions.map(({ key, maxSelected }) => ({
+                  key,
+                  maxSelected,
+                })),
               }
             : {}),
           authStrategies: manifest.authStrategies.map((strategy) =>
