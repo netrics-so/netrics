@@ -274,9 +274,10 @@ export async function buildApp(
     });
   // App slides fetch the icons their apps lack (#709) the way "Use app
   // icon" does: through the connection, validated and stored.
-  /** Connector calls of the API: custom API private hosts, test egress. */
+  /** Connector calls of the API: self-host private hosts, test egress. */
   const connectorCallDeps = {
     customApiPrivateHosts: config.customApiPrivateHosts,
+    connectorPrivateHosts: config.connectorPrivateHosts,
     ...(deps.executeOptions ? { executeOptions: deps.executeOptions } : {}),
   };
   const iconConnections = createConnectionService({

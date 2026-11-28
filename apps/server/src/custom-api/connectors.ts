@@ -154,17 +154,23 @@ export function httpCheckEgress(
  * For custom-api: egress = customApiEgress(privateHosts, base.egress),
  * timeoutMs 60_000, redactValues += customApiSecretValues(...). For
  * http-check: egress = httpCheckEgress(privateHosts, base.egress), timeoutMs
- * 60_000. Other bundled connectors: base, never with private hosts.
+ * 60_000. Other bundled connectors: base, never with the custom API private
+ * hosts; one whose manifest names `configuredHosts` gets the connector
+ * private hosts (NETRICS_CONNECTOR_PRIVATE_HOSTS, #892), which the runtime
+ * applies to that connection's configured hosts only.
  */
 export function callOptionsFor(
   resolved: ResolvedConnector,
-  base: ExecuteOptions,
+  given: ExecuteOptions,
   input: {
     credentials: Record<string, unknown>;
     privateHosts: readonly string[];
+    connectorPrivateHosts?: readonly string[];
     config?: Record<string, unknown>;
   },
 ): ExecuteOptions {
+  // The connector private hosts are set here alone, never by a caller.
+  const { connectorPrivateHosts: _unscoped, ...base } = given;
   if (!resolved.customApi && resolved.manifest.id === HTTP_CHECK_CONNECTOR_ID) {
     return {
       ...base,
@@ -173,9 +179,15 @@ export function callOptionsFor(
     };
   }
   if (!resolved.customApi) {
-    if (!base.egress?.allowPrivateHosts) return base;
+    const connectorPrivateHosts = resolved.manifest.configuredHosts?.length
+      ? (input.connectorPrivateHosts ?? [])
+      : [];
+    const scoped = connectorPrivateHosts.length
+      ? { connectorPrivateHosts }
+      : {};
+    if (!base.egress?.allowPrivateHosts) return { ...base, ...scoped };
     const { allowPrivateHosts: _private, ...egress } = base.egress;
-    return { ...base, egress };
+    return { ...base, egress, ...scoped };
   }
   return customApiCallOptions({
     ...base,

@@ -250,6 +250,35 @@ HTTP checks (`http-check`, a preview) use the same list: a check of a URL
 on your own network works once its host is listed, and is down with the
 reason `egress_refused` until then.
 
+### Connectors on your own network
+
+Some connectors reach a host you enter in the connection: a self-hosted
+PostHog (preview) is one. Such a host is refused like any other when it
+resolves to a private address. To let these connectors reach services on
+your own network, list them in `.env` and recreate the `api` and `worker`
+(`docker compose restart` keeps the old environment):
+
+```dotenv
+NETRICS_CONNECTOR_PRIVATE_HOSTS=posthog.internal.example
+```
+
+```sh
+docker compose up -d api worker
+```
+
+Entries are the same as for `NETRICS_CUSTOM_API_PRIVATE_HOSTS` above (host
+names, `*.corp.example`, IP addresses, CIDR ranges with the same minimum
+prefixes; no ports, an invalid entry stops startup, broad entries log a
+warning), and the two lists are separate: one does not open the other. The
+allowance applies only to the host a connection names in its settings,
+never to a connector's own hosts (PostHog Cloud's, for example), and a
+connection's key stays bound to the host it was entered for, so listing
+another host never sends it there. Cloud metadata and link-local addresses
+stay refused even when listed. The connection still uses https; for a
+certificate from your own certificate authority see `NODE_EXTRA_CA_CERTS`
+below. The setting is off by default, and HTTP checks keep using
+`NETRICS_CUSTOM_API_PRIVATE_HOSTS`.
+
 If such a service uses a certificate from your own (private) certificate
 authority, netrics refuses the connection until it trusts that authority. Put
 the authority's certificate (PEM; several may follow each other in one file)

@@ -26,6 +26,7 @@ import {
   isMetadataAddress,
   broadPrivateHostEntries,
   parsePrivateHostEntries,
+  privateHostEntryError,
   privateHostPolicy,
   type EgressOptions,
 } from "./egress.js";
@@ -188,9 +189,21 @@ describe("private host entries", () => {
     "intranet.example:8080",
   ])("refuses %s", (entry) =>
     expect(() => parsePrivateHostEntries([entry])).toThrow(
-      /invalid private host entry/,
+      /^invalid private host entry 1: expected /,
     ),
   );
+  it("names the position of a refused entry, never its value (#892 review)", () => {
+    const pasted = "https://user:hunter2-secret@intranet.example/";
+    let message = "";
+    try {
+      parsePrivateHostEntries(["intranet.example", "", pasted]);
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toBe(privateHostEntryError(3));
+    expect(message).not.toContain("hunter2");
+    expect(message).not.toContain("intranet");
+  });
   it("never allows metadata, even for a listed host or range", () => {
     const policy = privateHostPolicy(["intranet.example", "169.254.0.0/16"]);
     expect(policy.allows("intranet.example", "10.1.2.3")).toBe(true);
@@ -635,6 +648,96 @@ describe("addresses and DNS in the guard", () => {
         `http://127.0.0.1:${port}/ok`,
       ),
     ).rejects.toThrow(/non-public address/);
+  });
+});
+
+describe("private hosts scoped to configured hosts (#892)", () => {
+  // A self-hosted provider a connection's configuration names
+  // (configuredHosts), next to a manifest domain of the same connector.
+  const configured = (overrides: Partial<EgressOptions> = {}) =>
+    fixtureGuard({
+      allowedDomains: ["api.fixture.test", "posthog.fixture.test"],
+      ...overrides,
+    });
+
+  it("refuses a configured host on a private address by default", async () => {
+    await expect(
+      configured()(url("/ok", "posthog.fixture.test")),
+    ).rejects.toThrow(
+      /^egress denied: posthog\.fixture\.test resolves to a non-public address$/,
+    );
+    await expect(
+      configured({
+        scopedPrivateHosts: { entries: [], hosts: ["posthog.fixture.test"] },
+      })(url("/ok", "posthog.fixture.test")),
+    ).rejects.toThrow(/non-public address/);
+  });
+
+  it("lets a listed configured host resolve to a private address, on any port", async () => {
+    for (const entries of [
+      ["posthog.fixture.test"],
+      ["*.fixture.test"],
+      ["127.0.0.0/8"],
+      ["127.0.0.1"],
+    ]) {
+      const guard = configured({
+        scopedPrivateHosts: { entries, hosts: ["posthog.fixture.test"] },
+      });
+      expect((await guard(url("/ok", "posthog.fixture.test"))).status).toBe(
+        200,
+      );
+    }
+  });
+
+  it("keeps refusing hosts outside the scope, even when an entry matches them", async () => {
+    // The manifest domain resolves privately too: it is not a configured
+    // host, so the allowance does not reach it.
+    const guard = configured({
+      scopedPrivateHosts: {
+        entries: ["*.fixture.test", "127.0.0.0/8"],
+        hosts: ["posthog.fixture.test"],
+      },
+    });
+    await expect(guard(url("/ok"))).rejects.toThrow(
+      /^egress denied: api\.fixture\.test resolves to a non-public address$/,
+    );
+    // A configured host that no entry lists stays refused.
+    const unlisted = configured({
+      scopedPrivateHosts: {
+        entries: ["intranet.example", "10.20.0.0/16"],
+        hosts: ["posthog.fixture.test"],
+      },
+    });
+    await expect(unlisted(url("/ok", "posthog.fixture.test"))).rejects.toThrow(
+      /non-public address/,
+    );
+    // Never a host outside allowedDomains.
+    await expect(
+      fixtureGuard({
+        scopedPrivateHosts: {
+          entries: ["posthog.fixture.test"],
+          hosts: ["posthog.fixture.test"],
+        },
+      })(url("/ok", "posthog.fixture.test")),
+    ).rejects.toThrow(/not in the connector's outboundDomains/);
+  });
+
+  it("never allows metadata, and pins the first answer (DNS rebinding)", async () => {
+    const scopedPrivateHosts = {
+      entries: ["posthog.fixture.test", "169.254.0.0/16"],
+      hosts: ["posthog.fixture.test"],
+    };
+    await expect(
+      configured({
+        scopedPrivateHosts,
+        lookup: scriptedLookup(["169.254.169.254"]),
+      })(url("/ok", "posthog.fixture.test")),
+    ).rejects.toThrow(/metadata address/);
+    const lookup = scriptedLookup(["127.0.0.1"], ["169.254.169.254"]);
+    const pinned = configured({ scopedPrivateHosts, lookup });
+    expect((await pinned(url("/ok", "posthog.fixture.test"))).status).toBe(200);
+    expect((await pinned(url("/ok", "posthog.fixture.test"))).status).toBe(200);
+    expect(lookup.calls).toBe(1);
   });
 });
 

@@ -88,6 +88,19 @@ own limit only lowers it), and the same self-host private hosts
 (`NETRICS_CUSTOM_API_PRIVATE_HOSTS`). On the hosted service, where that
 list is empty, a check reaches public addresses only.
 
+Amendment (#892): bundled connectors with `configuredHosts` (a self-hosted
+PostHog) get a separate self-host list, `NETRICS_CONNECTOR_PRIVATE_HOSTS`,
+with the same entries and checks. `callOptionsFor` passes it as
+`connectorPrivateHosts` to those connectors only (never to `custom-api` or
+`http-check`, never from a caller's base options), and the runtime applies
+it only to the hosts the connection's configuration names, never to the
+manifest's `outboundDomains`, even when the configuration names one (a
+schema default such as PostHog Cloud's host). An invalid entry is reported
+by variable and position, never by value. The address check still runs on
+every resolved address (metadata never, DNS pinning unchanged), and §2 holds:
+credentials stay bound to their configured host, so a listed host never
+receives credentials entered for another. The hosted service never sets it.
+
 ### 4. Redaction
 
 The runtime redacts the connection's credential values from errors, check

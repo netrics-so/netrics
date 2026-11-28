@@ -405,7 +405,13 @@ default) before the connector sees it. The guard (`createEgressFetch`) also:
 - lets a self-hosted instance name private hosts or ranges custom API
   definitions and HTTP checks may reach (`NETRICS_CUSTOM_API_PRIVATE_HOSTS`,
   off by default and never set on the hosted service). It never widens the allowed hosts,
-  and metadata and link-local addresses stay refused even when listed.
+  and metadata and link-local addresses stay refused even when listed;
+- lets a self-hosted instance name private hosts or ranges a bundled
+  connector's configured hosts may resolve to (`NETRICS_CONNECTOR_PRIVATE_HOSTS`,
+  #892, a self-hosted PostHog): the same entries, applied to the hosts a
+  connection's configuration names under `configuredHosts` only, never to
+  a manifest's `outboundDomains`. Off by default and never set on the
+  hosted service.
 
 A `ConnectorResponse` offers the body three ways:
 

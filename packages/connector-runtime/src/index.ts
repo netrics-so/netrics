@@ -7,6 +7,7 @@ export {
   isMetadataAddress,
   broadPrivateHostEntries,
   parsePrivateHostEntries,
+  privateHostEntryError,
   privateHostPolicy,
   type EgressOptions,
   type PrivateHostPolicy,

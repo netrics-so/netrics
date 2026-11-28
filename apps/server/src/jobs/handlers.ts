@@ -112,6 +112,8 @@ export interface JobHandlerDeps {
   executeOptions?: ExecuteOptions;
   /** Self-host private hosts of the custom-api connector only. */
   customApiPrivateHosts?: readonly string[];
+  /** Self-host private hosts of bundled connectors' configured hosts. */
+  connectorPrivateHosts?: readonly string[];
   /** The workspace image quota icons count against (#226). */
   imageQuota?: ImageQuota;
   /** The workspace quota of custom API item images (#809). */

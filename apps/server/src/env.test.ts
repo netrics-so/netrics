@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { inspect } from "node:util";
 
+import { privateHostEntryError } from "@netrics/connector-runtime";
 import { describe, expect, it } from "vitest";
 
 import { ConfigError, loadConfig, loadMigrationConfig } from "./env.js";
@@ -567,10 +568,64 @@ describe("custom API private hosts (#801)", () => {
       expect(() =>
         loadConfig({ NETRICS_CUSTOM_API_PRIVATE_HOSTS: entry }),
       ).toThrow(
-        `NETRICS_CUSTOM_API_PRIVATE_HOSTS: invalid private host entry: ${entry}`,
+        `NETRICS_CUSTOM_API_PRIVATE_HOSTS: ${privateHostEntryError(1)}`,
       );
     },
   );
+});
+
+describe("connector private hosts (#892)", () => {
+  it("reads private hosts for configured-host connectors and defaults to none", () => {
+    // Unset, as on the hosted service: no private host for any connector.
+    expect(loadConfig({}).connectorPrivateHosts).toEqual([]);
+    expect(
+      loadConfig({ NETRICS_CONNECTOR_PRIVATE_HOSTS: "" }).connectorPrivateHosts,
+    ).toEqual([]);
+    const config = loadConfig({
+      NETRICS_CONNECTOR_PRIVATE_HOSTS:
+        " PostHog.Internal.Example,,10.20.0.0/16 ",
+    });
+    expect(config.connectorPrivateHosts).toEqual([
+      "posthog.internal.example",
+      "10.20.0.0/16",
+    ]);
+    // Separate from the custom API list, in both directions.
+    expect(config.customApiPrivateHosts).toEqual([]);
+    expect(
+      loadConfig({ NETRICS_CUSTOM_API_PRIVATE_HOSTS: "intranet.example" })
+        .connectorPrivateHosts,
+    ).toEqual([]);
+  });
+
+  it.each([
+    "*",
+    "0.0.0.0/0",
+    "https://posthog.internal",
+    "posthog.internal:8443",
+  ])("refuses the private host entry %s", (entry) => {
+    expect(() =>
+      loadConfig({ NETRICS_CONNECTOR_PRIVATE_HOSTS: entry }),
+    ).toThrow(`NETRICS_CONNECTOR_PRIVATE_HOSTS: ${privateHostEntryError(1)}`);
+  });
+
+  it("names the variable and position of a refused entry, never its value (#892 review)", () => {
+    const pasted = "https://user:hunter2-secret@posthog.internal.example/";
+    for (const name of [
+      "NETRICS_CONNECTOR_PRIVATE_HOSTS",
+      "NETRICS_CUSTOM_API_PRIVATE_HOSTS",
+    ]) {
+      let message = "";
+      try {
+        loadConfig({ [name]: `posthog.internal.example,${pasted}` });
+      } catch (error) {
+        expect(error).toBeInstanceOf(ConfigError);
+        message = (error as Error).message;
+      }
+      expect(message).toContain(`${name}: ${privateHostEntryError(2)}`);
+      expect(message).not.toContain("hunter2");
+      expect(message).not.toContain("posthog.internal.example");
+    }
+  });
 });
 
 describe("custom API limits (#803)", () => {

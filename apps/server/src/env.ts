@@ -358,6 +358,22 @@ const envSchema = z
           return z.NEVER;
         }
       }),
+    // Self-hosting only (#892): hosts or ranges the hosts a bundled
+    // connector's configuration names (`configuredHosts`, a self-hosted
+    // PostHog) may resolve to on private networks. Same entries as
+    // NETRICS_CUSTOM_API_PRIVATE_HOSTS, applied to those configured hosts
+    // only. The hosted service never sets it.
+    NETRICS_CONNECTOR_PRIVATE_HOSTS: z
+      .string()
+      .default("")
+      .transform((value, ctx) => {
+        try {
+          return parsePrivateHostEntries(value.split(","));
+        } catch (error) {
+          ctx.addIssue({ code: "custom", message: (error as Error).message });
+          return z.NEVER;
+        }
+      }),
     APP_VERSION: z.string().min(1).default("0.0.0-dev"),
     GIT_SHA: z.string().min(1).default("dev"),
   })
@@ -521,6 +537,7 @@ const envSchema = z
       maxBytes: env.NETRICS_CUSTOM_API_IMAGE_QUOTA_MIB * 1_048_576,
     },
     customApiPrivateHosts: env.NETRICS_CUSTOM_API_PRIVATE_HOSTS,
+    connectorPrivateHosts: env.NETRICS_CONNECTOR_PRIVATE_HOSTS,
     customApi: {
       maxDefinitions: env.NETRICS_CUSTOM_API_MAX_DEFINITIONS,
       maxStreams: env.NETRICS_CUSTOM_API_MAX_STREAMS,

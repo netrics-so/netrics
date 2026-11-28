@@ -1444,6 +1444,159 @@ describe("host egress policy (#801)", () => {
     }
   });
 
+  describe("connector private hosts (NETRICS_CONNECTOR_PRIVATE_HOSTS, #892)", () => {
+    function selfHostedOn(port: number, seen: string[] = []): Connector {
+      return {
+        ...connectorWith({
+          ...demoManifest,
+          outboundDomains: ["api.fixture.test"],
+          configSchema: {
+            type: "object",
+            properties: { host: { type: "string" } },
+          },
+          configuredHosts: ["host"],
+        }),
+        check: async (context, runtime) => {
+          const target = String(context.config.target ?? context.config.host);
+          seen.push(target);
+          await runtime.fetch(`http://${target}:${port}/ok`);
+          return { ok: true };
+        },
+      };
+    }
+    const egress = { allowInsecureHttp: true, lookup: toLocalhost };
+    const at = (host: string, target?: string): ConnectionContext => ({
+      ...baseContext,
+      config: { host, ...(target ? { target } : {}) },
+    });
+
+    it("refuses a private configured host by default", async () => {
+      await withProvider(async (port) => {
+        await expect(
+          executeCheck(selfHostedOn(port), at("posthog.fixture.test"), {
+            egress,
+          }),
+        ).rejects.toThrow(/non-public address/);
+      });
+    });
+
+    it("lets a listed configured host resolve to a private address", async () => {
+      await withProvider(async (port) => {
+        for (const entries of [["posthog.fixture.test"], ["127.0.0.0/8"]]) {
+          await expect(
+            executeCheck(selfHostedOn(port), at("posthog.fixture.test"), {
+              egress,
+              connectorPrivateHosts: entries,
+            }),
+          ).resolves.toEqual({ ok: true });
+        }
+      });
+    });
+
+    it("keeps refusing an unlisted configured host and the manifest's domains", async () => {
+      await withProvider(async (port) => {
+        await expect(
+          executeCheck(selfHostedOn(port), at("posthog.fixture.test"), {
+            egress,
+            connectorPrivateHosts: ["intranet.example"],
+          }),
+        ).rejects.toThrow(/non-public address/);
+        // A range listed for the configured host does not open the
+        // manifest domain, which resolves privately here too.
+        await expect(
+          executeCheck(
+            selfHostedOn(port),
+            at("posthog.fixture.test", "api.fixture.test"),
+            {
+              egress,
+              connectorPrivateHosts: ["127.0.0.0/8", "*.fixture.test"],
+            },
+          ),
+        ).rejects.toThrow(
+          /api\.fixture\.test resolves to a non-public address/,
+        );
+        // A manifest without configuredHosts gets nothing from it.
+        const plain = caller(`http://api.fixture.test:${port}/ok`);
+        await expect(
+          executeCheck(plain, baseContext, {
+            egress,
+            connectorPrivateHosts: ["api.fixture.test"],
+          }),
+        ).rejects.toThrow(/non-public address/);
+      });
+    });
+
+    it("never gives the allowance to a manifest domain named as the configured host (#892 review)", async () => {
+      await withProvider(async (port) => {
+        // The configured host defaults to the provider's own (cloud) host.
+        const cloudDefault: Connector = {
+          ...selfHostedOn(port),
+          manifest: {
+            ...selfHostedOn(port).manifest,
+            configSchema: {
+              type: "object",
+              properties: {
+                host: { type: "string", default: "api.fixture.test" },
+              },
+            },
+          },
+        };
+        for (const context of [
+          // No host entered: the default applies.
+          { ...baseContext, config: { target: "api.fixture.test" } },
+          at("api.fixture.test"),
+          at("API.fixture.test"),
+        ]) {
+          await expect(
+            executeCheck(cloudDefault, context, {
+              egress,
+              connectorPrivateHosts: ["127.0.0.0/8", "api.fixture.test"],
+            }),
+          ).rejects.toThrow(
+            /api\.fixture\.test resolves to a non-public address/i,
+          );
+        }
+        // A self-hosted host on the same connector still gets it.
+        await expect(
+          executeCheck(cloudDefault, at("posthog.fixture.test"), {
+            egress,
+            connectorPrivateHosts: ["127.0.0.0/8"],
+          }),
+        ).resolves.toEqual({ ok: true });
+      });
+    });
+
+    it("never sends credentials to a host they were not entered for", async () => {
+      await withProvider(async (port) => {
+        const seen: string[] = [];
+        const options = {
+          egress,
+          connectorPrivateHosts: ["old.fixture.test", "new.fixture.test"],
+        };
+        const bound = {
+          token: "secret-0001",
+          [CREDENTIAL_HOSTS_KEY]: ["old.fixture.test"],
+        };
+        await expect(
+          executeCheck(
+            selfHostedOn(port, seen),
+            { ...at("old.fixture.test"), credentials: bound },
+            options,
+          ),
+        ).resolves.toEqual({ ok: true });
+        // Listing the other host lifts no binding: refused before any call.
+        await expect(
+          executeCheck(
+            selfHostedOn(port, seen),
+            { ...at("new.fixture.test"), credentials: bound },
+            options,
+          ),
+        ).rejects.toBeInstanceOf(CredentialHostMismatchError);
+        expect(seen).toEqual(["old.fixture.test"]);
+      });
+    });
+  });
+
   it("treats an egress timeout as a retryable provider failure", async () => {
     await withProvider(async (port) => {
       const failure = await executeCheck(
