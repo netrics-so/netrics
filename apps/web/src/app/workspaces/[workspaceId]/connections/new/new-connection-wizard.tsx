@@ -122,6 +122,11 @@ export function NewConnectionWizard({
   const [pickedOwners, setPickedOwners] = useState<
     Readonly<Record<string, Picked | null>>
   >({});
+  // Pickers whose restored choices wait for a listing (#937 review).
+  const [settling, setSettling] = useState<Readonly<Record<string, boolean>>>(
+    {},
+  );
+  const pickersSettling = Object.values(settling).some(Boolean);
   const [error, setError] = useState<string | null>(null);
 
   const fields = useMemo(
@@ -266,7 +271,7 @@ export function NewConnectionWizard({
   }
 
   async function onCreate() {
-    if (!connector) {
+    if (!connector || pickersSettling) {
       return;
     }
     setError(null);
@@ -557,6 +562,13 @@ export function NewConnectionWizard({
                     )
                     .map((resource) => resource.id)}
                   initialPicked={pickedOwners[field.key] ?? null}
+                  onSettlingChange={(busy) =>
+                    setSettling((current) =>
+                      current[field.key] === busy
+                        ? current
+                        : { ...current, [field.key]: busy },
+                    )
+                  }
                   onPickedChange={(next) =>
                     setPickedOwners((current) => ({
                       ...current,
@@ -606,7 +618,7 @@ export function NewConnectionWizard({
             <button
               type="button"
               className="primary"
-              disabled={pending !== null}
+              disabled={pending !== null || pickersSettling}
               onClick={onCreate}
             >
               {pending === "create" ? common("creating") : t("create")}

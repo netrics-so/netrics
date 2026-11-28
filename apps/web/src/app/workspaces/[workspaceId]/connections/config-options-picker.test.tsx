@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { editConnectionRequest } from "./[connectionId]/edit-connection-form";
 import {
   ConfigOptionsPicker,
+  ownersUnsettled,
   pickedValue,
   rawChoices,
   reconcileOwners,
@@ -148,6 +149,31 @@ describe("config options picker (#891)", () => {
     expect([
       ...withinResources(two, new Set(["1000"]), new Set(["1001"]), false),
     ]).toEqual([["1000/a", "1000"]]);
+  });
+
+  it("waits for a listing when a restored choice's project is neither listed nor left out (#937 review)", () => {
+    const restored = new Map([["1000/a", "1000"]]);
+    // Project IDs changed to others: settled only by a listing.
+    expect(
+      ownersUnsettled(restored, new Set(["1001", "1002"]), new Set(), false),
+    ).toBe(true);
+    // Once confirmed, the choice goes with its project.
+    expect(
+      ownersUnsettled(restored, new Set(["1001", "1002"]), new Set(), true),
+    ).toBe(false);
+    expect([
+      ...withinResources(restored, new Set(["1001", "1002"]), new Set(), true),
+    ]).toEqual([]);
+    // Listed, or unticked: nothing to wait for.
+    expect(ownersUnsettled(restored, new Set(["1000"]), new Set(), false)).toBe(
+      false,
+    );
+    expect(
+      ownersUnsettled(restored, new Set(["1001"]), new Set(["1000"]), false),
+    ).toBe(false);
+    expect(ownersUnsettled(null, new Set(["1001"]), new Set(), false)).toBe(
+      false,
+    );
   });
 
   describe("emptying a field with a default (#937)", () => {

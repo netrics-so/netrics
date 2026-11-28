@@ -84,6 +84,25 @@ export function withinResources(
 }
 
 /**
+ * Whether choices restored from an earlier check name a resource that is
+ * neither listed nor left out (#937 review): a project spelled anew, or
+ * one no longer named at all. Until a listing names their resources as
+ * the connector does now, they cannot be kept or dropped.
+ */
+export function ownersUnsettled(
+  picked: Picked | null,
+  resources: ReadonlySet<string>,
+  leftOut: ReadonlySet<string>,
+  confirmed: boolean,
+): boolean {
+  if (confirmed || !picked) return false;
+  for (const owner of picked.values()) {
+    if (!resources.has(owner) && !leftOut.has(owner)) return true;
+  }
+  return false;
+}
+
+/**
  * `picked` with each choice's resource as a listing's `selected` names it
  * now (#937): the connector knows which resource a choice belongs to under
  * the current settings. Choices it does not name keep theirs, and none is
@@ -140,6 +159,11 @@ interface ConfigOptionsPickerProps {
   initialPicked?: Picked | null;
   /** Hears every change of the choices and their resources. */
   onPickedChange?: (picked: Picked | null) => void;
+  /**
+   * Hears whether restored choices still wait for a listing to settle
+   * their resources (#937 review): the setup creates nothing meanwhile.
+   */
+  onSettlingChange?: (settling: boolean) => void;
 }
 
 /**
@@ -164,6 +188,7 @@ export function ConfigOptionsPicker({
   discoveryKey = "",
   initialPicked = null,
   onPickedChange,
+  onSettlingChange,
 }: ConfigOptionsPickerProps) {
   const locale = useLocale();
   const t = useT("connections.configOptions");
@@ -229,7 +254,12 @@ export function ConfigOptionsPicker({
     onChange(text);
   }
 
-  async function list(resourceId: string): Promise<void> {
+  /**
+   * Lists one resource. `settle`: listed to settle restored choices'
+   * resources; if that fails, they count as settled, and those of
+   * resources not listed go (fail closed, #937 review).
+   */
+  async function list(resourceId: string, settle = false): Promise<void> {
     const sent = revision.current;
     const sentValue = valueNow.current;
     setListings((current) =>
@@ -243,7 +273,7 @@ export function ConfigOptionsPicker({
       // from its text): its `selected` is out of date, so list again
       // with the current value instead of undoing the change.
       if (pickedNow.current === null && valueNow.current !== sentValue) {
-        return list(resourceId);
+        return list(resourceId, settle);
       }
       setListings((current) =>
         new Map(current).set(resourceId, {
@@ -277,6 +307,7 @@ export function ConfigOptionsPicker({
           message: apiErrorMessage(cause, locale),
         }),
       );
+      if (settle) setOwnersConfirmed(true);
     }
   }
 
@@ -332,6 +363,30 @@ export function ConfigOptionsPicker({
     );
     if (next !== picked) choose(next);
   }, [resourceIds, leftOutIds, picked, ownersConfirmed, dropOutsideResources]);
+
+  // Restored choices of a resource neither listed nor left out (project
+  // IDs changed since): one listing, of the first resource, names every
+  // choice's resource as the connector does now; the effect above then
+  // keeps or drops them. Even when no list is opened (#937 review).
+  const settling =
+    dropOutsideResources &&
+    resources !== null &&
+    resources.length > 0 &&
+    ownersUnsettled(
+      picked,
+      new Set(resources.map((resource) => resource.id)),
+      new Set(leftOutResources),
+      ownersConfirmed,
+    );
+  useEffect(() => {
+    onSettlingChange?.(settling);
+    if (!settling || disabled) return;
+    const first = resources![0]!.id;
+    const listing = listings.get(first);
+    if (listing?.status !== "loading") void list(first, true);
+    // Started once per unsettled state; `list` reads the latest draft.
+  }, [settling, disabled]);
+  useEffect(() => () => onSettlingChange?.(false), []);
 
   async function onLoadResources() {
     const loader = loadResourcesNow.current;
