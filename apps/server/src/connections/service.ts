@@ -2702,12 +2702,26 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           body.credentials ?? {},
         ),
       };
+      // The same egress as the preview: test egress, and a configured
+      // host's self-host private hosts (#892).
+      const options = callOptionsFor(
+        { ...registered, customApi: null },
+        deps.executeOptions ?? {},
+        {
+          credentials: context.credentials,
+          config: context.config,
+          privateHosts: callOptions.privateHosts,
+          connectorPrivateHosts: callOptions.connectorPrivateHosts,
+        },
+      );
       try {
         return ok(
-          await executeConfigOptions(registered.connector, context, {
-            key: body.key,
-            resourceId: body.resourceId,
-          }),
+          await executeConfigOptions(
+            registered.connector,
+            context,
+            { key: body.key, resourceId: body.resourceId },
+            options,
+          ),
         );
       } catch (error) {
         rethrowWorkspaceGone(error);

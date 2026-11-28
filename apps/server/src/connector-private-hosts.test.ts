@@ -6,6 +6,7 @@ import pino from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
+  connectionConfigOptionsResponseSchema,
   connectionPreviewResponseSchema,
   connectionResponseSchema,
   storedConnectionPreviewResponseSchema,
@@ -66,6 +67,13 @@ function registry(): ConnectorRegistry {
     discover: async (context, runtime) => {
       await call(context.config, runtime.fetch);
       return [{ id: "1000", name: "Site", kind: "project" }];
+    },
+    configOptions: async (context, _request, runtime) => {
+      await call(context.config, runtime.fetch);
+      return {
+        options: [{ value: "1000/abc", label: "Signups" }],
+        selected: [],
+      };
     },
     sync: async () => {
       throw new Error("not used");
@@ -215,6 +223,44 @@ describe("a PostHog on a listed private host (#892)", () => {
     expect(preview.statusCode).toBe(400);
     expect(preview.body).toMatch(/non-public address/);
     expect(preview.body).not.toContain(KEY);
+    expect(seen).toEqual([]);
+  });
+
+  it("lists the insight picker's choices from the wizard (#891)", async () => {
+    seen.length = 0;
+    const listed = await call(
+      "POST",
+      `/v1/workspaces/${workspaceId}/connections/config-options`,
+      {
+        connectorId: "posthog",
+        config: { host: LISTED },
+        credentials: { token: KEY },
+        key: "insights",
+        resourceId: "1000",
+      },
+    );
+    expect(listed.statusCode, listed.body).toBe(200);
+    expect(
+      connectionConfigOptionsResponseSchema
+        .parse(listed.json())
+        .options.map(({ value }) => value),
+    ).toEqual(["1000/abc"]);
+    expect(seen).toEqual([`${LISTED}:${port}`]);
+
+    seen.length = 0;
+    const refused = await call(
+      "POST",
+      `/v1/workspaces/${workspaceId}/connections/config-options`,
+      {
+        connectorId: "posthog",
+        config: { host: UNLISTED },
+        credentials: { token: KEY },
+        key: "insights",
+        resourceId: "1000",
+      },
+    );
+    expect(refused.statusCode).toBe(400);
+    expect(refused.body).not.toContain(KEY);
     expect(seen).toEqual([]);
   });
 });
