@@ -144,3 +144,59 @@ describe("runCustomApiTestStream", () => {
     });
   });
 });
+
+describe("hidden values (#885)", () => {
+  it("compares each value of a page once, however many fields read under it (#932)", async () => {
+    const base = fixtureDefinition("pages", fixture.origin);
+    const sub = Array.from({ length: 100 }, (_, i) => `f${i}`);
+    const definition = {
+      ...base,
+      streams: [
+        {
+          ...base.streams[0]!,
+          pagination: { type: "none" },
+          fields: [
+            { id: "id", name: "ID", path: "id", type: "integer" },
+            ...sub.map((key) => ({
+              id: key,
+              name: key,
+              path: `request.${key}`,
+              type: "string",
+            })),
+          ],
+        },
+      ],
+    } as unknown as CustomApiDefinition;
+    const request = () => Object.fromEntries(sub.map((key) => [key, "x"]));
+    const text = JSON.stringify({
+      data: [1, 2, 3].map((id) => ({ id, request: request() })),
+    });
+    let comparisons = 0;
+    const result = await runCustomApiTestStream({
+      definition,
+      stream: definition.streams[0]!,
+      environmentId: "production",
+      config: {},
+      credentials: { host } as never,
+      fetch: async () => ({
+        status: 200,
+        headers: { "content-type": "application/json" },
+        text: () => text,
+        json: () => JSON.parse(text) as unknown,
+        bytes: () => new Uint8Array(),
+      }),
+      chunk: null,
+      limits: LIMITS,
+      hidden: (value) => {
+        if (value === null || typeof value !== "object") return undefined;
+        comparisons += 1;
+        return Object.hasOwn(value, "f0") ? "[redacted]" : undefined;
+      },
+    });
+    expect(result.rows).toHaveLength(3);
+    expect(result.rows[2]).toMatchObject({ id: 3, f99: "[redacted]" });
+    // The records path (body, data), then per record itself and its
+    // `request`: once each, not once per field.
+    expect(comparisons).toBe(2 + 3 * 2);
+  });
+});

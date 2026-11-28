@@ -96,6 +96,12 @@ most 10 drafts are open per workspace.
   to the same hosts. An OAuth draft keeps its grant; an authorization-code
   draft must have signed in first (`400 custom_api_secret_missing`).
 
+Known limits of the test preview: a request body sent is never shown back.
+An API that echoes it as text has it read `[redacted]`, and one that echoes
+it as JSON has the matching object or array replaced, keys in any order.
+Only the whole body echoed as JSON is matched: an API that echoes part of
+it (for example only the GraphQL `variables`) shows that part as it is.
+
 ## Versions, updates, export and import
 
 - **History.** `GET …/definitions/:id/versions?before=` lists versions

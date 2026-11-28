@@ -88,14 +88,24 @@ function parseBody(text: string): { json: boolean; value: unknown } {
  * Sets each cell whose source path reaches into, or is, a hidden value of
  * its record to that value's replacement; with `all`, every cell (the
  * records themselves lie in a hidden value). Reads only along the paths.
+ * Each object or array of the page is asked once (#932): fields under the
+ * same value (100 under an echoed `request`) share one comparison.
  */
 function hideCells(
   rows: Record<string, unknown>[],
   raws: readonly unknown[],
   all: string | undefined,
   fields: readonly CustomApiField[],
-  hidden: HiddenValue,
+  ask: HiddenValue,
 ): void {
+  const seen = new Map<object, string | undefined>();
+  const hidden = (value: unknown): string | undefined => {
+    if (value === null || typeof value !== "object") return ask(value);
+    if (seen.has(value)) return seen.get(value);
+    const shown = ask(value);
+    seen.set(value, shown);
+    return shown;
+  };
   rows.forEach((row, index) => {
     for (const field of fields) {
       if (all !== undefined) {
