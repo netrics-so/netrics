@@ -12,8 +12,18 @@ import {
 } from "@netrics/contracts";
 
 import { ConfigFields } from "../config-fields";
+import {
+  ConfigOptionsPicker,
+  type PickerResource,
+} from "../config-options-picker";
 import { TokenField } from "../token-field";
-import { apiErrorMessage, updateConnection } from "@/lib/api";
+import {
+  apiErrorMessage,
+  listStoredConfigOptions,
+  previewStoredConnection,
+  providerFailureMessage,
+  updateConnection,
+} from "@/lib/api";
 import {
   coerceConfigValues,
   initialConfigValues,
@@ -29,6 +39,12 @@ interface EditConnectionFormProps {
   connector: ConnectorCatalogEntry | undefined;
   /** A custom API connection's pinned version's variables (#830). */
   customApiVariables?: readonly CustomApiVariable[];
+  /**
+   * The resources the connection syncs, for config fields chosen per
+   * resource (#891); null when it syncs every resource, which are then
+   * listed on request.
+   */
+  pickerResources?: readonly PickerResource[] | null;
 }
 
 /**
@@ -79,6 +95,7 @@ export function EditConnectionForm({
   connection,
   connector,
   customApiVariables,
+  pickerResources = null,
 }: EditConnectionFormProps) {
   const locale = useLocale();
   const t = useT("connections.edit");
@@ -98,6 +115,27 @@ export function EditConnectionForm({
           ? parseConfigSchema(connector.configSchema)
           : [],
     [connector, fixedConfig, customApi, customApiVariables],
+  );
+  // Fields chosen in a picker (#891), not typed; a connection without
+  // credentials (none stored) cannot list choices and keeps the text field.
+  const pickedFields = useMemo(
+    () =>
+      customApi || fixedConfig || !connection.hasCredentials
+        ? []
+        : (connector?.configOptions ?? []).flatMap((entry) => {
+            const field = fields.find(
+              (candidate) => candidate.key === entry.key,
+            );
+            return field ? [{ field, maxSelected: entry.maxSelected }] : [];
+          }),
+    [connector, fields, customApi, fixedConfig, connection.hasCredentials],
+  );
+  const typedFields = useMemo(
+    () =>
+      fields.filter(
+        (field) => !pickedFields.some((picked) => picked.field === field),
+      ),
+    [fields, pickedFields],
   );
   const [name, setName] = useState(connection.name);
   const [configValues, setConfigValues] = useState<Record<string, string>>(() =>
@@ -186,14 +224,58 @@ export function EditConnectionForm({
           />
         ) : null
       ) : fixedConfig ? null : connector ? (
-        <ConfigFields
-          fields={fields}
-          values={configValues}
-          disabled={pending}
-          onChange={(key, value) =>
-            setConfigValues((current) => ({ ...current, [key]: value }))
-          }
-        />
+        <>
+          <ConfigFields
+            fields={typedFields}
+            values={configValues}
+            disabled={pending}
+            onChange={(key, value) =>
+              setConfigValues((current) => ({ ...current, [key]: value }))
+            }
+          />
+          {pickedFields.map(({ field, maxSelected }) => (
+            <ConfigOptionsPicker
+              key={field.key}
+              field={field}
+              maxSelected={maxSelected}
+              resources={pickerResources}
+              loadResources={async () => {
+                const preview = await previewStoredConnection(
+                  workspaceId,
+                  connection.id,
+                  { config: coerceConfigValues(fields, configValues) },
+                );
+                if (!preview.check.ok) {
+                  throw new Error(
+                    providerFailureMessage(preview.check, locale) ??
+                      t("checkFailed"),
+                  );
+                }
+                const selection = preview.selection
+                  ? new Set(preview.selection)
+                  : null;
+                return preview.resources
+                  .filter((resource) => selection?.has(resource.id) ?? true)
+                  .map(({ id, name }) => ({ id, name }));
+              }}
+              value={configValues[field.key] ?? ""}
+              disabled={pending}
+              onChange={(value) =>
+                setConfigValues((current) => ({
+                  ...current,
+                  [field.key]: value,
+                }))
+              }
+              load={(resourceId) =>
+                listStoredConfigOptions(workspaceId, connection.id, {
+                  config: coerceConfigValues(fields, configValues),
+                  key: field.key,
+                  resourceId,
+                })
+              }
+            />
+          ))}
+        </>
       ) : (
         <p className="muted">
           {t("connectorMissing", { connector: connection.connectorId })}

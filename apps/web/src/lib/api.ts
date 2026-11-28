@@ -118,6 +118,12 @@ import {
   connectionDetailResponseSchema,
   connectionListResponseSchema,
   connectionPreviewResponseSchema,
+  connectionConfigOptionsRequestSchema,
+  connectionConfigOptionsResponseSchema,
+  storedConnectionConfigOptionsRequestSchema,
+  type ConnectionConfigOptionsRequest,
+  type ConnectionConfigOptionsResponse,
+  type StoredConnectionConfigOptionsRequest,
   storedConnectionPreviewRequestSchema,
   storedConnectionPreviewResponseSchema,
   type StoredConnectionPreviewRequest,
@@ -970,6 +976,33 @@ export function previewConnection(
     "POST",
     `/v1/workspaces/${workspaceId}/connections/preview`,
     previewConnectionRequestSchema.parse(input),
+  );
+}
+
+/** The choices of a picked config field in one resource, unsaved (#891). */
+export function listConfigOptions(
+  workspaceId: string,
+  input: ConnectionConfigOptionsRequest,
+): Promise<ConnectionConfigOptionsResponse> {
+  return browserSend(
+    connectionConfigOptionsResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/connections/config-options`,
+    connectionConfigOptionsRequestSchema.parse(input),
+  );
+}
+
+/** The same for an existing connection, with its stored credentials. */
+export function listStoredConfigOptions(
+  workspaceId: string,
+  connectionId: string,
+  input: StoredConnectionConfigOptionsRequest,
+): Promise<ConnectionConfigOptionsResponse> {
+  return browserSend(
+    connectionConfigOptionsResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/connections/${connectionId}/config-options`,
+    storedConnectionConfigOptionsRequestSchema.parse(input),
   );
 }
 

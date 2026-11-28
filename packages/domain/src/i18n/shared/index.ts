@@ -185,6 +185,8 @@ export const PROVIDER_MESSAGE_CODES = {
   "posthog.scope_missing": "providerMessages.posthog.scopeMissing",
   "posthog.host_invalid": "providerMessages.posthog.hostInvalid",
   "posthog.insights_invalid": "providerMessages.posthog.insightsInvalid",
+  "posthog.insights_unavailable":
+    "providerMessages.posthog.insightsUnavailable",
   "posthog.projects_required": "providerMessages.posthog.projectsRequired",
   "posthog.projects_invalid": "providerMessages.posthog.projectsInvalid",
   "hetzner_cloud.token_rejected": "providerMessages.hetznerCloud.tokenRejected",

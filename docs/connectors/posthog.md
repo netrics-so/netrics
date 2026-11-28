@@ -173,12 +173,35 @@ Datasets:
 
 ### Saved insights
 
-**Saved insights** takes the links of saved trends insights, copied from
-the browser (`https://us.posthog.com/project/12345/insights/AbCd1234`), or
-`12345/AbCd1234`, separated by spaces or commas, at most 20. Each insight is
-read with `GET /api/projects/{project}/insights/?short_id=…&refresh=blocking`:
-PostHog answers its cached result when it is fresh, and computes it
-otherwise, with the insight's own date range, filters and breakdowns.
+**Saved insights** are chosen in a picker (#891), per project, once the key
+is checked: in the setup after **Test connection**, and on the connection
+page in **Edit connection** (a connection that syncs one project opens its
+list at once; one that syncs every project lists them on request). Each
+project's list shows its saved trends insights by name, with **none
+chosen**; at most 20 can be chosen in all, across projects. The list is
+PostHog's insight list, `GET
+/api/projects/{project}/insights/?basic=true&saved=true&limit=100&offset=…`:
+one request per hundred insights and at most 500 per project (the list then
+says that only the first 500 are shown), never a query and never a request
+per insight. An insight whose listed query is not a trends insight
+(`InsightVizNode` with a `TrendsQuery`) is left out; one listed without its
+query is offered, and a sync reports it as `unsupported` if it is none. A
+project whose list PostHog refuses (403, 404) fails with
+`posthog.insights_unavailable`; a wrong key or a missing scope with the
+check's reasons.
+
+The field stores the chosen insights as `project/shortId`, separated by
+spaces. Links pasted before the picker
+(`https://us.posthog.com/project/12345/insights/AbCd1234`, separated by
+spaces or commas) stay valid: the connection keeps reading them, and the
+picker shows them as chosen; a chosen insight the list no longer offers (a
+deleted one) stays chosen until it is cleared. Saving the picker's choice
+writes the `project/shortId` form.
+
+Each insight is read with `GET
+/api/projects/{project}/insights/?short_id=…&refresh=blocking`: PostHog
+answers its cached result when it is fresh, and computes it otherwise, with
+the insight's own date range, filters and breakdowns.
 
 ### Freshness (ADR 0025)
 

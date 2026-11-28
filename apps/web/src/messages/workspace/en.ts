@@ -675,6 +675,29 @@ export const workspaceEn = {
       removeItem: "Remove entry {number}",
       listLimit: "At most {max} entries.",
     },
+    /**
+     * A config field chosen from lists per resource (#891), such as
+     * PostHog's saved insights per project.
+     */
+    configOptions: {
+      limit: "Choose at most {max}.",
+      noneChosen: "Nothing is chosen.",
+      keepsCurrent:
+        "The current choice stays as it is until you change it in a list below.",
+      chosen: "{count} of {max} chosen.",
+      full: "{max} are chosen, the most there can be: clear one to choose another.",
+      loadResources: "Show the lists",
+      noResources: "Nothing to choose from: no resource is selected.",
+      show: "Choose in {resource}",
+      hide: "Hide the list of {resource}",
+      loading: "Loading…",
+      retry: "Try again",
+      empty: "{resource} has nothing to choose from.",
+      unlisted: "(chosen, no longer listed)",
+      truncated:
+        "Only the first {count} are listed. Others chosen before stay chosen.",
+      showMore: "Show {count} more",
+    },
     oauthButton: {
       otherAccount: "Use a different {name} account",
       otherAccountHint:
@@ -760,6 +783,8 @@ export const workspaceEn = {
       connectorMissing:
         "Connector {connector} is not in the deployed bundle; config editing is unavailable.",
       saveChanges: "Save changes",
+      /** Listing what a picked setting can choose in failed its check (#891). */
+      checkFailed: "The connection check failed.",
     },
     appleAds: {
       title: "2. Connect Apple Ads",

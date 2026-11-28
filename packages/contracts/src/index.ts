@@ -581,6 +581,19 @@ export const connectorCatalogEntrySchema = z.object({
   minRefreshIntervalSeconds: z.number().int().positive(),
   supportsBackfill: z.boolean(),
   configSchema: jsonSchemaObjectSchema,
+  /**
+   * Config fields chosen in a picker instead of typed (SDK 0.2.24, #891):
+   * their choices are listed per resource by the config-options routes,
+   * and at most `maxSelected` are chosen. Absent when there are none.
+   */
+  configOptions: z
+    .array(
+      z.object({
+        key: z.string().min(1),
+        maxSelected: z.number().int().positive(),
+      }),
+    )
+    .optional(),
   authStrategies: z.array(connectorAuthStrategySchema),
   /**
    * Whether connections can be created on this instance. False when every
@@ -750,6 +763,65 @@ export type StoredConnectionPreviewResponse = z.infer<
 >;
 export type ConnectionPreviewResponse = z.infer<
   typeof connectionPreviewResponseSchema
+>;
+
+/** Which choices of a picked config field to list (#891). */
+const configOptionsTargetSchema = {
+  /** The config field, one the connector's `configOptions` names. */
+  key: z.string().min(1).max(100),
+  /** The resource whose choices to list, as discovery names it. */
+  resourceId: z.string().min(1).max(200),
+};
+
+/**
+ * The choices of a picked config field before a connection exists (#891):
+ * the draft config and credentials, as in a preview. Persists nothing.
+ */
+export const connectionConfigOptionsRequestSchema = z.object({
+  connectorId: z.string().min(1),
+  config: connectionConfigSchema.default({}),
+  credentials: connectionCredentialsSchema.optional(),
+  ...configOptionsTargetSchema,
+});
+export type ConnectionConfigOptionsRequest = z.infer<
+  typeof connectionConfigOptionsRequestSchema
+>;
+
+/** The same for an existing connection, with its stored credentials. */
+export const storedConnectionConfigOptionsRequestSchema = z.strictObject({
+  config: connectionConfigSchema,
+  ...configOptionsTargetSchema,
+});
+export type StoredConnectionConfigOptionsRequest = z.infer<
+  typeof storedConnectionConfigOptionsRequestSchema
+>;
+
+const configOptionValueSchema = z.string().min(1).max(200);
+
+export const connectionConfigOptionsResponseSchema = z.object({
+  /** The resource's choices, in the order to show them. */
+  options: z.array(
+    z.object({
+      value: configOptionValueSchema,
+      label: z.string().min(1),
+      description: z.string().min(1).optional(),
+    }),
+  ),
+  /**
+   * What the draft config chooses now, in every resource, as option
+   * values; a chosen value the listing does not offer is still chosen.
+   */
+  selected: z.array(
+    z.object({
+      value: configOptionValueSchema,
+      resourceId: z.string().min(1),
+    }),
+  ),
+  /** The resource has more choices than were listed. */
+  truncated: z.boolean().optional(),
+});
+export type ConnectionConfigOptionsResponse = z.infer<
+  typeof connectionConfigOptionsResponseSchema
 >;
 
 /**

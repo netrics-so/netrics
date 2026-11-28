@@ -672,6 +672,12 @@ export default async function ConnectionDetailPage({
               {...(pinnedVersion
                 ? { customApiVariables: pinnedVersion.document.variables }
                 : {})}
+              pickerResources={
+                detail.resourceSelection?.map((resource) => ({
+                  id: resource.id,
+                  name: resource.name ?? resource.id,
+                })) ?? null
+              }
             />
           )}
           {/* A token connection that syncs chosen projects (#782): the

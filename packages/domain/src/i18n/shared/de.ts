@@ -112,7 +112,9 @@ export const sharedDe: Catalog<SharedMessages> = {
       hostInvalid:
         "Gib den Host deines PostHog ein: us.posthog.com, eu.posthog.com oder den Host-Namen deiner eigenen Instanz, zum Beispiel posthog.example.com: einen öffentlichen Namen, erreichbar über https, ohne Pfad oder Port.",
       insightsInvalid:
-        "netrics konnte die gespeicherten Insights nicht lesen. Füge den Link jedes Insights aus PostHog ein (…/project/12345/insights/AbCd1234), getrennt durch Leerzeichen oder Kommas, höchstens 20.",
+        "netrics konnte die gespeicherten Insights dieser Verbindung nicht lesen. Wähle sie unter Gespeicherte Insights erneut aus, pro Projekt, höchstens 20.",
+      insightsUnavailable:
+        "PostHog hat den Personal API Key die gespeicherten Insights dieses Projekts nicht auflisten lassen. Prüf, ob der Key das Projekt lesen darf und den Scope Insight: Read hat.",
       projectsRequired:
         "Der Personal API Key ist auf einige Projekte beschränkt, daher listet PostHog sie nicht auf. Trag ihre Projekt-IDs unter Projekt-IDs ein (PostHog: Project settings → Project ID).",
       projectsInvalid:

@@ -4,12 +4,14 @@
 import {
   ConnectorError,
   configuredHost,
+  type ConfigOptionsResult,
   type ConnectionContext,
 } from "@netrics/connector-sdk";
 
 import { PostHogApiError, US_HOST, type PostHogClient } from "./api.js";
 import {
   LIST_LIMIT,
+  insightListSchema,
   nextOffset,
   organizationsSchema,
   projectsSchema,
@@ -19,6 +21,16 @@ import {
 const MAX_LIST_REQUESTS = 20;
 /** Saved insights a connection reads at most. */
 export const MAX_INSIGHTS = 20;
+/** The config field of the saved insights (a picker since #891). */
+export const INSIGHTS_KEY = "insights";
+/**
+ * Insights the picker lists per project at most: five listing pages. A
+ * project with more says so (`truncated`); its other insights can still
+ * be chosen by an older pasted link.
+ */
+export const MAX_INSIGHT_OPTIONS = 500;
+/** Longest insight name the picker shows, in characters. */
+const MAX_INSIGHT_LABEL = 300;
 /** Project IDs a project-scoped key's connection names at most. */
 export const MAX_PROJECT_IDS = 50;
 
@@ -43,7 +55,10 @@ export const HOST_INVALID_MESSAGE =
   "Enter your PostHog's host: us.posthog.com, eu.posthog.com, or your own instance's host name such as posthog.example.com: a public name reached over https, without a path or port.";
 export const INSIGHTS_INVALID_CODE = "posthog.insights_invalid";
 export const INSIGHTS_INVALID_MESSAGE =
-  "netrics could not read the saved insights. Paste each insight's link from PostHog (…/project/12345/insights/AbCd1234), separated by spaces or commas, at most 20.";
+  "netrics could not read the saved insights of this connection. Choose them again under Saved insights, per project, at most 20.";
+export const INSIGHTS_UNAVAILABLE_CODE = "posthog.insights_unavailable";
+export const INSIGHTS_UNAVAILABLE_MESSAGE =
+  "PostHog did not let the personal API key list this project's saved insights. Check that the key may read the project and has the scope Insight: Read.";
 export const PROJECTS_REQUIRED_CODE = "posthog.projects_required";
 export const PROJECTS_REQUIRED_MESSAGE =
   "The personal API key is limited to some projects, so PostHog does not list them. Enter their project IDs under Project IDs (PostHog: Project settings → Project ID).";
@@ -330,4 +345,94 @@ export async function listProjects(
     }
   }
   return projects;
+}
+
+// ─── Insight picker (#891) ──────────────────────────────────────────────────
+
+/** An insight's value in the `insights` field: "project/shortId". */
+export function insightValue(ref: InsightRef): string {
+  return `${ref.project}/${ref.shortId}`;
+}
+
+/**
+ * The saved trends insights of one project, for the picker, and what the
+ * draft config chooses now. Reads PostHog's insight list (`basic=true`,
+ * saved insights only), a page of LIST_LIMIT per request and at most
+ * MAX_INSIGHT_OPTIONS: never one request per insight, and never a query.
+ * An insight whose listed query is not a trends insight is left out; one
+ * listed without its query is offered (the sync reports it as
+ * `unsupported` if it is none). A project the key may not read fails with
+ * INSIGHTS_UNAVAILABLE_CODE.
+ */
+export async function listInsightOptions(
+  client: PostHogClient,
+  context: ConnectionContext,
+  resourceId: string,
+): Promise<ConfigOptionsResult> {
+  const resourceIdOf = resourceIdsOf([
+    ...(storedSelectionOf(context) ?? []),
+    ...(projectIdsOf(context).ids ?? []),
+  ]);
+  const selected = insightsOf(context).insights.map((ref) => ({
+    value: insightValue(ref),
+    resourceId: resourceIdOf(ref.project),
+  }));
+  if (!/^\d{1,20}$/.test(resourceId)) {
+    throw new ConnectorError(
+      INSIGHTS_UNAVAILABLE_MESSAGE,
+      INSIGHTS_UNAVAILABLE_CODE,
+    );
+  }
+  const project = canonicalProjectId(resourceId);
+  const options: ConfigOptionsResult["options"] = [];
+  let truncated = false;
+  for (let offset: number | null = 0; offset !== null;) {
+    if (options.length >= MAX_INSIGHT_OPTIONS) {
+      truncated = true;
+      break;
+    }
+    let page;
+    try {
+      page = insightListSchema.parse(
+        await client.get(`/api/projects/${project}/insights/`, {
+          basic: "true",
+          saved: "true",
+          limit: LIST_LIMIT,
+          offset,
+        }),
+      );
+    } catch (error) {
+      if (!isRefused(error)) throw error;
+      throw new ConnectorError(
+        INSIGHTS_UNAVAILABLE_MESSAGE,
+        INSIGHTS_UNAVAILABLE_CODE,
+      );
+    }
+    for (const insight of page.results) {
+      if (insight.deleted === true) continue;
+      const query = insight.query;
+      if (
+        query &&
+        (query.kind !== "InsightVizNode" ||
+          query.source?.kind !== "TrendsQuery")
+      ) {
+        continue;
+      }
+      if (!/^[A-Za-z0-9]{1,32}$/.test(insight.short_id)) continue;
+      if (options.length >= MAX_INSIGHT_OPTIONS) {
+        truncated = true;
+        break;
+      }
+      const name = (insight.name || insight.derived_name || "").trim();
+      options.push({
+        value: insightValue({ project, shortId: insight.short_id }),
+        label: name
+          ? [...name].slice(0, MAX_INSIGHT_LABEL).join("")
+          : insight.short_id,
+        ...(name ? { description: insight.short_id } : {}),
+      });
+    }
+    offset = nextOffset(page, offset);
+  }
+  return { options, selected, ...(truncated ? { truncated: true } : {}) };
 }

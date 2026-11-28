@@ -12,6 +12,8 @@ import {
   CURRENCY_MINOR_UNIT,
   RESOURCE_ICON_MAX_BYTES,
   checkResultSchema,
+  configOptionsRequestSchema,
+  configOptionsResultSchema,
   freshnessProblem,
   resourceIconsRequestSchema,
   resourceIconsResultSchema,
@@ -19,6 +21,8 @@ import {
   syncRequestSchema,
   syncResultSchema,
   type CheckResult,
+  type ConfigOptionsRequest,
+  type ConfigOptionsResult,
   type ConnectionContext,
   type Connector,
   type ConnectorManifest,
@@ -608,6 +612,65 @@ export async function executeDiscover(
   if (!parsed.success) {
     throw new ContractViolationError(
       `connector "${connector.manifest.id}" returned invalid resources: ${formatIssues(parsed.error.issues)}`,
+    );
+  }
+  return parsed.data;
+}
+
+/** Whether the connector lists choices for the config field `key` (#891). */
+export function supportsConfigOptions(
+  connector: Connector,
+  key: string,
+): boolean {
+  return (
+    typeof connector.configOptions === "function" &&
+    (connector.manifest.configOptions ?? []).some((entry) => entry.key === key)
+  );
+}
+
+/**
+ * Runs the optional configOptions capability (SDK 0.2.24, #891) inside the
+ * same boundary as discover: egress-controlled fetch, time budget, redacted
+ * errors. A request for a field the manifest does not name, or a malformed
+ * result, is a contract violation.
+ */
+export async function executeConfigOptions(
+  connector: Connector,
+  context: ConnectionContext,
+  request: ConfigOptionsRequest,
+  options: ExecuteOptions = {},
+): Promise<ConfigOptionsResult> {
+  const parsedRequest = configOptionsRequestSchema.safeParse(request);
+  if (
+    !parsedRequest.success ||
+    !supportsConfigOptions(connector, parsedRequest.data.key)
+  ) {
+    throw new ContractViolationError(
+      `connector "${connector.manifest.id}" lists no choices for this config field`,
+    );
+  }
+  assertContextIsPlain(context);
+  context = boundContext(connector, context);
+  let raw: unknown;
+  try {
+    raw = await withRuntime(
+      connector,
+      context,
+      { timeoutMs: 15_000, ...options },
+      (runtime) =>
+        connector.configOptions!(context, parsedRequest.data, runtime),
+    );
+  } catch (error) {
+    throw classifyConnectorError(
+      connector,
+      error,
+      redactionSet(context, options),
+    );
+  }
+  const parsed = configOptionsResultSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new ContractViolationError(
+      `connector "${connector.manifest.id}" returned invalid config options: ${formatIssues(parsed.error.issues)}`,
     );
   }
   return parsed.data;

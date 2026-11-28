@@ -1,5 +1,6 @@
 import type {
   CheckResult,
+  ConfigOptionsResult,
   Connector,
   ConnectorManifest,
   ManifestTranslation,
@@ -27,6 +28,7 @@ import {
   HOST_INVALID_MESSAGE,
   INSIGHTS_INVALID_CODE,
   INSIGHTS_INVALID_MESSAGE,
+  INSIGHTS_KEY,
   KEY_REJECTED_CODE,
   KEY_REJECTED_MESSAGE,
   MAX_INSIGHTS,
@@ -41,6 +43,7 @@ import {
   hostOf,
   insightsOf,
   isRefused,
+  listInsightOptions,
   listProjects,
   organizationsPage,
   canonicalProjectId,
@@ -63,8 +66,11 @@ export {
   HOST_INVALID_MESSAGE,
   INSIGHTS_INVALID_CODE,
   INSIGHTS_INVALID_MESSAGE,
+  INSIGHTS_UNAVAILABLE_CODE,
+  INSIGHTS_UNAVAILABLE_MESSAGE,
   KEY_REJECTED_CODE,
   KEY_REJECTED_MESSAGE,
+  MAX_INSIGHT_OPTIONS,
   PROJECTS_INVALID_CODE,
   PROJECTS_INVALID_MESSAGE,
   PROJECTS_REQUIRED_CODE,
@@ -122,7 +128,7 @@ const posthogDe: ManifestTranslation = {
     insights: {
       title: "Gespeicherte Insights",
       description:
-        "Optional: Links zu gespeicherten Trends-Insights, deren Ergebnisse netrics liest (…/project/12345/insights/AbCd1234), getrennt durch Leerzeichen oder Kommas, höchstens 20.",
+        "Optional: gespeicherte Trends-Insights, deren Ergebnisse netrics liest, höchstens 20. Wähle sie nach der Prüfung des Keys pro Projekt aus; zu Beginn ist keines ausgewählt.",
     },
   },
   metrics: {
@@ -169,8 +175,9 @@ const ACTIVE_USERS = {
 export const posthogManifest: ConnectorManifest = {
   id: "posthog",
   version: "0.1.0",
-  // 0.2.21: per-request `timeoutMs` (#888, #901 item 1).
-  sdkVersion: "^0.2.21",
+  // 0.2.21: per-request `timeoutMs` (#888, #901 item 1); 0.2.24: the
+  // insight picker, `configOptions` (#891).
+  sdkVersion: "^0.2.24",
   category: "web",
   brandColor: "#1d4aff",
   name: "PostHog",
@@ -226,7 +233,7 @@ export const posthogManifest: ConnectorManifest = {
       insights: {
         type: "string",
         title: "Saved insights",
-        description: `Optional: links to saved trends insights whose results netrics reads (…/project/12345/insights/AbCd1234), separated by spaces or commas, at most ${MAX_INSIGHTS}.`,
+        description: `Optional: saved trends insights whose results netrics reads, at most ${MAX_INSIGHTS}. Choose them per project once the key is checked; none is chosen at first.`,
         maxLength: 4000,
       },
     },
@@ -289,6 +296,11 @@ export const posthogManifest: ConnectorManifest = {
   outboundDomains: [US_HOST, EU_HOST],
   // A self-hosted connection reaches its own host, and only that one.
   configuredHosts: ["host"],
+  // Saved insights are chosen per project from PostHog's insight list
+  // (#891), stored as "project/shortId" (pasted links still read).
+  configOptions: [
+    { key: INSIGHTS_KEY, per: "resource", maxSelected: MAX_INSIGHTS },
+  ],
   resourceNoun: { singular: "project", plural: "projects" },
   supportsResourceSelection: true,
   // Discovery is the organization and project lists: a few cheap requests.
@@ -523,6 +535,31 @@ export function createPostHogConnector(
             ? { metadata: { organizationId: project.organizationId } }
             : {}),
         }));
+      } catch (error) {
+        rethrow(error);
+      }
+    },
+
+    /**
+     * The saved trends insights of one project for the picker (#891):
+     * PostHog's insight list, a page of 100 per request and at most
+     * MAX_INSIGHT_OPTIONS, never a query per insight; and the insights the
+     * draft config chooses now (pasted links read into the same values).
+     */
+    async configOptions(
+      context,
+      request,
+      runtime,
+    ): Promise<ConfigOptionsResult> {
+      if (request.key !== INSIGHTS_KEY) {
+        throw new Error("PostHog lists choices for saved insights only");
+      }
+      try {
+        return await listInsightOptions(
+          client(context, runtime),
+          context,
+          request.resourceId,
+        );
       } catch (error) {
         rethrow(error);
       }

@@ -62,6 +62,8 @@ export interface FakeInsight {
   /** Default: one series per day of the last 7 days up to "today". */
   result?: unknown;
   deleted?: boolean;
+  /** Default true; an unsaved insight is left out with `saved=true`. */
+  saved?: boolean;
   queryStatus?: unknown;
   refused?: 403 | 404;
 }
@@ -309,7 +311,8 @@ export function createFakePostHog(options: FakePostHogOptions = {}) {
       const matching = insights.filter(
         (entry) =>
           String(entry.project) === list[1] &&
-          (shortId === null || entry.shortId === shortId),
+          (shortId === null || entry.shortId === shortId) &&
+          (params.get("saved") !== "true" || entry.saved !== false),
       );
       const refused = matching.find((entry) => entry.refused);
       if (refused) {
@@ -319,7 +322,25 @@ export function createFakePostHog(options: FakePostHogOptions = {}) {
           detail: "You do not have access to this resource.",
         });
       }
-      return answer(200, page(matching.map(insightOf), path, params));
+      // `basic=true` answers the list fields only: no results.
+      const basic = params.get("basic") === "true";
+      return answer(
+        200,
+        page(
+          matching.map((entry) => {
+            const insight = insightOf(entry);
+            if (!basic) return insight;
+            const {
+              result: _result,
+              last_refresh: _refresh,
+              ...rest
+            } = insight;
+            return rest;
+          }),
+          path,
+          params,
+        ),
+      );
     }
     return answer(404, { detail: "Not found." });
   }

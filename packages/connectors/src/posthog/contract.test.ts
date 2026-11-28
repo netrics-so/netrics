@@ -33,6 +33,8 @@ import {
   HOST_INVALID_CODE,
   INSIGHTS_INVALID_CODE,
   INSIGHTS_STREAM,
+  INSIGHTS_UNAVAILABLE_CODE,
+  MAX_INSIGHT_OPTIONS,
   KEY_REJECTED_CODE,
   KEY_REJECTED_MESSAGE,
   MAX_INSIGHT_ROWS,
@@ -206,7 +208,11 @@ describe("PostHog manifest", () => {
     ]);
     expect(posthogManifest.configuredHosts).toEqual(["host"]);
     expect(posthogManifest.supportsResourceSelection).toBe(true);
-    expect(posthogManifest.sdkVersion).toBe("^0.2.21");
+    expect(posthogManifest.sdkVersion).toBe("^0.2.24");
+    // Saved insights are chosen in a picker, per project (#891).
+    expect(posthogManifest.configOptions).toEqual([
+      { key: "insights", per: "resource", maxSelected: 20 },
+    ]);
     // The connect form sends a token strategy's secret as `token`.
     const [strategy] = posthogManifest.authStrategies;
     expect(
@@ -1872,5 +1878,142 @@ describe("discovery of a large selection (#914)", () => {
     );
     expect(performance.now() - started).toBeLessThan(1_000);
     expect(projects.at(-1)!.id).toBe("020000");
+  });
+});
+
+describe("insight picker (#891)", () => {
+  const options = (config: Record<string, unknown>, resourceId: string) =>
+    connector().configOptions!(
+      context(config),
+      { key: "insights", resourceId },
+      posthog.runtime,
+    );
+  let posthog = fake();
+
+  it("lists a project's saved trends insights from the insight list, none chosen", async () => {
+    posthog = fake({
+      projects: fakeProjects(2),
+      insights: [
+        { project: 1000, shortId: "AbCd1234", name: "Signups" },
+        { project: 1000, shortId: "EfGh5678", name: "" },
+        {
+          project: 1000,
+          shortId: "Funnel01",
+          query: { kind: "InsightVizNode", source: { kind: "FunnelsQuery" } },
+        },
+        { project: 1000, shortId: "Gone0001", deleted: true },
+        { project: 1000, shortId: "Draft001", saved: false },
+        { project: 1001, shortId: "Other001" },
+      ],
+    });
+    const result = await options({}, "1000");
+    expect(result).toEqual({
+      options: [
+        { value: "1000/AbCd1234", label: "Signups", description: "AbCd1234" },
+        { value: "1000/EfGh5678", label: "EfGh5678" },
+      ],
+      selected: [],
+    });
+    // One listing request, never a query per insight.
+    expect(posthog.requests.map((request) => request.path)).toEqual([
+      "/api/projects/1000/insights/",
+    ]);
+    const [request] = posthog.requests;
+    expect(request!.method).toBe("GET");
+    expect(request!.params.get("basic")).toBe("true");
+    expect(request!.params.get("saved")).toBe("true");
+    expect(request!.params.get("refresh")).toBeNull();
+  });
+
+  it("reads pasted links and pairs as chosen, under the spelling the connection stores", async () => {
+    posthog = fake({
+      projects: fakeProjects(1),
+      insights: [{ project: 1000, shortId: "AbCd1234" }],
+    });
+    const result = await options(
+      {
+        insights:
+          "https://us.posthog.com/project/01000/insights/AbCd1234 2000/ZzZz0001",
+        resourceSelection: ["01000"],
+      },
+      "01000",
+    );
+    expect(result.selected).toEqual([
+      { value: "1000/AbCd1234", resourceId: "01000" },
+      { value: "2000/ZzZz0001", resourceId: "2000" },
+    ]);
+    expect(result.options.map((option) => option.value)).toEqual([
+      "1000/AbCd1234",
+    ]);
+    expect(posthog.requests[0]!.path).toBe("/api/projects/1000/insights/");
+  });
+
+  it("pages through the list and stops at its limit", async () => {
+    posthog = fake({
+      projects: fakeProjects(1),
+      insights: Array.from(
+        { length: MAX_INSIGHT_OPTIONS + 50 },
+        (_, index) => ({
+          project: 1000,
+          shortId: `In${String(index).padStart(6, "0")}`,
+        }),
+      ),
+    });
+    const result = await options({}, "1000");
+    expect(result.options).toHaveLength(MAX_INSIGHT_OPTIONS);
+    expect(result.truncated).toBe(true);
+    expect(posthog.requests).toHaveLength(MAX_INSIGHT_OPTIONS / 100);
+    expect(
+      posthog.requests.map((request) => request.params.get("offset")),
+    ).toEqual(["0", "100", "200", "300", "400"]);
+  });
+
+  it("names a refused project, a wrong key and a missing scope with fixed reasons", async () => {
+    posthog = fake({ projects: fakeProjects(1) });
+    await expect(options({}, "4242")).rejects.toMatchObject({
+      code: INSIGHTS_UNAVAILABLE_CODE,
+    });
+    await expect(options({}, "not-a-project")).rejects.toMatchObject({
+      code: INSIGHTS_UNAVAILABLE_CODE,
+    });
+    posthog = fake({
+      projects: fakeProjects(1),
+      intercept: (request) =>
+        request.path.endsWith("/insights/")
+          ? answer(403, {
+              type: "authentication_error",
+              code: "permission_denied",
+              detail: "secret-echo phx_should_not_leak",
+            })
+          : undefined,
+    });
+    const refused = await options({}, "1000").catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(ConnectorError);
+    expect((refused as Error).message).not.toContain("secret-echo");
+    posthog = fake({
+      projects: fakeProjects(1),
+      intercept: (request) =>
+        request.path.endsWith("/insights/") ? scopeMissing() : undefined,
+    });
+    await expect(options({}, "1000")).rejects.toMatchObject({
+      code: SCOPE_MISSING_CODE,
+    });
+    posthog = fake({ projects: fakeProjects(1), key: "phx_other" });
+    await expect(options({}, "1000")).rejects.toMatchObject({
+      code: KEY_REJECTED_CODE,
+    });
+  });
+
+  it("lists on a self-hosted host only there", async () => {
+    posthog = fake({
+      host: "posthog.example.com",
+      projects: fakeProjects(1),
+      insights: [{ project: 1000, shortId: "AbCd1234" }],
+    });
+    const result = await options({ host: "posthog.example.com" }, "1000");
+    expect(result.options).toHaveLength(1);
+    expect(
+      posthog.requests.every((r) => r.host === "posthog.example.com"),
+    ).toBe(true);
   });
 });

@@ -266,3 +266,59 @@ export const resourceIconsResultSchema = z.object({
   icons: z.array(resourceIconSchema),
 });
 export type ResourceIconsResult = z.infer<typeof resourceIconsResultSchema>;
+
+// ─── Config options (optional capability, since SDK 0.2.24; #891) ──────────
+
+/** Options one configOptions call returns at most. */
+export const CONFIG_OPTIONS_MAX = 1_000;
+/** Longest option value, label and description, in characters. */
+export const CONFIG_OPTION_VALUE_MAX = 200;
+export const CONFIG_OPTION_LABEL_MAX = 300;
+
+/**
+ * Which choices to list: those of one config field (a key the manifest
+ * names in `configOptions`) within one resource, such as a project's saved
+ * reports. The context carries the draft config the choices are for.
+ */
+export const configOptionsRequestSchema = z.object({
+  key: z.string().min(1).max(100),
+  resourceId: z.string().min(1).max(200),
+});
+export type ConfigOptionsRequest = z.infer<typeof configOptionsRequestSchema>;
+
+/**
+ * One choice: `value` is what the field stores for it, separated from the
+ * other chosen values by a space; `label` names it for people.
+ */
+export const configOptionSchema = z.object({
+  value: z
+    .string()
+    .min(1)
+    .max(CONFIG_OPTION_VALUE_MAX)
+    .regex(/^[^\s,]+$/, { message: "an option value has no spaces or commas" }),
+  label: z.string().min(1).max(CONFIG_OPTION_LABEL_MAX),
+  description: z.string().min(1).max(CONFIG_OPTION_LABEL_MAX).optional(),
+});
+export type ConfigOption = z.infer<typeof configOptionSchema>;
+
+export const configOptionsResultSchema = z.object({
+  /** The resource's choices, in the order to show them. */
+  options: z.array(configOptionSchema).max(CONFIG_OPTIONS_MAX),
+  /**
+   * What the draft config chooses now, in every resource, as option
+   * values (an older spelling of the field read into them), each with the
+   * resource it belongs to. A chosen value the listing does not offer (a
+   * deleted report) is still chosen.
+   */
+  selected: z
+    .array(
+      z.object({
+        value: configOptionSchema.shape.value,
+        resourceId: z.string().min(1).max(200),
+      }),
+    )
+    .max(CONFIG_OPTIONS_MAX),
+  /** The resource has more choices than were listed. */
+  truncated: z.boolean().optional(),
+});
+export type ConfigOptionsResult = z.infer<typeof configOptionsResultSchema>;

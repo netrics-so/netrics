@@ -436,6 +436,28 @@ export const connectorManifestSchema = z
      * host is another connection, with credentials entered for it.
      */
     configuredHosts: z.array(z.string().min(1)).max(4).optional(),
+    /**
+     * Config fields chosen in a picker instead of typed (SDK 0.2.24,
+     * #891): a string property of configSchema whose value is the chosen
+     * option values separated by spaces. Its choices are listed per
+     * resource by `Connector.configOptions`; at most `maxSelected` of
+     * them are chosen. Optional; hosts without pickers show the field as
+     * text.
+     */
+    configOptions: z
+      .array(
+        z.object({
+          key: z.string().min(1),
+          per: z.literal("resource"),
+          maxSelected: z.number().int().positive().max(100),
+        }),
+      )
+      .max(4)
+      .refine(
+        (items) => new Set(items.map((item) => item.key)).size === items.length,
+        { message: "configOptions keys must be unique" },
+      )
+      .optional(),
     rateLimit: rateLimitHintSchema.optional(),
     resourceNoun: resourceNounSchema.optional(),
     /** Honors SyncRequest.resources as a multi-resource collection scope. */
@@ -496,6 +518,15 @@ export const connectorManifestSchema = z
               ? `configuredHosts names "${entry}", which is not a property of configSchema`
               : `configuredHosts names "${entry}", which is not an item property of an array in configSchema`,
           path: ["configuredHosts"],
+        });
+    }
+    for (const entry of manifest.configOptions ?? []) {
+      const property = configProperty(manifest.configSchema, entry.key);
+      if (property?.type !== "string")
+        context.addIssue({
+          code: "custom",
+          message: `configOptions names "${entry.key}", which is not a string property of configSchema`,
+          path: ["configOptions"],
         });
     }
     if (!manifest.translations) {

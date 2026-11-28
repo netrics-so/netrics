@@ -2,6 +2,8 @@ import type { DatasetPage } from "./datasets.js";
 import type { ConnectorManifest } from "./manifest.js";
 import type {
   CheckResult,
+  ConfigOptionsRequest,
+  ConfigOptionsResult,
   ConnectionContext,
   Resource,
   ResourceIconsRequest,
@@ -48,6 +50,18 @@ export interface Connector {
     request: ResourceIconsRequest,
     runtime: ConnectorRuntime,
   ): Promise<ResourceIconsResult>;
+  /**
+   * Optional (SDK 0.2.24, #891): the choices of a config field the
+   * manifest names in `configOptions`, within one resource, for a picker
+   * instead of a text field. A listing, through runtime.fetch like
+   * everything else; never one request per choice. A thrown error is a
+   * provider failure the host shows with its fixed text.
+   */
+  configOptions?(
+    context: ConnectionContext,
+    request: ConfigOptionsRequest,
+    runtime: ConnectorRuntime,
+  ): Promise<ConfigOptionsResult>;
 }
 
 /**
