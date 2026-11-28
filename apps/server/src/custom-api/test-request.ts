@@ -278,13 +278,16 @@ export function previewRows(
       break;
     }
     // A row equal to a request body sent keeps its columns, each
-    // redacted, so it is not mistaken for a cut by the budget.
+    // redacted, so it is not mistaken for a cut by the budget. The row
+    // itself is checked here only: masked, it may equal a sent body again
+    // (`{"id":"[redacted]"}`), and must not be taken for one (#932).
     const bounded = boundedPreview(
       isEchoedBody(row, secrets)
         ? Object.fromEntries(Object.keys(row).map((key) => [key, REDACTED]))
         : row,
       secrets,
       Math.min(left, CUSTOM_API_TEST_LIMITS.previewBytes),
+      { rootEcho: false },
     );
     if (bounded.truncated) truncated = true;
     if (

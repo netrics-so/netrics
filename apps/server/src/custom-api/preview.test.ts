@@ -571,3 +571,41 @@ describe("structured echo of rendered bodies (#885)", () => {
     expect(boundedPreview(body, scalars).body).toEqual(body);
   });
 });
+
+describe("echo follow-ups (#932)", () => {
+  it("keeps the rows after an already-masked row equal to the sent body", () => {
+    const own = secretSetOf({}, {}, [], ['{"id":"[redacted]"}']);
+    const out = previewRows([{ id: "[redacted]" }, { id: 2 }, { id: 3 }], own);
+    expect(out.rows).toEqual([{ id: "[redacted]" }, { id: 2 }, { id: 3 }]);
+    expect(out.truncated).toBe(false);
+  });
+
+  it("normalizes the text once per change in the fallback, and not for forms longer than it", () => {
+    const forms = Array.from({ length: 20 }, (_, i) =>
+      fallbackForm(`secret-${i}-%C3%BC-${"y".repeat(10 + i)}`),
+    );
+    const isNormalize = (pattern: unknown) =>
+      pattern instanceof RegExp && pattern.source === "%[0-9A-Fa-f]{2}";
+    const replace = vi.spyOn(String.prototype, "replace");
+    const normalizations = () =>
+      replace.mock.calls.filter(([pattern]) => isNormalize(pattern)).length;
+    try {
+      // No form found: one normalization for all 20 forms.
+      const text = `start %c3%bc ${"z".repeat(200)} end`;
+      replace.mockClear();
+      expect(replaceFallback(text, forms)).toBe(text);
+      expect(normalizations()).toBe(1);
+      // A replacement changes the text: once more after it.
+      const found = `${text} secret-5-%c3%bc-${"y".repeat(15)}!`;
+      replace.mockClear();
+      expect(replaceFallback(found, forms)).toBe(`${text} [redacted]!`);
+      expect(normalizations()).toBe(2);
+      // Every form longer than the text: no normalization at all.
+      replace.mockClear();
+      expect(replaceFallback("short %C3%BC", forms)).toBe("short %C3%BC");
+      expect(normalizations()).toBe(0);
+    } finally {
+      replace.mockRestore();
+    }
+  });
+});

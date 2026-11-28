@@ -174,6 +174,9 @@ function boundaryMatches(
  * case (inside a match the escapes of both line up, so this compares
  * exactly what the rule says), and the BOUNDARY characters at each end are
  * then compared on their own. `work` counts the character comparisons.
+ * The text with its escapes in lower case is taken once and again only
+ * after a replacement changed the text (#932); a form longer than the
+ * text is skipped before it.
  */
 export function replaceFallback(
   text: string,
@@ -181,8 +184,11 @@ export function replaceFallback(
   work = { comparisons: 0 },
 ): string {
   let out = text;
+  let normalized: string | null = null;
   for (const form of forms) {
-    const lowered = lowerEscapes(out);
+    if (form.text.length > out.length) continue;
+    normalized ??= lowerEscapes(out);
+    const lowered = normalized;
     const { core, failure } = form;
     let next = "";
     let from = 0;
@@ -213,7 +219,10 @@ export function replaceFallback(
         } else k = failure[k - 1]!;
       }
     }
-    if (from > 0) out = next + out.slice(from);
+    if (from > 0) {
+      out = next + out.slice(from);
+      normalized = null;
+    }
   }
   return out;
 }
@@ -465,6 +474,13 @@ export function boundedPreview(
   body: unknown,
   secrets: SecretSet,
   maxBytes: number = CUSTOM_API_TEST_LIMITS.previewBytes,
+  /**
+   * `rootEcho: false` skips the echo check of the body itself, for a
+   * caller that made it already (a preview row, masked when it equals a
+   * sent body: masked, it may equal one again, #932). Nested values are
+   * always checked.
+   */
+  options: { rootEcho?: boolean } = {},
 ): {
   body: JsonValue;
   truncated: boolean;
@@ -546,7 +562,11 @@ export function boundedPreview(
       });
     }
     if (typeof value !== "object") return scalar(null);
-    if (isEchoedBody(value, secrets)) return scalar(REDACTED);
+    if (
+      (depth > 0 || options.rootEcho !== false) &&
+      isEchoedBody(value, secrets)
+    )
+      return scalar(REDACTED);
     if (depth >= limits.depth) {
       const placed = scalar("… (nested deeper)");
       if (placed !== undefined) omitted.depth += 1;
